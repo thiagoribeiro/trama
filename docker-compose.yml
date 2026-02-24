@@ -1,0 +1,43 @@
+services:
+  app:
+    build:
+      context: .
+      network: host
+    network_mode: host
+    environment:
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_DATABASE: saga
+      DATABASE_USER: saga
+      DATABASE_PASSWORD: saga
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: saga
+      PGUSER: saga
+      PGPASSWORD: saga
+      REDIS_URL: redis://localhost:6379
+      RUNTIME_ENABLED: "true"
+      METRICS_ENABLED: "true"
+      TELEMETRY_ENABLED: "false"
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: saga
+      POSTGRES_USER: saga
+      POSTGRES_PASSWORD: saga
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  db_data:

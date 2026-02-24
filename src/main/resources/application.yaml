@@ -1,0 +1,59 @@
+redis:
+  url: "redis://localhost:6379"
+  pool:
+    maxTotal: 16
+    maxIdle: 16
+    minIdle: 0
+    testOnBorrow: true
+    testWhileIdle: true
+  queue:
+    readyKey: "saga:executions"
+    inFlightKey: "saga:executions:in-flight"
+  consumer:
+    batchSize: 50
+    processingTimeoutMillis: 60000
+    requeueIntervalMillis: 5000
+
+database:
+  host: "db"
+  port: 5432
+  database: "saga"
+  user: "saga"
+  password: "saga"
+  pool:
+    maxPoolSize: 10
+    minIdle: 1
+
+runtime:
+  enabled: true
+  workerCount: 4
+  bufferSize: 200
+  emptyPollDelayMillis: 50
+  store: "REDIS"
+
+http:
+  connectTimeoutMillis: 10000
+  requestTimeoutMillis: 30000
+  socketTimeoutMillis: 30000
+
+telemetry:
+  enabled: false
+  serviceName: "trama"
+  otlpEndpoint: "http://localhost:4317"
+
+maintenance:
+  enabled: true
+  partitionLookaheadMonths: 13
+  partitionStartOffsetMonths: 1
+  retentionDays: 15
+  intervalMillis: 3600000
+
+rateLimit:
+  enabled: true
+  maxFailures: 5
+  windowMillis: 60000
+  blockMillis: 60000
+  keyPrefix: "saga:rate"
+
+metrics:
+  enabled: true

@@ -1,0 +1,39 @@
+.gradle/
+build/
+out/
+
+# IntelliJ / IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+scripts/saga_demo/.venv/
+
+# Gradle wrapper cache
+gradle/wrapper/gradle-wrapper.jar
+
+# Local env files
+.env
+.env.*
+
+# Testcontainers / runtime artifacts
+docker-data/
+tmp/
