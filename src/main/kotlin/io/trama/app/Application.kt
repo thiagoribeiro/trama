@@ -174,8 +174,8 @@ fun Application.module() {
                 state = ExecutionState.InProgress(ExecutionPhase.UP),
                 payload = emptyMap(),
             )
-            bootstrap.enqueueRetry(execution)
             repo.markRetrying(id)
+            bootstrap.enqueueRetry(execution)
             call.respond(HttpStatusCode.Accepted, SagaRetryResponse(id.toString(), "REQUEUED"))
         }
         post("/sagas/run") {
