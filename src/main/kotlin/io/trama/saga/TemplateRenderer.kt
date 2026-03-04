@@ -31,7 +31,7 @@ object TemplateContextBuilder {
         stepName: String,
         phase: ExecutionPhase,
         stepResults: List<SagaRepository.StepResultForTemplate>,
-        payload: Map<String, String> = emptyMap(),
+        payload: Map<String, PayloadValue> = emptyMap(),
     ): Map<String, Any?> {
         val base = mutableMapOf<String, Any?>(
             "sagaId" to execution.id.toString(),
@@ -40,7 +40,7 @@ object TemplateContextBuilder {
             "stepName" to stepName,
             "phase" to phase.name,
         )
-        base["payload"] = payload
+        base["payload"] = payload.mapValues { jsonToAny(it.value.value) }
         val stepsList = stepResults.map { step ->
             mapOf(
                 "index" to step.index,

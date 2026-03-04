@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.decodeFromByteArray
+import kotlinx.serialization.json.JsonPrimitive
 
 class MsgPackRoundTripTest {
     @Test
@@ -42,7 +43,7 @@ class MsgPackRoundTripTest {
             startedAt = Instant.parse("2025-01-10T12:00:00Z"),
             currentStepIndex = 0,
             state = ExecutionState.InProgress(ExecutionPhase.UP),
-            payload = mapOf("orderId" to "A1"),
+            payload = mapOf("orderId" to PayloadValue(JsonPrimitive("A1"))),
         )
 
         val bytes = msgPack.encodeToByteArray(SagaExecution.serializer(), original)

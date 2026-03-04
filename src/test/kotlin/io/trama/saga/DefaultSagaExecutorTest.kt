@@ -11,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import io.trama.saga.store.SagaRepository
 
 class DefaultSagaExecutorTest {
@@ -48,7 +49,7 @@ class DefaultSagaExecutorTest {
             startedAt = Instant.now(),
             currentStepIndex = 0,
             state = ExecutionState.InProgress(ExecutionPhase.UP),
-            payload = mapOf("userId" to "123"),
+            payload = mapOf("userId" to PayloadValue(JsonPrimitive("123"))),
         )
         val outcome = executor.execute(exec)
         assertEquals(ExecutionOutcome.Succeeded, outcome)

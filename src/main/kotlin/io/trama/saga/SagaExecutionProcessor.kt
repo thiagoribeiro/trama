@@ -73,7 +73,6 @@ class SagaExecutionProcessor(
                     Tracing.withTraceMdc(span, execution.id.toString()) {
                         logger.info(
                             "processing saga",
-                            kv("sagaId", execution.id.toString()),
                             kv("sagaName", execution.definition.name),
                         )
                     }

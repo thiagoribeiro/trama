@@ -3,7 +3,15 @@ package io.trama.saga
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class SagaExecution(
@@ -14,7 +22,13 @@ data class SagaExecution(
     val startedAt: Instant,
     val currentStepIndex: Int,
     val state: ExecutionState,
-    val payload: Map<String, String> = emptyMap(),
+    val payload: Map<String, PayloadValue> = emptyMap(),
+)
+
+@Serializable
+data class PayloadValue(
+    @Serializable(with = JsonElementAsStringSerializer::class)
+    val value: JsonElement,
 )
 
 @Serializable
@@ -126,12 +140,12 @@ data class SagaDefinitionResponse(
 @Serializable
 data class RunSagaRequest(
     val definition: SagaDefinition,
-    val payload: Map<String, String> = emptyMap(),
+    val payload: Map<String, JsonElement> = emptyMap(),
 )
 
 @Serializable
 data class RunStoredSagaRequest(
-    val payload: Map<String, String> = emptyMap(),
+    val payload: Map<String, JsonElement> = emptyMap(),
 )
 
 object InstantAsStringSerializer : kotlinx.serialization.KSerializer<Instant> {
@@ -161,5 +175,18 @@ object UuidAsStringSerializer : kotlinx.serialization.KSerializer<UUID> {
 
     override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): UUID {
         return UUID.fromString(decoder.decodeString())
+    }
+}
+
+object JsonElementAsStringSerializer : KSerializer<JsonElement> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("JsonElementAsString", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: JsonElement) {
+        encoder.encodeString(Json.encodeToString(JsonElement.serializer(), value))
+    }
+
+    override fun deserialize(decoder: Decoder): JsonElement {
+        return Json.parseToJsonElement(decoder.decodeString())
     }
 }

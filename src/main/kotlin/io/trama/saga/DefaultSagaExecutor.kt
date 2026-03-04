@@ -22,7 +22,7 @@ class DefaultSagaExecutor(
     private val tracer = Tracing.tracer("saga-executor")
 
     override suspend fun execute(execution: SagaExecution): ExecutionOutcome {
-        val payload = execution.payload.mapValues { it.value }
+        val payload = execution.payload
         return Tracing.withSpan(
             tracer = tracer,
             name = "saga.execute",
@@ -35,7 +35,6 @@ class DefaultSagaExecutor(
             Tracing.withTraceMdc(span, execution.id.toString()) {
                 logger.info(
                     "saga execution started",
-                    kv("sagaId", execution.id.toString()),
                     kv("sagaName", execution.definition.name),
                     kv("sagaVersion", execution.definition.version),
                 )
@@ -55,7 +54,7 @@ class DefaultSagaExecutor(
     private suspend fun executeInProgress(
         execution: SagaExecution,
         state: ExecutionState.InProgress,
-        payload: Map<String, String>,
+        payload: Map<String, PayloadValue>,
     ): ExecutionOutcome {
         return when (state.phase) {
             ExecutionPhase.UP -> executeUp(execution, state, payload)
@@ -66,7 +65,7 @@ class DefaultSagaExecutor(
     private suspend fun executeUp(
         execution: SagaExecution,
         state: ExecutionState.InProgress,
-        payload: Map<String, String>,
+        payload: Map<String, PayloadValue>,
     ): ExecutionOutcome {
         var index = execution.currentStepIndex
         var retryState: RetryState = state.retry
@@ -105,7 +104,6 @@ class DefaultSagaExecutor(
                 Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                     logger.warn(
                         "success callback failed",
-                        kv("sagaId", execution.id.toString()),
                         kv("warning", warning),
                     )
                 }
@@ -118,7 +116,7 @@ class DefaultSagaExecutor(
     private suspend fun executeDown(
         execution: SagaExecution,
         state: ExecutionState.InProgress,
-        payload: Map<String, String>,
+        payload: Map<String, PayloadValue>,
     ): ExecutionOutcome {
         var index = execution.currentStepIndex
         var retryState: RetryState = state.retry
@@ -157,7 +155,6 @@ class DefaultSagaExecutor(
                 Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                     logger.warn(
                         "failure callback failed",
-                        kv("sagaId", execution.id.toString()),
                         kv("warning", warning),
                     )
                 }
@@ -173,7 +170,7 @@ class DefaultSagaExecutor(
         retryState: RetryState,
         failedIndex: Int,
         failureDescription: String,
-        payload: Map<String, String>,
+        payload: Map<String, PayloadValue>,
     ): ExecutionOutcome {
         val retryDecision = retryPolicy.next(retryState, execution.definition.failureHandling)
         return if (retryDecision.shouldRetry) {
@@ -181,7 +178,6 @@ class DefaultSagaExecutor(
             Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                 logger.info(
                     "retry scheduled",
-                    kv("sagaId", execution.id.toString()),
                     kv("delayMillis", retryDecision.delayMillis),
                     kv("attempt", retryDecision.attempt),
                 )
@@ -214,7 +210,6 @@ class DefaultSagaExecutor(
                 Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                     logger.info(
                         "compensation scheduled",
-                        kv("sagaId", execution.id.toString()),
                         kv("fromIndex", nextIndex),
                     )
                 }
@@ -228,7 +223,6 @@ class DefaultSagaExecutor(
                         Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                             logger.warn(
                                 "failure callback failed",
-                                kv("sagaId", execution.id.toString()),
                                 kv("warning", warning),
                             )
                         }
@@ -246,7 +240,7 @@ class DefaultSagaExecutor(
         stepName: String,
         phase: ExecutionPhase,
         call: HttpCall,
-        payload: Map<String, String>,
+        payload: Map<String, PayloadValue>,
     ): HttpCallResult {
         val context = buildTemplateContext(execution, stepName, phase, payload)
         val url = renderer.render(call.url, context)
@@ -265,7 +259,6 @@ class DefaultSagaExecutor(
             Tracing.withTraceMdc(span, execution.id.toString()) {
                 logger.info(
                     "calling step",
-                    kv("sagaId", execution.id.toString()),
                     kv("step", stepName),
                     kv("phase", phase.name),
                     kv("url", url),
@@ -290,7 +283,6 @@ class DefaultSagaExecutor(
                 Tracing.withTraceMdc(span, execution.id.toString()) {
                     logger.info(
                         "step completed",
-                        kv("sagaId", execution.id.toString()),
                         kv("step", stepName),
                         kv("phase", phase.name),
                         kv("status", response.status.value),
@@ -302,7 +294,6 @@ class DefaultSagaExecutor(
                 Tracing.withTraceMdc(span, execution.id.toString()) {
                     logger.warn(
                         "step failed",
-                        kv("sagaId", execution.id.toString()),
                         kv("step", stepName),
                         kv("phase", phase.name),
                         kv("error", ex.message ?: "unknown"),
@@ -333,7 +324,7 @@ class DefaultSagaExecutor(
         execution: SagaExecution,
         stepName: String,
         phase: ExecutionPhase,
-        payload: Map<String, String>,
+        payload: Map<String, PayloadValue>,
     ): Map<String, Any?> {
         val steps = store.loadStepResults(execution.id)
         return TemplateContextBuilder.build(execution, stepName, phase, steps, payload)

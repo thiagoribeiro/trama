@@ -47,3 +47,25 @@ python scripts/saga_demo/run_saga.py --scenario success
 Note:
 - The `charge` step now references the previous step response via templates (e.g. `{{step.0.up.body.step}}`). This requires the Trama runtime to be running with DB persistence enabled so step results are available for rendering.
 - Your Trama runtime must be running and configured to connect to Redis/Postgres as usual.
+
+## 3) Square chaining demo (2 -> 4 -> 16 -> ...)
+
+This script starts a local Flask API that squares any numeric `value`, then creates/runs a saga with 4 steps where each step uses the previous step response.
+
+Start service:
+
+```bash
+python scripts/saga_demo/run_square_chain.py serve --port 5002
+```
+
+Run saga (default initial value is `2` and steps is `4`):
+
+```bash
+python scripts/saga_demo/run_square_chain.py run \
+  --saga-api http://127.0.0.1:8080 \
+  --service-url http://127.0.0.1:5002 \
+  --initial-value 2 \
+  --steps 4
+```
+
+Expected sequence of `result` values: `4`, `16`, `256`, `65536`.

@@ -41,6 +41,7 @@ import io.trama.saga.SagaDefinitionCreateRequest
 import io.trama.saga.SagaDefinitionResponse
 import io.trama.saga.SagaDefinitionValidator
 import io.trama.saga.SagaExecution
+import io.trama.saga.PayloadValue
 import io.trama.saga.SagaRetryResponse
 import io.trama.saga.SagaStatusResponse
 import io.trama.saga.ValidationErrorResponse
@@ -50,12 +51,14 @@ import java.time.Instant
 import io.ktor.server.request.receive
 import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.netty.EngineMain
+import org.slf4j.LoggerFactory
 
 fun main(args: Array<String>) {
     EngineMain.main(args)
 }
 
 fun Application.module() {
+    val logger = LoggerFactory.getLogger("io.trama.app.Application")
     val appConfig = ConfigLoader.load()
     val json = Json {
         ignoreUnknownKeys = true
@@ -98,8 +101,21 @@ fun Application.module() {
         json(json)
     }
     install(StatusPages) {
-        exception<Throwable> { call, _ ->
-            call.respond(HttpStatusCode.InternalServerError)
+        exception<Throwable> { call, cause ->
+            val message = cause.message ?: (cause::class.simpleName ?: "internal server error")
+            logger.error("Unhandled exception while processing request", cause)
+            runCatching {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    ValidationErrorResponse(listOf(message)),
+                )
+            }.onFailure {
+                call.respondText(
+                    text = "internal server error: $message",
+                    status = HttpStatusCode.InternalServerError,
+                    contentType = ContentType.Text.Plain,
+                )
+            }
         }
     }
 
@@ -191,7 +207,7 @@ fun Application.module() {
                 startedAt = Instant.now(),
                 currentStepIndex = 0,
                 state = ExecutionState.InProgress(ExecutionPhase.UP),
-                payload = req.payload,
+                payload = req.payload.mapValues { PayloadValue(it.value) },
             )
             if (bootstrap.repositoryOrNull() == null) {
                 call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
@@ -380,7 +396,7 @@ fun Application.module() {
                 startedAt = Instant.now(),
                 currentStepIndex = 0,
                 state = ExecutionState.InProgress(ExecutionPhase.UP),
-                payload = req.payload,
+                payload = req.payload.mapValues { PayloadValue(it.value) },
             )
             bootstrap.enqueueRetry(execution)
             call.respond(SagaCreateResponse(execution.id.toString()))

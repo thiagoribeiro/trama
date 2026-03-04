@@ -16,6 +16,7 @@ class SagaRepository(
     private val db: DatabaseClient,
 ) {
     private val definitionCache = java.util.concurrent.ConcurrentHashMap<UUID, SagaDefinitionRecord>()
+    private val definitionNameVersionCache = java.util.concurrent.ConcurrentHashMap<String, UUID>()
     private val json = Json { ignoreUnknownKeys = true }
 
     private val execTable = DSL.table("saga_execution")
@@ -383,13 +384,15 @@ class SagaRepository(
         if (inserted == 0) {
             return false
         }
-        definitionCache[id] = SagaDefinitionRecord(
-            id = id,
-            name = name,
-            version = version,
-            definitionJson = definitionJson,
-            createdAt = Instant.now(),
-            updatedAt = Instant.now(),
+        putDefinitionInCache(
+            SagaDefinitionRecord(
+                id = id,
+                name = name,
+                version = version,
+                definitionJson = definitionJson,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
         )
         return true
     }
@@ -418,11 +421,18 @@ class SagaRepository(
                 definitionJson = record.get(defBody)?.data() ?: "",
                 createdAt = record.get(defCreatedAt) ?: Instant.EPOCH,
                 updatedAt = record.get(defUpdatedAt) ?: Instant.EPOCH,
-            ).also { definitionCache[id] = it }
+            ).also { putDefinitionInCache(it) }
         }
     }
 
     fun getDefinitionByNameVersion(name: String, version: String): SagaDefinitionRecord? {
+        val key = definitionNameVersionKey(name, version)
+        definitionNameVersionCache[key]?.let { id ->
+            definitionCache[id]?.let { return it }
+            // Defensive cleanup for stale id pointers.
+            definitionNameVersionCache.remove(key, id)
+        }
+
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val record = dsl.select(
@@ -447,7 +457,7 @@ class SagaRepository(
                 definitionJson = record.get(defBody)?.data() ?: "",
                 createdAt = record.get(defCreatedAt) ?: Instant.EPOCH,
                 updatedAt = record.get(defUpdatedAt) ?: Instant.EPOCH,
-            ).also { definitionCache[it.id] = it }
+            ).also { putDefinitionInCache(it) }
         }
     }
 
@@ -458,7 +468,10 @@ class SagaRepository(
                 .where(defId.eq(id))
                 .execute() > 0
             if (deleted) {
-                definitionCache.remove(id)
+                val removed = definitionCache.remove(id)
+                if (removed != null) {
+                    definitionNameVersionCache.remove(definitionNameVersionKey(removed.name, removed.version), id)
+                }
             }
             deleted
         }
@@ -489,9 +502,18 @@ class SagaRepository(
                     )
                 }
                 .also { list ->
-                    list.forEach { definitionCache[it.id] = it }
+                    list.forEach { putDefinitionInCache(it) }
                 }
         }
+    }
+
+    private fun putDefinitionInCache(record: SagaDefinitionRecord) {
+        definitionCache[record.id] = record
+        definitionNameVersionCache[definitionNameVersionKey(record.name, record.version)] = record.id
+    }
+
+    private fun definitionNameVersionKey(name: String, version: String): String {
+        return "$name::$version"
     }
 
     data class SagaDefinitionRecord(

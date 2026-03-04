@@ -2,6 +2,18 @@ package io.trama.saga
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 data class SagaDefinition(
@@ -29,7 +41,7 @@ data class HttpCall(
     val successStatusCodes: Set<Int> = defaultSuccessStatusCodes(verb),
 )
 
-@Serializable
+@Serializable(with = TemplateStringSerializer::class)
 data class TemplateString(
     val value: String,
 )
@@ -76,4 +88,38 @@ sealed class FailureHandling {
         val multiplier: Double = 2.0,
         val jitterRatio: Double = 0.0,
     ) : FailureHandling()
+}
+
+object TemplateStringSerializer : KSerializer<TemplateString> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("TemplateString", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: TemplateString) {
+        if (encoder is JsonEncoder) {
+            encoder.encodeJsonElement(JsonObject(mapOf("value" to JsonPrimitive(value.value))))
+            return
+        }
+        encoder.encodeString(value.value)
+    }
+
+    override fun deserialize(decoder: Decoder): TemplateString {
+        if (decoder is JsonDecoder) {
+            val element = decoder.decodeJsonElement()
+            return TemplateString(readTemplateValue(element))
+        }
+        return TemplateString(decoder.decodeString())
+    }
+
+    private fun readTemplateValue(element: JsonElement): String {
+        if (element is JsonPrimitive && element.isString) {
+            return element.content
+        }
+        if (element is JsonObject) {
+            val wrapped = element["value"]
+            if (wrapped != null && wrapped is JsonPrimitive && wrapped.isString) {
+                return wrapped.content
+            }
+        }
+        return Json.encodeToString(JsonElement.serializer(), element)
+    }
 }
