@@ -29,6 +29,7 @@ runtime:
   workerCount: 4
   bufferSize: 200
   emptyPollDelayMillis: 50
+  maxStepsPerExecution: 25
   store: "REDIS"
 
 http:

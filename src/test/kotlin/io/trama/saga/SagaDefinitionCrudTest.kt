@@ -1,9 +1,9 @@
-package io.trama.saga
+package run.trama.saga
 
 import io.mockk.every
 import io.mockk.mockk
-import io.trama.saga.store.DatabaseClient
-import io.trama.saga.store.SagaRepository
+import run.trama.saga.store.DatabaseClient
+import run.trama.saga.store.SagaRepository
 import java.util.UUID
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString

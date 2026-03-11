@@ -1,8 +1,8 @@
-package io.trama.saga.store
+package run.trama.saga.store
 
-import io.trama.saga.ExecutionPhase
-import io.trama.saga.SagaDefinition
-import io.trama.saga.SagaExecution
+import run.trama.saga.ExecutionPhase
+import run.trama.saga.SagaDefinition
+import run.trama.saga.SagaExecution
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID

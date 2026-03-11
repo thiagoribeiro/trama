@@ -1,4 +1,4 @@
-package io.trama.config
+package run.trama.config
 
 import com.sksamuel.hoplite.ConfigLoaderBuilder
 import com.sksamuel.hoplite.addResourceSource

@@ -1,6 +1,6 @@
-package io.trama.saga.redis
+package run.trama.saga.redis
 
-import io.trama.config.RateLimitConfig
+import run.trama.config.RateLimitConfig
 import java.nio.charset.StandardCharsets
 
 interface SagaRateLimiter {

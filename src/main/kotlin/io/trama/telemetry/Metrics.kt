@@ -1,4 +1,4 @@
-package io.trama.telemetry
+package run.trama.telemetry
 
 import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.atomic.AtomicLong

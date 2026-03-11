@@ -1,7 +1,7 @@
-package io.trama.runtime
+package run.trama.runtime
 
-import io.trama.config.MaintenanceConfig
-import io.trama.saga.store.DatabaseClient
+import run.trama.config.MaintenanceConfig
+import run.trama.saga.store.DatabaseClient
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlinx.coroutines.delay

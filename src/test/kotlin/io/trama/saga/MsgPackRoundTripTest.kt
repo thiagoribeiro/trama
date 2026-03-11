@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import com.ensarsarajcic.kotlinx.serialization.msgpack.MsgPack
 import java.time.Instant

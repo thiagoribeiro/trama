@@ -1,4 +1,4 @@
-package io.trama.config
+package run.trama.config
 
 data class AppConfig(
     val redis: RedisConfig,
@@ -56,6 +56,7 @@ data class RuntimeConfig(
     val workerCount: Int = 4,
     val bufferSize: Int = 200,
     val emptyPollDelayMillis: Long = 50,
+    val maxStepsPerExecution: Int = 25,
     val store: RuntimeStore = RuntimeStore.REDIS,
 )
 

@@ -1,4 +1,4 @@
-package io.trama.app
+package run.trama.app
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -29,23 +29,23 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
-import io.trama.config.ConfigLoader
-import io.trama.runtime.RuntimeBootstrap
-import io.trama.saga.ExecutionPhase
-import io.trama.saga.ExecutionState
-import io.trama.saga.RunSagaRequest
-import io.trama.saga.RunStoredSagaRequest
-import io.trama.saga.SagaCreateResponse
-import io.trama.saga.SagaDefinition
-import io.trama.saga.SagaDefinitionCreateRequest
-import io.trama.saga.SagaDefinitionResponse
-import io.trama.saga.SagaDefinitionValidator
-import io.trama.saga.SagaExecution
-import io.trama.saga.PayloadValue
-import io.trama.saga.SagaRetryResponse
-import io.trama.saga.SagaStatusResponse
-import io.trama.saga.ValidationErrorResponse
-import io.trama.telemetry.installRequestTracing
+import run.trama.config.ConfigLoader
+import run.trama.runtime.RuntimeBootstrap
+import run.trama.saga.ExecutionPhase
+import run.trama.saga.ExecutionState
+import run.trama.saga.RunSagaRequest
+import run.trama.saga.RunStoredSagaRequest
+import run.trama.saga.SagaCreateResponse
+import run.trama.saga.SagaDefinition
+import run.trama.saga.SagaDefinitionCreateRequest
+import run.trama.saga.SagaDefinitionResponse
+import run.trama.saga.SagaDefinitionValidator
+import run.trama.saga.SagaExecution
+import run.trama.saga.PayloadValue
+import run.trama.saga.SagaRetryResponse
+import run.trama.saga.SagaStatusResponse
+import run.trama.saga.ValidationErrorResponse
+import run.trama.telemetry.installRequestTracing
 import org.slf4j.event.Level
 import java.time.Instant
 import io.ktor.server.request.receive
@@ -58,7 +58,7 @@ fun main(args: Array<String>) {
 }
 
 fun Application.module() {
-    val logger = LoggerFactory.getLogger("io.trama.app.Application")
+    val logger = LoggerFactory.getLogger("run.trama.app.Application")
     val appConfig = ConfigLoader.load()
     val json = Json {
         ignoreUnknownKeys = true

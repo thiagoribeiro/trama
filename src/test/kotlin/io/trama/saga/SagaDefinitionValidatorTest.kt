@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

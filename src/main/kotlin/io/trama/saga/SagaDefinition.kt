@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

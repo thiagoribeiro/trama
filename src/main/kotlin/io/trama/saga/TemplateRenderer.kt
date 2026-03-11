@@ -1,7 +1,7 @@
-package io.trama.saga
+package run.trama.saga
 
 import com.github.mustachejava.DefaultMustacheFactory
-import io.trama.saga.store.SagaRepository
+import run.trama.saga.store.SagaRepository
 import java.io.StringReader
 import java.io.StringWriter
 import kotlinx.serialization.json.JsonArray

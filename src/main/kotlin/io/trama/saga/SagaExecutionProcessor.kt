@@ -1,9 +1,9 @@
-package io.trama.saga
+package run.trama.saga
 
-import io.trama.saga.redis.SagaExecutionRedisConsumer
-import io.trama.saga.redis.SagaRateLimiter
-import io.trama.telemetry.Metrics
-import io.trama.telemetry.Tracing
+import run.trama.saga.redis.SagaExecutionRedisConsumer
+import run.trama.saga.redis.SagaRateLimiter
+import run.trama.telemetry.Metrics
+import run.trama.telemetry.Tracing
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory

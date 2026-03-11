@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -12,7 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
-import io.trama.saga.store.SagaRepository
+import run.trama.saga.store.SagaRepository
 
 class DefaultSagaExecutorTest {
     @Test
@@ -96,6 +96,52 @@ class DefaultSagaExecutorTest {
         val outcome = executor.execute(exec)
         assertEquals(ExecutionOutcome.Reenqueued, outcome)
         assertTrue(enqueuer.enqueued.isNotEmpty())
+    }
+
+    @Test
+    fun `re-enqueues after processing five steps`() = runBlocking {
+        val store = FakeStore()
+        val enqueuer = FakeEnqueuer()
+        val engine = MockEngine {
+            respond("ok", HttpStatusCode.OK, headersOf("Content-Type" to listOf("text/plain")))
+        }
+        val http = FakeHttpClientProvider(HttpClient(engine))
+        val executor = DefaultSagaExecutor(
+            store = store,
+            renderer = MustacheTemplateRenderer(),
+            retryPolicy = DefaultRetryPolicy(),
+            enqueuer = enqueuer,
+            httpClient = http,
+            maxStepsPerExecution = 5,
+        )
+        val exec = SagaExecution(
+            definition = SagaDefinition(
+                name = "s1",
+                version = "1",
+                failureHandling = FailureHandling.Retry(1, 1),
+                steps = (1..6).map { idx ->
+                    SagaStep(
+                        name = "step$idx",
+                        up = HttpCall(TemplateString("http://x"), HttpVerb.GET),
+                        down = HttpCall(TemplateString("http://x"), HttpVerb.GET),
+                    )
+                },
+                onSuccessCallback = null,
+                onFailureCallback = null,
+            ),
+            id = UUID.randomUUID(),
+            startedAt = Instant.now(),
+            currentStepIndex = 0,
+            state = ExecutionState.InProgress(ExecutionPhase.UP),
+            payload = emptyMap(),
+        )
+
+        val outcome = executor.execute(exec)
+        assertEquals(ExecutionOutcome.Reenqueued, outcome)
+        assertEquals(null, store.finalStatus)
+        assertEquals(1, enqueuer.enqueued.size)
+        assertEquals(5, enqueuer.enqueued.first().currentStepIndex)
+        assertTrue(enqueuer.enqueued.first().state is ExecutionState.InProgress)
     }
 }
 

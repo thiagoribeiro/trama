@@ -1,6 +1,6 @@
 @file:OptIn(io.lettuce.core.ExperimentalLettuceCoroutinesApi::class)
 
-package io.trama.saga.redis
+package run.trama.saga.redis
 
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisURI
@@ -9,7 +9,7 @@ import io.lettuce.core.api.coroutines.RedisCoroutinesCommands
 import io.lettuce.core.api.coroutines.RedisCoroutinesCommandsImpl
 import io.lettuce.core.codec.ByteArrayCodec
 import io.lettuce.core.support.ConnectionPoolSupport
-import io.trama.config.RedisConfig
+import run.trama.config.RedisConfig
 import org.apache.commons.pool2.impl.GenericObjectPool
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig
 

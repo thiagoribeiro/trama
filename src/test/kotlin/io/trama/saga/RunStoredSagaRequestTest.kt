@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json

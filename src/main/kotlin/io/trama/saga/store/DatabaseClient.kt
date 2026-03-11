@@ -1,8 +1,8 @@
-package io.trama.saga.store
+package run.trama.saga.store
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
-import io.trama.config.DatabaseConfig
+import run.trama.config.DatabaseConfig
 import java.sql.Connection
 
 class DatabaseClient(

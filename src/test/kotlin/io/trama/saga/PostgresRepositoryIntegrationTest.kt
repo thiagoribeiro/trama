@@ -1,9 +1,9 @@
-package io.trama.saga
+package run.trama.saga
 
-import io.trama.config.DatabaseConfig
-import io.trama.config.DatabasePoolConfig
-import io.trama.saga.store.DatabaseClient
-import io.trama.saga.store.SagaRepository
+import run.trama.config.DatabaseConfig
+import run.trama.config.DatabasePoolConfig
+import run.trama.saga.store.DatabaseClient
+import run.trama.saga.store.SagaRepository
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals

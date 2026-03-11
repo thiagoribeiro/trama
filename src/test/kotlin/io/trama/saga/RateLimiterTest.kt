@@ -1,11 +1,11 @@
-package io.trama.saga
+package run.trama.saga
 
 import io.lettuce.core.api.coroutines.RedisCoroutinesCommands
 import io.mockk.coEvery
 import io.mockk.mockk
-import io.trama.config.RateLimitConfig
-import io.trama.saga.redis.RedisCommandsProvider
-import io.trama.saga.redis.RedisSagaRateLimiter
+import run.trama.config.RateLimitConfig
+import run.trama.saga.redis.RedisCommandsProvider
+import run.trama.saga.redis.RedisSagaRateLimiter
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull

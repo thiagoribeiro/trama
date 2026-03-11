@@ -1,28 +1,28 @@
-package io.trama.runtime
+package run.trama.runtime
 
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
-import io.trama.config.AppConfig
-import io.trama.config.RuntimeStore
-import io.trama.saga.DefaultRetryPolicy
-import io.trama.saga.DefaultSagaExecutor
-import io.trama.saga.MustacheTemplateRenderer
-import io.trama.saga.RedisSagaEnqueuer
-import io.trama.saga.SagaEnqueuer
-import io.trama.saga.SagaExecution
-import io.trama.saga.SagaExecutionProcessor
-import io.trama.saga.SagaExecutionQueue
-import io.trama.saga.SagaHttpClient
-import io.trama.saga.SagaRepositoryStore
-import io.trama.saga.redis.RedisClientProvider
-import io.trama.saga.redis.RedisSagaExecutionStore
-import io.trama.saga.redis.RedisSagaRateLimiter
-import io.trama.saga.redis.SagaExecutionRedisConsumer
-import io.trama.saga.redis.SagaExecutionRedisWriter
-import io.trama.saga.store.DatabaseClient
-import io.trama.saga.store.SagaRepository
-import io.trama.telemetry.Metrics
-import io.trama.telemetry.Tracing
+import run.trama.config.AppConfig
+import run.trama.config.RuntimeStore
+import run.trama.saga.DefaultRetryPolicy
+import run.trama.saga.DefaultSagaExecutor
+import run.trama.saga.MustacheTemplateRenderer
+import run.trama.saga.RedisSagaEnqueuer
+import run.trama.saga.SagaEnqueuer
+import run.trama.saga.SagaExecution
+import run.trama.saga.SagaExecutionProcessor
+import run.trama.saga.SagaExecutionQueue
+import run.trama.saga.SagaHttpClient
+import run.trama.saga.SagaRepositoryStore
+import run.trama.saga.redis.RedisClientProvider
+import run.trama.saga.redis.RedisSagaExecutionStore
+import run.trama.saga.redis.RedisSagaRateLimiter
+import run.trama.saga.redis.SagaExecutionRedisConsumer
+import run.trama.saga.redis.SagaExecutionRedisWriter
+import run.trama.saga.store.DatabaseClient
+import run.trama.saga.store.SagaRepository
+import run.trama.telemetry.Metrics
+import run.trama.telemetry.Tracing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,6 +79,7 @@ class RuntimeBootstrap(
             retryPolicy = retryPolicy,
             enqueuer = enq,
             httpClient = httpClient,
+            maxStepsPerExecution = config.runtime.maxStepsPerExecution,
         )
         val processor = SagaExecutionProcessor(
             consumer = consumer,

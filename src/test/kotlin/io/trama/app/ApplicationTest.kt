@@ -1,4 +1,4 @@
-package io.trama.app
+package run.trama.app
 
 import io.ktor.client.request.get
 import io.ktor.server.testing.testApplication

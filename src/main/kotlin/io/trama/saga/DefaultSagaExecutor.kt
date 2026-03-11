@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -7,7 +7,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.Span
-import io.trama.telemetry.Tracing
+import run.trama.telemetry.Tracing
 import org.slf4j.LoggerFactory
 import net.logstash.logback.argument.StructuredArguments.kv
 
@@ -17,6 +17,7 @@ class DefaultSagaExecutor(
     private val retryPolicy: RetryPolicy,
     private val enqueuer: SagaEnqueuer,
     private val httpClient: HttpClientProvider,
+    private val maxStepsPerExecution: Int = 25,
 ) : SagaExecutor {
     private val logger = LoggerFactory.getLogger(DefaultSagaExecutor::class.java)
     private val tracer = Tracing.tracer("saga-executor")
@@ -69,6 +70,7 @@ class DefaultSagaExecutor(
     ): ExecutionOutcome {
         var index = execution.currentStepIndex
         var retryState: RetryState = state.retry
+        var processedSteps = 0
         while (index < execution.definition.steps.size) {
             val step = execution.definition.steps[index]
             val result = executeHttpCall(execution, step.name, ExecutionPhase.UP, step.up, payload)
@@ -94,6 +96,25 @@ class DefaultSagaExecutor(
             }
             retryState = RetryState.None
             index++
+            processedSteps++
+            if (processedSteps >= maxStepsPerExecution && index < execution.definition.steps.size) {
+                val updated = execution.copy(
+                    currentStepIndex = index,
+                    state = ExecutionState.InProgress(
+                        phase = ExecutionPhase.UP,
+                        retry = RetryState.None,
+                    ),
+                )
+                enqueuer.enqueue(updated, 0)
+                Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                    logger.info(
+                        "execution checkpoint scheduled",
+                        kv("nextStepIndex", index),
+                        kv("phase", ExecutionPhase.UP.name),
+                    )
+                }
+                return ExecutionOutcome.Reenqueued
+            }
         }
 
         execution.definition.onSuccessCallback?.let { callback ->
@@ -120,6 +141,7 @@ class DefaultSagaExecutor(
     ): ExecutionOutcome {
         var index = execution.currentStepIndex
         var retryState: RetryState = state.retry
+        var processedSteps = 0
         while (index >= 0) {
             val step = execution.definition.steps[index]
             val result = executeHttpCall(execution, step.name, ExecutionPhase.DOWN, step.down, payload)
@@ -145,6 +167,25 @@ class DefaultSagaExecutor(
             }
             retryState = RetryState.None
             index--
+            processedSteps++
+            if (processedSteps >= maxStepsPerExecution && index >= 0) {
+                val updated = execution.copy(
+                    currentStepIndex = index,
+                    state = ExecutionState.InProgress(
+                        phase = ExecutionPhase.DOWN,
+                        retry = RetryState.None,
+                    ),
+                )
+                enqueuer.enqueue(updated, 0)
+                Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                    logger.info(
+                        "execution checkpoint scheduled",
+                        kv("nextStepIndex", index),
+                        kv("phase", ExecutionPhase.DOWN.name),
+                    )
+                }
+                return ExecutionOutcome.Reenqueued
+            }
         }
 
         execution.definition.onFailureCallback?.let { callback ->

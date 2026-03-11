@@ -1,9 +1,9 @@
-package io.trama.saga
+package run.trama.saga
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
-import io.trama.config.HttpConfig
+import run.trama.config.HttpConfig
 
 interface HttpClientProvider {
     val client: HttpClient

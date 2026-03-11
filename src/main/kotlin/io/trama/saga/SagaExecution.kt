@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 import java.time.Instant
 import java.util.UUID

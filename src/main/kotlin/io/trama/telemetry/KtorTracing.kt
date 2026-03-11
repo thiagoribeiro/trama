@@ -1,4 +1,4 @@
-package io.trama.telemetry
+package run.trama.telemetry
 
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline

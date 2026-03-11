@@ -1,6 +1,6 @@
-package io.trama.saga
+package run.trama.saga
 
-import io.trama.saga.store.SagaRepository
+import run.trama.saga.store.SagaRepository
 
 interface SagaExecutionStore {
     fun upsertStart(execution: SagaExecution)

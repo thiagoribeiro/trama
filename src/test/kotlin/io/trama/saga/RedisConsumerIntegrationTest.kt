@@ -1,12 +1,12 @@
-package io.trama.saga
+package run.trama.saga
 
-import io.trama.config.RedisConfig
-import io.trama.config.RedisConsumerConfig
-import io.trama.config.RedisPoolConfig
-import io.trama.config.RedisQueueConfig
-import io.trama.saga.redis.RedisClientProvider
-import io.trama.saga.redis.SagaExecutionRedisConsumer
-import io.trama.telemetry.Metrics
+import run.trama.config.RedisConfig
+import run.trama.config.RedisConsumerConfig
+import run.trama.config.RedisPoolConfig
+import run.trama.config.RedisQueueConfig
+import run.trama.saga.redis.RedisClientProvider
+import run.trama.saga.redis.SagaExecutionRedisConsumer
+import run.trama.telemetry.Metrics
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking

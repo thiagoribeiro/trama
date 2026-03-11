@@ -12,7 +12,7 @@ plugins {
     id("nu.studer.jooq") version "9.0"
 }
 
-group = "io.trama"
+group = "run.trama"
 version = "0.1.0"
 
 repositories {
@@ -104,7 +104,7 @@ jooq {
 }
 
 application {
-    mainClass.set("io.trama.app.ApplicationKt")
+    mainClass.set("run.trama.app.ApplicationKt")
 }
 
 kotlin {

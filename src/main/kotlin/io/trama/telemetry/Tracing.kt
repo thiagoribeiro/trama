@@ -1,4 +1,4 @@
-package io.trama.telemetry
+package run.trama.telemetry
 
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.OpenTelemetry
@@ -17,7 +17,7 @@ import io.opentelemetry.sdk.resources.Resource
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import io.opentelemetry.semconv.resource.attributes.ResourceAttributes
-import io.trama.config.TelemetryConfig
+import run.trama.config.TelemetryConfig
 import org.slf4j.MDC
 
 object Tracing {

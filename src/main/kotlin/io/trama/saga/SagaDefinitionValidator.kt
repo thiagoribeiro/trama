@@ -1,4 +1,4 @@
-package io.trama.saga
+package run.trama.saga
 
 object SagaDefinitionValidator {
     fun validate(definition: SagaDefinition): List<String> {

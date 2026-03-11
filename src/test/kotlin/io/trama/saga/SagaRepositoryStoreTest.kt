@@ -1,9 +1,9 @@
-package io.trama.saga
+package run.trama.saga
 
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import io.trama.saga.store.SagaRepository
+import run.trama.saga.store.SagaRepository
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test

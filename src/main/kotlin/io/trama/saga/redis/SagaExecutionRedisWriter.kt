@@ -1,11 +1,11 @@
 @file:OptIn(io.lettuce.core.ExperimentalLettuceCoroutinesApi::class)
 
-package io.trama.saga.redis
+package run.trama.saga.redis
 
 import com.ensarsarajcic.kotlinx.serialization.msgpack.MsgPack
-import io.trama.saga.SagaExecution
-import io.trama.saga.SagaExecutionQueue
-import io.trama.telemetry.Metrics
+import run.trama.saga.SagaExecution
+import run.trama.saga.SagaExecutionQueue
+import run.trama.telemetry.Metrics
 import kotlinx.serialization.encodeToByteArray
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource

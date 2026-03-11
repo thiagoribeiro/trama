@@ -1,4 +1,4 @@
-# Trama.io Saga Orchestrator
+# Trama Saga Orchestrator
 
 Trama is a lightweight saga orchestration service for coordinating distributed workflows using the **saga pattern**. It exposes a simple HTTP API to register saga definitions and execute them, while handling retries, compensations, persistence, and metrics.
 
@@ -50,7 +50,7 @@ Configuration defaults live in:
 
 - `src/main/resources/application.yaml`
 
-Environment overrides are supported via `RUNTIME_ENABLED`, `METRICS_ENABLED`, and `TELEMETRY_ENABLED` (see `io.trama.config.ConfigLoader`).
+Environment overrides are supported via `RUNTIME_ENABLED`, `METRICS_ENABLED`, and `TELEMETRY_ENABLED` (see `run.trama.config.ConfigLoader`).
 
 Key sections:
 
