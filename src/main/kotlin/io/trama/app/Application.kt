@@ -401,22 +401,7 @@ fun Application.module() {
             bootstrap.enqueueRetry(execution)
             call.respond(SagaCreateResponse(execution.id.toString()))
         }
-        post("/sagas") {
-            val definition = call.receive<SagaDefinition>()
-            val errors = SagaDefinitionValidator.validate(definition)
-            if (errors.isNotEmpty()) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
-                return@post
-            }
-            val execution = SagaExecution(
-                definition = definition,
-                id = UUID.randomUUID(),
-                startedAt = Instant.now(),
-                currentStepIndex = 0,
-                state = ExecutionState.InProgress(ExecutionPhase.UP),
-            )
-            call.respond(SagaCreateResponse(execution.id.toString()))
-        }
+
         if (appConfig.metrics.enabled) {
             get("/metrics") {
                 call.respondText(prometheusRegistry.scrape(), ContentType.parse("text/plain; version=0.0.4"))

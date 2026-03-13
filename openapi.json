@@ -1,0 +1,1024 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Trama Saga Orchestrator API",
+    "version": "0.1.0",
+    "description": "HTTP API for registering saga definitions, running sagas, checking status, and retrying failed executions."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Liveness probe",
+        "operationId": "getHealthz",
+        "responses": {
+          "200": {
+            "description": "Service is alive",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness probe",
+        "operationId": "getReadyz",
+        "responses": {
+          "200": {
+            "description": "Service is ready",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "ready"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sagas/{id}": {
+      "get": {
+        "summary": "Get saga execution status",
+        "operationId": "getSagaStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaStatusResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Saga execution not found"
+          },
+          "400": {
+            "description": "Invalid saga id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/sagas/{id}/retry": {
+      "post": {
+        "summary": "Retry a failed saga execution",
+        "operationId": "retrySaga",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Saga requeued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaRetryResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Saga execution not found"
+          },
+          "400": {
+            "description": "Invalid saga id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saga definition not stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/sagas/run": {
+      "post": {
+        "summary": "Run an inline saga definition",
+        "operationId": "runSagaInline",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSagaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saga execution created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/sagas/definitions": {
+      "post": {
+        "summary": "Create a stored saga definition",
+        "operationId": "createSagaDefinition",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SagaDefinitionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaDefinitionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Definition already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List stored saga definitions",
+        "operationId": "listSagaDefinitions",
+        "responses": {
+          "200": {
+            "description": "Stored definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SagaDefinitionResponse"
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/sagas/definitions/{id}": {
+      "get": {
+        "summary": "Get stored saga definition by id",
+        "operationId": "getSagaDefinitionById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaDefinitionResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Definition not found"
+          },
+          "400": {
+            "description": "Invalid definition id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Create stored saga definition with explicit id",
+        "description": "This endpoint inserts only; it returns 409 if the id or name/version already exists.",
+        "operationId": "putSagaDefinitionById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SagaDefinitionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaDefinitionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or invalid id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Definition already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete stored saga definition",
+        "operationId": "deleteSagaDefinitionById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted or not found"
+          },
+          "400": {
+            "description": "Invalid definition id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/sagas/definitions/{name}/{version}/run": {
+      "post": {
+        "summary": "Run a stored saga definition by name and version",
+        "operationId": "runStoredSaga",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunStoredSagaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saga execution created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaCreateResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Definition not found"
+          },
+          "400": {
+            "description": "Invalid parameters or invalid stored definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus scrape output",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InternalServerError": {
+        "description": "Unhandled error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ValidationErrorResponse": {
+        "type": "object",
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SagaCreateResponse": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SagaRetryResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "example": "REQUEUED"
+          }
+        }
+      },
+      "SagaStatusResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "status",
+          "startedAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "Execution status persisted by repository, e.g. IN_PROGRESS, SUCCEEDED, FAILED, CORRUPTED."
+          },
+          "failureDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "callbackWarning": {
+            "type": "string",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RunSagaRequest": {
+        "type": "object",
+        "required": [
+          "definition"
+        ],
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/SagaDefinition"
+          },
+          "payload": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AnyJson"
+            }
+          }
+        }
+      },
+      "RunStoredSagaRequest": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AnyJson"
+            }
+          }
+        }
+      },
+      "SagaDefinitionCreateRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "failureHandling",
+          "steps"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "failureHandling": {
+            "$ref": "#/components/schemas/FailureHandling"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SagaStep"
+            }
+          },
+          "onSuccessCallback": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          },
+          "onFailureCallback": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          }
+        }
+      },
+      "SagaDefinitionResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "definition",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SagaDefinition"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SagaDefinition": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "failureHandling",
+          "steps"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "failureHandling": {
+            "$ref": "#/components/schemas/FailureHandling"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SagaStep"
+            }
+          },
+          "onSuccessCallback": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          },
+          "onFailureCallback": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          }
+        }
+      },
+      "SagaStep": {
+        "type": "object",
+        "required": [
+          "name",
+          "up",
+          "down"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "up": {
+            "$ref": "#/components/schemas/HttpCall"
+          },
+          "down": {
+            "$ref": "#/components/schemas/HttpCall"
+          }
+        }
+      },
+      "HttpCallNullable": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HttpCall"
+          }
+        ],
+        "nullable": true
+      },
+      "HttpCall": {
+        "type": "object",
+        "required": [
+          "url",
+          "verb"
+        ],
+        "properties": {
+          "url": {
+            "$ref": "#/components/schemas/TemplateString"
+          },
+          "verb": {
+            "$ref": "#/components/schemas/HttpVerb"
+          },
+          "headers": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TemplateString"
+            }
+          },
+          "body": {
+            "$ref": "#/components/schemas/TemplateStringNullable"
+          },
+          "successStatusCodes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "description": "If omitted, the server applies verb-based defaults."
+          }
+        }
+      },
+      "TemplateStringNullable": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TemplateString"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "TemplateString": {
+        "description": "Template string accepted as either raw JSON string or wrapped object.",
+        "oneOf": [
+          {
+            "type": "string",
+            "example": "http://service/orders/{{payload.orderId}}"
+          },
+          {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "HttpVerb": {
+        "type": "string",
+        "enum": [
+          "GET",
+          "POST",
+          "PUT",
+          "PATCH",
+          "DELETE",
+          "HEAD",
+          "OPTIONS"
+        ]
+      },
+      "FailureHandling": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FailureHandlingRetry"
+          },
+          {
+            "$ref": "#/components/schemas/FailureHandlingBackoff"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "retry": "#/components/schemas/FailureHandlingRetry",
+            "backoff": "#/components/schemas/FailureHandlingBackoff"
+          }
+        }
+      },
+      "FailureHandlingRetry": {
+        "type": "object",
+        "required": [
+          "type",
+          "maxAttempts",
+          "delayMillis"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "retry"
+            ]
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "delayMillis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "FailureHandlingBackoff": {
+        "type": "object",
+        "required": [
+          "type",
+          "maxAttempts",
+          "initialDelayMillis",
+          "maxDelayMillis"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "backoff"
+            ]
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "initialDelayMillis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "maxDelayMillis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "multiplier": {
+            "type": "number",
+            "format": "double",
+            "default": 2.0
+          },
+          "jitterRatio": {
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnyJson": {
+        "description": "Arbitrary JSON value",
+        "nullable": true,
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AnyJson"
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnyJson"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

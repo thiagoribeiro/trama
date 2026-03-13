@@ -1,164 +1,228 @@
 # Trama Saga Orchestrator
 
-Trama is a lightweight saga orchestration service for coordinating distributed workflows using the **saga pattern**. It exposes a simple HTTP API to register saga definitions and execute them, while handling retries, compensations, persistence, and metrics.
+Lightweight saga orchestration for distributed workflows, built with Kotlin + Ktor.
 
-## Highlights
+## Why Trama
+Trama helps you coordinate multi-step operations across services with retries, compensation, and persistent execution tracking.
 
-- HTTP API to create, list, and run saga definitions.
-- Redis-backed execution queue with in-flight tracking and retries.
-- Postgres persistence for saga state + step results (used for template rendering and diagnostics).
-- Compensation (down) steps on failure.
-- Optional rate-limiting per saga name.
-- OpenTelemetry tracing + Prometheus metrics.
-- Partition maintenance for execution tables.
+## Features
+- HTTP API to register, version, and run saga definitions.
+- Inline or stored-definition execution modes.
+- Retry policies (`retry` and `backoff`) with compensation flows.
+- Redis-backed runtime queue and optional Redis-backed execution store.
+- Postgres persistence for definitions, execution status, and step results.
+- OpenTelemetry tracing and Prometheus metrics.
 
-## Architecture (High-Level)
+## OpenAPI
+- Full API contract: [`openapi.json`](./openapi.json)
 
-- **API (Ktor)** accepts saga definitions and run requests.
-- **Redis** is used as the execution queue.
-- **Workers** pull from Redis, execute HTTP steps, and persist results.
-- **Postgres** stores saga definitions, executions, and step results.
-- **Template renderer** builds HTTP calls using payload and prior step results.
+You can import `openapi.json` into Swagger UI, Postman, Insomnia, or codegen tooling.
 
-## Requirements
+## Architecture
+```mermaid
+flowchart LR
+    C[Client / CI / CLI] -->|HTTP JSON| A[Ktor API]
 
+    subgraph Runtime[Runtime Workers]
+      P[SagaExecutionProcessor]
+      E[DefaultSagaExecutor]
+      RL[Rate Limiter]
+    end
+
+    A -->|enqueue execution| Q[Queue Backend]
+    Q -->|dequeue lease| P
+    P --> E
+    E -->|HTTP calls| S1[Service A]
+    E -->|HTTP calls| S2[Service B]
+    E -->|HTTP calls| S3[Service N]
+
+    E --> ST[Execution Store]
+    A --> ST
+
+    ST --> PG[(Postgres)]
+    Q --> R[(Redis)]
+    RL --> R
+
+    A --> M["/metrics"]
+    P --> T[OpenTelemetry]
+    E --> T
+```
+
+## Getting Started
+
+### Prerequisites
 - JDK 21
-- Redis
 - Postgres
+- Redis
 
-## Quick Start (Docker)
-
+### Run with Docker
 ```bash
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:8080`.
+API base URL: `http://localhost:8080`
 
-## Local Dev (no Docker)
-
-1. Start Postgres + Redis locally.
-2. Configure `src/main/resources/application.yaml` or environment variables.
-3. Run the app:
-
+### Run locally
 ```bash
 ./gradlew run
 ```
 
 ## Configuration
+Defaults are in `src/main/resources/application.yaml`.
 
-Configuration defaults live in:
+### Core parameters
+| Key | Type | Default | Description |
+|---|---|---:|---|
+| `runtime.enabled` | boolean | `true` | Enables worker runtime and queue processing. |
+| `runtime.workerCount` | int | `4` | Number of concurrent worker coroutines. |
+| `runtime.bufferSize` | int | `200` | Internal channel buffer for runtime processing. |
+| `runtime.emptyPollDelayMillis` | long | `50` | Delay between empty queue polls. |
+| `runtime.maxStepsPerExecution` | int | `25` | Checkpoint limit per worker cycle before re-enqueue. |
+| `runtime.store` | enum | `REDIS` | Execution store backend (`REDIS` or `POSTGRES`). |
+| `redis.url` | string | `redis://localhost:6379` | Redis connection URL. |
+| `redis.consumer.batchSize` | int | `50` | Max queue items fetched per poll. |
+| `redis.consumer.processingTimeoutMillis` | long | `60000` | In-flight timeout before requeue. |
+| `database.host` | string | `db` | Postgres host. |
+| `database.port` | int | `5432` | Postgres port. |
+| `database.database` | string | `saga` | Postgres database name. |
+| `database.user` | string | `saga` | Postgres user. |
+| `rateLimit.enabled` | boolean | `true` | Enables saga-level rate limiting. |
+| `rateLimit.maxFailures` | long | `5` | Failures within window before blocking. |
+| `rateLimit.windowMillis` | long | `60000` | Failure observation window. |
+| `rateLimit.blockMillis` | long | `60000` | Block time when threshold is exceeded. |
+| `metrics.enabled` | boolean | `true` | Enables `/metrics` endpoint and Micrometer collection. |
+| `telemetry.enabled` | boolean | `false` | Enables OpenTelemetry pipeline. |
 
-- `src/main/resources/application.yaml`
-
-Environment overrides are supported via `RUNTIME_ENABLED`, `METRICS_ENABLED`, and `TELEMETRY_ENABLED` (see `run.trama.config.ConfigLoader`).
-
-Key sections:
-
-- `redis`: connection + queue settings
-- `database`: Postgres connection and pool
-- `runtime`: worker settings
-  - `runtime.store`: choose `REDIS` (default) or `POSTGRES` for execution storage
-- `rateLimit`: saga rate limiting
-- `telemetry`: OpenTelemetry exporter settings
-- `metrics`: Prometheus metrics toggle
+### Environment overrides
+`RUNTIME_ENABLED`, `METRICS_ENABLED`, `TELEMETRY_ENABLED`, `REDIS_URL`, `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_DATABASE`, `DATABASE_USER`, `DATABASE_PASSWORD`
 
 ## API Overview
 
-### Health
-- `GET /healthz`
-- `GET /readyz`
+### Endpoints
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/healthz` | Liveness check. |
+| `GET` | `/readyz` | Readiness check. |
+| `POST` | `/sagas/definitions` | Store saga definition. |
+| `GET` | `/sagas/definitions` | List stored definitions. |
+| `GET` | `/sagas/definitions/{id}` | Get definition by UUID. |
+| `PUT` | `/sagas/definitions/{id}` | Insert definition with explicit UUID. |
+| `DELETE` | `/sagas/definitions/{id}` | Delete definition by UUID. |
+| `POST` | `/sagas/definitions/{name}/{version}/run` | Run stored definition. |
+| `POST` | `/sagas/run` | Run inline definition. |
+| `GET` | `/sagas/{id}` | Get execution status. |
+| `POST` | `/sagas/{id}/retry` | Retry failed execution. |
+| `GET` | `/metrics` | Prometheus metrics (if enabled). |
 
-### Saga Definitions
-- `POST /sagas/definitions` – create a new immutable definition
-- `GET /sagas/definitions` – list definitions
-- `GET /sagas/definitions/{id}` – fetch definition
-- `PUT /sagas/definitions/{id}` – create definition with explicit id (fails if exists)
-- `DELETE /sagas/definitions/{id}` – delete definition
+### Definition schema quick reference
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Definition name. |
+| `version` | string | Yes | Definition version. |
+| `failureHandling` | object | Yes | Retry/backoff strategy. |
+| `steps` | array | Yes | Ordered saga steps with `up` and `down` calls. |
+| `onSuccessCallback` | `HttpCall` | No | Callback after successful completion. |
+| `onFailureCallback` | `HttpCall` | No | Callback after compensation/failure flow. |
 
-### Run Sagas
-- `POST /sagas/definitions/{name}/{version}/run` – run a stored definition
-- `POST /sagas/run` – run a definition inline
+### `failureHandling` variants
+| Type | Fields |
+|---|---|
+| `retry` | `maxAttempts`, `delayMillis` |
+| `backoff` | `maxAttempts`, `initialDelayMillis`, `maxDelayMillis`, `multiplier`, `jitterRatio` |
 
-### Status & Retry
-- `GET /sagas/{id}` – fetch execution status
-- `POST /sagas/{id}/retry` – retry a failed execution
+## Usage Examples
 
-### Example: Create + Run
-
+### 1) Create a definition
 ```bash
 curl -X POST http://localhost:8080/sagas/definitions \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "order-saga",
     "version": "v1",
-    "failureHandling": {"type": "retry", "maxAttempts": 1, "delayMillis": 200},
+    "failureHandling": {
+      "type": "retry",
+      "maxAttempts": 3,
+      "delayMillis": 500
+    },
     "steps": [
-      {"name": "reserve", "up": {"url": {"value": "http://service/reserve"}, "verb": "POST"},
-                           "down": {"url": {"value": "http://service/release"}, "verb": "POST"}}
+      {
+        "name": "reserve",
+        "up": {
+          "url": { "value": "http://inventory/reserve" },
+          "verb": "POST",
+          "body": { "value": "{\"orderId\":\"{{payload.orderId}}\"}" }
+        },
+        "down": {
+          "url": { "value": "http://inventory/release" },
+          "verb": "POST",
+          "body": { "value": "{\"orderId\":\"{{payload.orderId}}\"}" }
+        }
+      }
     ]
   }'
 ```
 
+### 2) Run stored definition
 ```bash
-curl -X POST http://localhost:8080/sagas/definitions/{name}/{version}/run \
+curl -X POST http://localhost:8080/sagas/definitions/order-saga/v1/run \
   -H 'Content-Type: application/json' \
-  -d '{"payload": {"orderId": "123"}}'
+  -d '{
+    "payload": {
+      "orderId": "ord-123",
+      "amount": 99.5
+    }
+  }'
 ```
 
-## Demo Scripts
-
-A small demo harness is in `scripts/saga_demo/`:
-
-- `flask_server.py`: local HTTP service used by saga steps
-- `run_saga.py`: creates a definition, runs it, and validates final status
-
-See `scripts/saga_demo/README.md` for details.
-
-## Template Rendering
-
-Saga steps use **template strings** to compose URLs, headers, and bodies at runtime. Templates can reference:
-
-- The saga payload: `{{payload.orderId}}`
-- Prior step results: `{{step.0.up.body.someField}}`
-- Convenience lists: `{{steps}}` for iterating in templates (see `TemplateContextBuilder`)
-
-This allows you to chain calls where a later step depends on the response of an earlier one.
-
-Example (simplified):
-
-```json
-{
-  "name": "charge",
-  "up": {
-    "url": { "value": "http://service/charge?reservation={{step.0.up.body.id}}" },
-    "verb": "POST",
-    "body": { "value": "{\"amount\": \"{{payload.amount}}\"}" }
-  }
-}
+### 3) Check status
+```bash
+curl http://localhost:8080/sagas/<execution-id>
 ```
 
-Notes:
-- Step results are loaded from Postgres, so template chaining requires DB persistence to be enabled.
-- See `scripts/saga_demo/run_saga.py` for a working example of response-based composition.
+### 4) Retry failed execution
+```bash
+curl -X POST http://localhost:8080/sagas/<execution-id>/retry
+```
 
-## Testing
+## Development
 
+### Run tests
 ```bash
 ./gradlew test
 ```
 
-Integration tests that use Testcontainers are skipped if Docker is unavailable.
+### Project layout
+| Path | Purpose |
+|---|---|
+| `src/main/kotlin/io/trama/app` | Ktor API module. |
+| `src/main/kotlin/io/trama/runtime` | Runtime bootstrap and workers. |
+| `src/main/kotlin/io/trama/saga` | Saga models and execution engine. |
+| `src/main/kotlin/io/trama/saga/redis` | Redis queue/store/rate-limit components. |
+| `src/main/kotlin/io/trama/saga/store` | Postgres persistence. |
+| `src/main/resources/application.yaml` | Default runtime configuration. |
+| `openapi.json` | OpenAPI contract for clients/tooling. |
 
-## Project Layout
+## Observability
 
-- `src/main/kotlin/io/trama/app` – API / Ktor entry
-- `src/main/kotlin/io/trama/runtime` – runtime bootstrap + workers
-- `src/main/kotlin/io/trama/saga` – core saga model + execution
-- `src/main/kotlin/io/trama/saga/redis` – Redis queue + rate limit
-- `src/main/kotlin/io/trama/saga/store` – Postgres persistence
-- `src/main/kotlin/io/trama/config` – configuration
-- `src/main/kotlin/io/trama/telemetry` – tracing + metrics
+### Prometheus metrics
+Metrics are exposed at `GET /metrics` when `metrics.enabled=true`.
+
+| Metric | Type | Description |
+|---|---|---|
+| `saga_enqueue_total` | Counter | Number of saga executions pushed to the backend queue. |
+| `saga_dequeue_total` | Counter | Number of saga executions claimed from the backend queue. |
+| `saga_processed_total` | Counter | Number of executions processed by workers (successful or not). |
+| `saga_failed_total` | Counter | Number of executions that ended in non-success outcome in a worker cycle. |
+| `saga_retried_total` | Counter | Number of executions scheduled for retry. |
+| `saga_rate_limited_total` | Counter | Number of executions delayed by rate limiting. |
+| `saga_inmemory_queue_size` | Gauge | Current size of the in-memory write buffer used before queue persistence. |
+
+Notes:
+- The names above are Prometheus-normalized versions of Micrometer meters defined in code.
+- You will also see framework-level metrics (for example HTTP server metrics) from Micrometer/Ktor when enabled.
+
+### Tracing
+OpenTelemetry spans are emitted for request handling and saga processing when `telemetry.enabled=true`.
 
 ## License
-
-Add a LICENSE file (e.g., Apache-2.0 or MIT) before publishing.
+Licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE).
