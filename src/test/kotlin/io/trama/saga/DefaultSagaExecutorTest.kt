@@ -13,6 +13,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import run.trama.saga.store.SagaRepository
+import run.trama.telemetry.Metrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 
 class DefaultSagaExecutorTest {
     @Test
@@ -29,6 +31,7 @@ class DefaultSagaExecutorTest {
             retryPolicy = DefaultRetryPolicy(),
             enqueuer = enqueuer,
             httpClient = http,
+            metrics = Metrics(SimpleMeterRegistry()),
         )
         val exec = SagaExecution(
             definition = SagaDefinition(
@@ -71,6 +74,7 @@ class DefaultSagaExecutorTest {
             retryPolicy = DefaultRetryPolicy(),
             enqueuer = enqueuer,
             httpClient = http,
+            metrics = Metrics(SimpleMeterRegistry()),
         )
         val exec = SagaExecution(
             definition = SagaDefinition(
@@ -112,6 +116,7 @@ class DefaultSagaExecutorTest {
             retryPolicy = DefaultRetryPolicy(),
             enqueuer = enqueuer,
             httpClient = http,
+            metrics = Metrics(SimpleMeterRegistry()),
             maxStepsPerExecution = 5,
         )
         val exec = SagaExecution(

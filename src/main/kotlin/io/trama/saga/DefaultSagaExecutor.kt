@@ -7,6 +7,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.Span
+import run.trama.telemetry.Metrics
 import run.trama.telemetry.Tracing
 import org.slf4j.LoggerFactory
 import net.logstash.logback.argument.StructuredArguments.kv
@@ -17,6 +18,7 @@ class DefaultSagaExecutor(
     private val retryPolicy: RetryPolicy,
     private val enqueuer: SagaEnqueuer,
     private val httpClient: HttpClientProvider,
+    private val metrics: Metrics,
     private val maxStepsPerExecution: Int = 25,
 ) : SagaExecutor {
     private val logger = LoggerFactory.getLogger(DefaultSagaExecutor::class.java)
@@ -131,6 +133,12 @@ class DefaultSagaExecutor(
             }
         }
         store.updateFinal(execution.id, "SUCCEEDED")
+        metrics.recordSagaDuration(
+            sagaName = execution.definition.name,
+            sagaVersion = execution.definition.version,
+            finalStatus = "SUCCEEDED",
+            startedAt = execution.startedAt,
+        )
         return ExecutionOutcome.Succeeded
     }
 
@@ -202,6 +210,12 @@ class DefaultSagaExecutor(
             }
         }
         store.updateFinal(execution.id, "FAILED", "compensation completed")
+        metrics.recordSagaDuration(
+            sagaName = execution.definition.name,
+            sagaVersion = execution.definition.version,
+            finalStatus = "FAILED",
+            startedAt = execution.startedAt,
+        )
         return ExecutionOutcome.FailedFinal
     }
 
@@ -271,6 +285,12 @@ class DefaultSagaExecutor(
                 }
                 store.updateFailure(execution.id, failureDescription, failedIndex, phase)
                 store.updateFinal(execution.id, "CORRUPTED", failureDescription)
+                metrics.recordSagaDuration(
+                    sagaName = execution.definition.name,
+                    sagaVersion = execution.definition.version,
+                    finalStatus = "CORRUPTED",
+                    startedAt = execution.startedAt,
+                )
                 ExecutionOutcome.FailedFinal
             }
         }
@@ -307,6 +327,7 @@ class DefaultSagaExecutor(
                 )
             }
             try {
+                val stepStartedAtNanos = System.nanoTime()
                 val response = httpClient.client.request(url) {
                     method = call.verb.toHttpMethod()
                     Tracing.injectHeaders { k, v -> header(k, v) }
@@ -321,6 +342,14 @@ class DefaultSagaExecutor(
                     statusCode = response.status.value,
                     body = body,
                 )
+                if (result.success) {
+                    metrics.recordStepSuccessDuration(
+                        sagaName = execution.definition.name,
+                        sagaVersion = execution.definition.version,
+                        stepName = stepName,
+                        durationNanos = System.nanoTime() - stepStartedAtNanos,
+                    )
+                }
                 Tracing.withTraceMdc(span, execution.id.toString()) {
                     logger.info(
                         "step completed",

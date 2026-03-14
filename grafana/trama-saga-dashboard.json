@@ -1,0 +1,785 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version, final_status) (rate(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\", final_status=~\"$final_status\"}[$__rate_interval]))",
+          "legendFormat": "{{saga_name}}/{{saga_version}} {{final_status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Terminal Throughput by Definition",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 95
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum by (saga_name, saga_version) (rate(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\", final_status=\"SUCCEEDED\"}[$__rate_interval])) / clamp_min(sum by (saga_name, saga_version) (rate(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])), 1e-9)) * 100",
+          "legendFormat": "{{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Success Ratio by Definition",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(sum by (saga_name, saga_version) (rate(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\", final_status=~\"FAILED|CORRUPTED\"}[$__rate_interval])) / clamp_min(sum by (saga_name, saga_version) (rate(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])), 1e-9)) * 100",
+          "legendFormat": "{{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Failure + Corruption Ratio by Definition",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, saga_name, saga_version) (rate(saga_duration_seconds_bucket{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, saga_name, saga_version) (rate(saga_duration_seconds_bucket{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, saga_name, saga_version) (rate(saga_duration_seconds_bucket{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])))",
+          "legendFormat": "p99 {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Saga Duration p50/p95/p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version) (rate(saga_duration_seconds_sum{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])) / clamp_min(sum by (saga_name, saga_version) (rate(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "{{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Average Saga Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, saga_name, saga_version) (rate(saga_duration_seconds_bucket[$__rate_interval]))))",
+          "legendFormat": "{{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Slowest Definitions (Top 10 p95)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, saga_name, saga_version, step_name) (rate(saga_step_duration_success_seconds_bucket{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\", step_name=~\"$step_name\"}[$__rate_interval])))",
+          "legendFormat": "{{saga_name}}/{{saga_version}} {{step_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Step p95 Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "topk(15, sum by (saga_name, saga_version, step_name) (rate(saga_step_duration_success_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\", step_name=~\"$step_name\"}[$__rate_interval])))",
+          "legendFormat": "{{saga_name}}/{{saga_version}} {{step_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Hottest Steps by Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "saga_inmemory_queue_size",
+          "legendFormat": "queue",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "In-memory Queue Size",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version) (rate(saga_enqueue_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "enq {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version) (rate(saga_dequeue_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "deq {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Enqueue vs Dequeue Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version, outcome) (rate(saga_processed_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "processed {{saga_name}}/{{saga_version}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version, reason) (rate(saga_failed_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "failed {{saga_name}}/{{saga_version}} {{reason}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version) (rate(saga_retried_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "retried {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (saga_name, saga_version) (rate(saga_rate_limited_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "rate_limited {{saga_name}}/{{saga_version}}",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "Processed / Failed / Retried / Rate-Limited Rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 39
+      },
+      "id": 12,
+      "options": {
+        "displayLabels": [
+          "name",
+          "value",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (final_status) (increase(saga_duration_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__range]))",
+          "legendFormat": "{{final_status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Terminal Status Distribution",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 39
+      },
+      "id": 13,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "mode": "scheme"
+        },
+        "legend": {
+          "show": false
+        },
+        "tooltip": {
+          "show": true
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (le) (rate(saga_duration_seconds_bucket{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "legendFormat": "{{le}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "End-to-End Duration Heatmap",
+      "type": "heatmap"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "trama",
+    "saga",
+    "prometheus",
+    "observability"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(saga_duration_seconds_count, saga_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Saga Name",
+        "multi": true,
+        "name": "saga_name",
+        "options": [],
+        "query": "label_values(saga_duration_seconds_count, saga_name)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(saga_duration_seconds_count{saga_name=~\"$saga_name\"}, saga_version)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Saga Version",
+        "multi": true,
+        "name": "saga_version",
+        "options": [],
+        "query": "label_values(saga_duration_seconds_count{saga_name=~\"$saga_name\"}, saga_version)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(saga_duration_seconds_count, final_status)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Final Status",
+        "multi": true,
+        "name": "final_status",
+        "options": [],
+        "query": "label_values(saga_duration_seconds_count, final_status)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(saga_step_duration_success_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}, step_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Step Name",
+        "multi": true,
+        "name": "step_name",
+        "options": [],
+        "query": "label_values(saga_step_duration_success_seconds_count{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}, step_name)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Trama Saga Orchestrator - Observability",
+  "uid": "trama-saga-obsv",
+  "version": 1,
+  "weekStart": ""
+}

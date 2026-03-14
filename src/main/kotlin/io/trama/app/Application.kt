@@ -67,6 +67,15 @@ fun Application.module() {
     }
     val prometheusRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
     val bootstrap = RuntimeBootstrap(appConfig, prometheusRegistry)
+
+    // Install Micrometer before runtime startup so Ktor can configure meter filters
+    // before custom meters are registered by bootstrap components.
+    if (appConfig.metrics.enabled) {
+        install(MicrometerMetrics) {
+            registry = prometheusRegistry
+        }
+    }
+
     if (appConfig.runtime.enabled) {
         bootstrap.start()
     }
@@ -116,12 +125,6 @@ fun Application.module() {
                     contentType = ContentType.Text.Plain,
                 )
             }
-        }
-    }
-
-    if (appConfig.metrics.enabled) {
-        install(MicrometerMetrics) {
-            registry = prometheusRegistry
         }
     }
 

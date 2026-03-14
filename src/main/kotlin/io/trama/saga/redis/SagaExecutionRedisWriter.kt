@@ -35,7 +35,9 @@ class SagaExecutionRedisWriter(
                     commands.zadd(redisKeyBytes, item.receivedAtMillis.toDouble(), payload)
                 }
             }
-            metrics.enqueued.increment(batch.size.toDouble())
+            batch.forEach { item ->
+                metrics.recordEnqueued(item.execution)
+            }
             metrics.setQueueSize(queue.size().toLong())
         }
     }

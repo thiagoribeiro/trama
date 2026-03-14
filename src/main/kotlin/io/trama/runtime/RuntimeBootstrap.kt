@@ -79,6 +79,7 @@ class RuntimeBootstrap(
             retryPolicy = retryPolicy,
             enqueuer = enq,
             httpClient = httpClient,
+            metrics = metrics,
             maxStepsPerExecution = config.runtime.maxStepsPerExecution,
         )
         val processor = SagaExecutionProcessor(

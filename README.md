@@ -216,10 +216,24 @@ Metrics are exposed at `GET /metrics` when `metrics.enabled=true`.
 | `saga_retried_total` | Counter | Number of executions scheduled for retry. |
 | `saga_rate_limited_total` | Counter | Number of executions delayed by rate limiting. |
 | `saga_inmemory_queue_size` | Gauge | Current size of the in-memory write buffer used before queue persistence. |
+| `saga_duration_seconds` | Histogram | End-to-end saga duration recorded on terminal status (`SUCCEEDED`, `FAILED`, `CORRUPTED`). |
+| `saga_step_duration_success_seconds` | Histogram | Per-step duration recorded only when a step call succeeds. |
 
 Notes:
 - The names above are Prometheus-normalized versions of Micrometer meters defined in code.
 - You will also see framework-level metrics (for example HTTP server metrics) from Micrometer/Ktor when enabled.
+
+### Metric labels
+| Metric | Labels |
+|---|---|
+| `saga_enqueue_total` | `saga_name`, `saga_version`, `phase` |
+| `saga_dequeue_total` | `saga_name`, `saga_version`, `phase` |
+| `saga_processed_total` | `saga_name`, `saga_version`, `phase`, `outcome` |
+| `saga_failed_total` | `saga_name`, `saga_version`, `phase`, `reason` |
+| `saga_retried_total` | `saga_name`, `saga_version`, `phase` |
+| `saga_rate_limited_total` | `saga_name`, `saga_version`, `phase` |
+| `saga_duration_seconds` | `saga_name`, `saga_version`, `final_status` |
+| `saga_step_duration_success_seconds` | `saga_name`, `saga_version`, `step_name` |
 
 ### Tracing
 OpenTelemetry spans are emitted for request handling and saga processing when `telemetry.enabled=true`.

@@ -1,12 +1,15 @@
 package run.trama.config
 
 import com.sksamuel.hoplite.ConfigLoaderBuilder
+import com.sksamuel.hoplite.ExperimentalHoplite
 import com.sksamuel.hoplite.addResourceSource
 import com.sksamuel.hoplite.addEnvironmentSource
 
 object ConfigLoader {
+    @OptIn(ExperimentalHoplite::class)
     fun load(): AppConfig {
         val base = ConfigLoaderBuilder.default()
+            .withExplicitSealedTypes()
             .addResourceSource("/application.yaml", optional = true)
             .addEnvironmentSource()
             .build()

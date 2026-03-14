@@ -197,7 +197,7 @@ class RedisSagaExecutionStore(
     private fun readSteps(sagaId: UUID): List<RedisStepEntry> {
         val key = stepsKey(sagaId)
         return withCommandsBlocking { commands ->
-            val raw = commands.lrange(key.toByteArray(), 0, -1) ?: emptyList()
+            val raw = commands.lrange(key.toByteArray(), 0, -1)
             raw.mapNotNull { bytes ->
                 runCatching {
                     json.decodeFromString(RedisStepEntry.serializer(), bytes.toString(Charsets.UTF_8))

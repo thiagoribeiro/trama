@@ -71,12 +71,12 @@ class SagaExecutionRedisConsumer(
         if (items.isEmpty()) {
             return emptyList()
         }
-        metrics.dequeued.increment(items.size.toDouble())
-
-        return items.map { payload ->
+        val decoded = items.map { payload ->
             val execution = msgPack.decodeFromByteArray(SagaExecution.serializer(), payload)
             InFlightExecution(execution, payload)
         }
+        decoded.forEach { metrics.recordDequeued(it.execution) }
+        return decoded
     }
 
     suspend fun ack(inFlight: InFlightExecution) {

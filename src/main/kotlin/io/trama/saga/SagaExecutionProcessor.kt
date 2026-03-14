@@ -57,7 +57,7 @@ class SagaExecutionProcessor(
                         kv("sagaName", execution.definition.name),
                         kv("delayMillis", delayMillis),
                     )
-                    metrics.rateLimited.increment()
+                    metrics.recordRateLimited(execution)
                     enqueuer.enqueue(execution, delayMillis)
                     consumer.ack(item)
                     continue
@@ -84,13 +84,13 @@ class SagaExecutionProcessor(
                     ExecutionOutcome.Reenqueued,
                     -> consumer.ack(item)
                 }
-                metrics.processed.increment()
+                metrics.recordProcessed(execution, outcome.toMetricOutcome())
                 if (outcome != ExecutionOutcome.Succeeded) {
-                    metrics.failed.increment()
+                    metrics.recordFailed(execution, "non_success_outcome")
                     rateLimiter.recordFailure(execution.definition.name)
                 }
                 if (outcome == ExecutionOutcome.Reenqueued) {
-                    metrics.retried.increment()
+                    metrics.recordRetried(execution)
                 }
             } catch (ex: Exception) {
                 logger.warn(
@@ -100,7 +100,7 @@ class SagaExecutionProcessor(
                     ex
                 )
                 try {
-                    metrics.failed.increment()
+                    metrics.recordFailed(item.execution, "worker_exception")
                     rateLimiter.recordFailure(item.execution.definition.name)
                 } catch (_: Exception) {
                     // ignore
@@ -109,4 +109,11 @@ class SagaExecutionProcessor(
             }
         }
     }
+
+    private fun ExecutionOutcome.toMetricOutcome(): String =
+        when (this) {
+            ExecutionOutcome.Succeeded -> "SUCCEEDED"
+            ExecutionOutcome.FailedFinal -> "FAILED_FINAL"
+            ExecutionOutcome.Reenqueued -> "REENQUEUED"
+        }
 }
