@@ -1,5 +1,8 @@
 redis:
+  topology: "STANDALONE"
   url: "redis://localhost:6379"
+  cluster:
+    nodes: []
   pool:
     maxTotal: 16
     maxIdle: 16
@@ -7,12 +10,18 @@ redis:
     testOnBorrow: true
     testWhileIdle: true
   queue:
-    readyKey: "saga:executions"
-    inFlightKey: "saga:executions:in-flight"
+    keyPrefix: "saga:executions"
   consumer:
     batchSize: 50
     processingTimeoutMillis: 60000
     requeueIntervalMillis: 5000
+  sharding:
+    virtualShardCount: 1024
+    membershipKey: "saga:runtime:pods"
+    membershipTtlMillis: 10000
+    heartbeatIntervalMillis: 3000
+    refreshIntervalMillis: 2000
+    claimerCount: 4
 
 database:
   host: "db"

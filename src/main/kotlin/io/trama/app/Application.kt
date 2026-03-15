@@ -49,7 +49,7 @@ import run.trama.telemetry.installRequestTracing
 import org.slf4j.event.Level
 import java.time.Instant
 import io.ktor.server.request.receive
-import io.ktor.server.application.ApplicationStopped
+import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.netty.EngineMain
 import org.slf4j.LoggerFactory
 
@@ -82,7 +82,7 @@ fun Application.module() {
     val repository = bootstrap.repositoryOrNull()
     installRequestTracing()
 
-    monitor.subscribe(ApplicationStopped) {
+    monitor.subscribe(ApplicationStopping) {
         if (appConfig.runtime.enabled) {
             bootstrap.stop()
         }
@@ -133,7 +133,15 @@ fun Application.module() {
             call.respondText("ok")
         }
         get("/readyz") {
-            call.respondText("ready")
+            val readiness = bootstrap.readiness()
+            if (readiness.ok) {
+                call.respondText(readiness.message)
+            } else {
+                call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ValidationErrorResponse(listOf(readiness.message)),
+                )
+            }
         }
         get("/sagas/{id}") {
             val idParam = call.parameters["id"]

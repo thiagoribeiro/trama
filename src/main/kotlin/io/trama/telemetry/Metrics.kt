@@ -12,10 +12,29 @@ class Metrics(
     private val registry: MeterRegistry,
 ) {
     private val inMemoryQueueSize = AtomicLong(0)
+    private val redisActivePods = AtomicLong(0)
+    private val redisOwnedShards = AtomicLong(0)
+    private val redisMembershipRefreshAgeMillis = AtomicLong(0)
     val queueSizeGauge = registry.gauge("saga.inmemory_queue_size", inMemoryQueueSize)
+    val redisActivePodsGauge = registry.gauge("saga.redis.active_pods", redisActivePods)
+    val redisOwnedShardsGauge = registry.gauge("saga.redis.owned_shards", redisOwnedShards)
+    val redisMembershipRefreshAgeGauge =
+        registry.gauge("saga.redis.membership_refresh_age_ms", redisMembershipRefreshAgeMillis)
 
     fun setQueueSize(size: Long) {
         inMemoryQueueSize.set(size)
+    }
+
+    fun setRedisActivePods(size: Long) {
+        redisActivePods.set(size)
+    }
+
+    fun setRedisOwnedShards(size: Long) {
+        redisOwnedShards.set(size)
+    }
+
+    fun setRedisMembershipRefreshAgeMillis(ageMillis: Long) {
+        redisMembershipRefreshAgeMillis.set(ageMillis.coerceAtLeast(0))
     }
 
     fun recordEnqueued(execution: SagaExecution) {
@@ -46,6 +65,10 @@ class Metrics(
 
     fun recordRateLimited(execution: SagaExecution) {
         registry.counter("saga.rate_limited", *tags(execution)).increment()
+    }
+
+    fun recordRedisClaimScan() {
+        registry.counter("saga.redis.claim_scans").increment()
     }
 
     fun recordSagaDuration(

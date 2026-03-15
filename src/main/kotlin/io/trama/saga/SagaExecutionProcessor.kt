@@ -1,11 +1,11 @@
 package run.trama.saga
 
-import run.trama.saga.redis.SagaExecutionRedisConsumer
+import kotlinx.coroutines.channels.Channel
+import run.trama.saga.redis.ClaimedExecution
 import run.trama.saga.redis.SagaRateLimiter
+import run.trama.saga.redis.SagaExecutionConsumer
 import run.trama.telemetry.Metrics
 import run.trama.telemetry.Tracing
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import net.logstash.logback.argument.StructuredArguments.kv
 
@@ -20,7 +20,7 @@ sealed class ExecutionOutcome {
 }
 
 class SagaExecutionProcessor(
-    private val consumer: SagaExecutionRedisConsumer,
+    private val consumer: SagaExecutionConsumer,
     private val executor: SagaExecutor,
     private val enqueuer: SagaEnqueuer,
     private val rateLimiter: SagaRateLimiter,
@@ -28,21 +28,20 @@ class SagaExecutionProcessor(
     bufferSize: Int = 200,
     private val emptyPollDelayMillis: Long = 50,
 ) {
-    private val buffer = Channel<SagaExecutionRedisConsumer.InFlightExecution>(bufferSize)
+    private val buffer = Channel<ClaimedExecution>(bufferSize)
     private val logger = LoggerFactory.getLogger(SagaExecutionProcessor::class.java)
     private val tracer = Tracing.tracer("saga-processor")
 
     suspend fun runProducer() {
-        while (true) {
-            val items = consumer.pollReady()
-            if (items.isEmpty()) {
-                delay(emptyPollDelayMillis)
-                continue
-            }
-            for (item in items) {
-                buffer.send(item)
-            }
+        try {
+            consumer.runProducer(buffer, emptyPollDelayMillis)
+        } finally {
+            buffer.close()
         }
+    }
+
+    fun stopPolling() {
+        consumer.stopPolling()
     }
 
     suspend fun runWorker() {

@@ -12,10 +12,22 @@ data class AppConfig(
 )
 
 data class RedisConfig(
-    val url: String,
+    val topology: RedisTopology = RedisTopology.STANDALONE,
+    val url: String = "redis://localhost:6379",
+    val cluster: RedisClusterConfig = RedisClusterConfig(),
     val pool: RedisPoolConfig,
     val queue: RedisQueueConfig,
     val consumer: RedisConsumerConfig,
+    val sharding: RedisShardingConfig = RedisShardingConfig(),
+)
+
+enum class RedisTopology {
+    STANDALONE,
+    CLUSTER,
+}
+
+data class RedisClusterConfig(
+    val nodes: List<String> = emptyList(),
 )
 
 data class RedisPoolConfig(
@@ -27,14 +39,23 @@ data class RedisPoolConfig(
 )
 
 data class RedisQueueConfig(
-    val readyKey: String = "saga:executions",
-    val inFlightKey: String = "saga:executions:in-flight",
+    val keyPrefix: String = "saga:executions",
 )
 
 data class RedisConsumerConfig(
     val batchSize: Int = 50,
     val processingTimeoutMillis: Long = 60_000,
     val requeueIntervalMillis: Long = 5_000,
+)
+
+data class RedisShardingConfig(
+    val virtualShardCount: Int = 1024,
+    val podId: String = System.getenv("HOSTNAME") ?: "unknown-pod",
+    val membershipKey: String = "saga:runtime:pods",
+    val membershipTtlMillis: Long = 10_000,
+    val heartbeatIntervalMillis: Long = 3_000,
+    val refreshIntervalMillis: Long = 2_000,
+    val claimerCount: Int? = null,
 )
 
 data class DatabaseConfig(

@@ -24,9 +24,9 @@ import org.slf4j.LoggerFactory
 class RedisSagaExecutionStore(
     private val redis: RedisCommandsProvider,
     private val repository: SagaRepository,
+    private val keyspace: RedisShardKeyspace,
     private val ttlSeconds: Long = 600,
 ) : SagaExecutionStore {
-    private val keyPrefix = "saga_executions"
     private val logger = LoggerFactory.getLogger(RedisSagaExecutionStore::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -240,8 +240,8 @@ class RedisSagaExecutionStore(
         }
     }
 
-    private fun metaKey(executionId: UUID): String = "${keyPrefix}:${executionId}"
-    private fun stepsKey(executionId: UUID): String = "${keyPrefix}:${executionId}:steps"
+    private fun metaKey(executionId: UUID): String = keyspace.executionMetaKey(executionId)
+    private fun stepsKey(executionId: UUID): String = keyspace.executionStepsKey(executionId)
 
     private fun toJsonElement(raw: String?): JsonElement? {
         if (raw == null) return null
@@ -253,7 +253,7 @@ class RedisSagaExecutionStore(
     }
 
     private fun <T> withCommandsBlocking(
-        block: suspend (io.lettuce.core.api.coroutines.RedisCoroutinesCommands<ByteArray, ByteArray>) -> T
+        block: suspend (RedisBinaryCommands) -> T
     ): T = runBlocking { redis.withCommands(block) }
 }
 

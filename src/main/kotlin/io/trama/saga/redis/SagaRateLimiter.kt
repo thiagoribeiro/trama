@@ -1,7 +1,7 @@
 package run.trama.saga.redis
 
-import run.trama.config.RateLimitConfig
 import java.nio.charset.StandardCharsets
+import run.trama.config.RateLimitConfig
 
 interface SagaRateLimiter {
     suspend fun checkDelayMillis(sagaName: String): Long?
@@ -12,10 +12,11 @@ interface SagaRateLimiter {
 class RedisSagaRateLimiter(
     private val redis: RedisCommandsProvider,
     private val config: RateLimitConfig,
+    private val keyspace: RedisShardKeyspace,
 ) : SagaRateLimiter {
     override suspend fun checkDelayMillis(sagaName: String): Long? {
         if (!config.enabled) return null
-        val blockedKey = key("blocked", sagaName)
+        val blockedKey = keyspace.rateLimitBlockedKey(sagaName, config.keyPrefix)
         return redis.withCommands { commands ->
             val value = commands.get(blockedKey)
             if (value == null) return@withCommands null
@@ -27,8 +28,8 @@ class RedisSagaRateLimiter(
 
     override suspend fun recordFailure(sagaName: String) {
         if (!config.enabled) return
-        val counterKey = key("count", sagaName)
-        val blockedKey = key("blocked", sagaName)
+        val counterKey = keyspace.rateLimitCountKey(sagaName, config.keyPrefix)
+        val blockedKey = keyspace.rateLimitBlockedKey(sagaName, config.keyPrefix)
         redis.withCommands { commands ->
             val count = commands.incr(counterKey) ?: 0L
             if (count == 1L) {
@@ -39,10 +40,6 @@ class RedisSagaRateLimiter(
                 commands.psetex(blockedKey, config.blockMillis, unblockAt.toString().toByteArray())
             }
         }
-    }
-
-    private fun key(kind: String, sagaName: String): ByteArray {
-        return "${config.keyPrefix}:$kind:$sagaName".toByteArray(StandardCharsets.UTF_8)
     }
 }
 
