@@ -10,8 +10,10 @@ Trama helps you coordinate multi-step operations across services with retries, c
 - Inline or stored-definition execution modes.
 - Retry policies (`retry` and `backoff`) with compensation flows.
 - Redis-backed runtime queue and optional Redis-backed execution store.
+- Redis standalone and Redis Cluster support with virtual-shard distribution and rendezvous-based pod ownership.
 - Postgres persistence for definitions, execution status, and step results.
 - OpenTelemetry tracing and Prometheus metrics.
+- Automatic Postgres partition maintenance and retention cleanup.
 
 ## OpenAPI
 - Full API contract: [`openapi.json`](./openapi.json)
@@ -70,31 +72,101 @@ API base URL: `http://localhost:8080`
 ## Configuration
 Defaults are in `src/main/resources/application.yaml`.
 
-### Core parameters
+Configuration is loaded from `application.yaml`, then merged with environment variables and JVM system properties. The code also keeps explicit compatibility overrides for `RUNTIME_ENABLED`, `METRICS_ENABLED`, `TELEMETRY_ENABLED`, `REDIS_URL`, `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_DATABASE`, `DATABASE_USER`, and `DATABASE_PASSWORD`.
+
+### Redis
 | Key | Type | Default | Description |
 |---|---|---:|---|
-| `runtime.enabled` | boolean | `true` | Enables worker runtime and queue processing. |
-| `runtime.workerCount` | int | `4` | Number of concurrent worker coroutines. |
-| `runtime.bufferSize` | int | `200` | Internal channel buffer for runtime processing. |
-| `runtime.emptyPollDelayMillis` | long | `50` | Delay between empty queue polls. |
-| `runtime.maxStepsPerExecution` | int | `25` | Checkpoint limit per worker cycle before re-enqueue. |
-| `runtime.store` | enum | `REDIS` | Execution store backend (`REDIS` or `POSTGRES`). |
-| `redis.url` | string | `redis://localhost:6379` | Redis connection URL. |
-| `redis.consumer.batchSize` | int | `50` | Max queue items fetched per poll. |
-| `redis.consumer.processingTimeoutMillis` | long | `60000` | In-flight timeout before requeue. |
+| `redis.topology` | enum | `STANDALONE` | Redis backend mode: `STANDALONE` or `CLUSTER`. |
+| `redis.url` | string | `redis://localhost:6379` | Primary Redis URI. Also used as the fallback seed node in cluster mode when `redis.cluster.nodes` is empty. |
+| `redis.cluster.nodes` | list<string> | `[]` | Seed node list for Redis Cluster discovery. |
+| `redis.pool.maxTotal` | int | `16` | Max pooled standalone Redis connections. |
+| `redis.pool.maxIdle` | int | `16` | Max idle standalone Redis connections. |
+| `redis.pool.minIdle` | int | `0` | Min idle standalone Redis connections. |
+| `redis.pool.testOnBorrow` | boolean | `true` | Validates pooled standalone connections when borrowed. |
+| `redis.pool.testWhileIdle` | boolean | `true` | Validates pooled standalone connections while idle. |
+| `redis.queue.keyPrefix` | string | `saga:executions` | Prefix for ready and in-flight queue keys. |
+| `redis.consumer.batchSize` | int | `50` | Max executions claimed per polling cycle. |
+| `redis.consumer.processingTimeoutMillis` | long | `60000` | Lease timeout before in-flight work becomes eligible for requeue. |
+| `redis.consumer.requeueIntervalMillis` | long | `5000` | Interval for expired in-flight requeue scans. |
+| `redis.sharding.virtualShardCount` | int | `1024` | Number of virtual shards used to spread Redis queue and execution-store keys. |
+| `redis.sharding.podId` | string | `$HOSTNAME` or `unknown-pod` | Local runtime identity used for shard ownership. |
+| `redis.sharding.membershipKey` | string | `saga:runtime:pods` | ZSET key that tracks live runtime pods. |
+| `redis.sharding.membershipTtlMillis` | long | `10000` | TTL window for pod liveness before ownership is considered stale. |
+| `redis.sharding.heartbeatIntervalMillis` | long | `3000` | How often each pod refreshes its membership entry. |
+| `redis.sharding.refreshIntervalMillis` | long | `2000` | How often each pod reloads membership and recalculates ownership. |
+| `redis.sharding.claimerCount` | int | `min(runtime.workerCount, 4)` | Number of shard-claiming coroutines. When unset, the runtime derives a safe default. |
+
+### Database
+| Key | Type | Default | Description |
+|---|---|---:|---|
 | `database.host` | string | `db` | Postgres host. |
 | `database.port` | int | `5432` | Postgres port. |
 | `database.database` | string | `saga` | Postgres database name. |
 | `database.user` | string | `saga` | Postgres user. |
-| `rateLimit.enabled` | boolean | `true` | Enables saga-level rate limiting. |
-| `rateLimit.maxFailures` | long | `5` | Failures within window before blocking. |
-| `rateLimit.windowMillis` | long | `60000` | Failure observation window. |
-| `rateLimit.blockMillis` | long | `60000` | Block time when threshold is exceeded. |
-| `metrics.enabled` | boolean | `true` | Enables `/metrics` endpoint and Micrometer collection. |
-| `telemetry.enabled` | boolean | `false` | Enables OpenTelemetry pipeline. |
+| `database.password` | string | `saga` | Postgres password. |
+| `database.pool.maxPoolSize` | int | `10` | Max JDBC pool size. |
+| `database.pool.minIdle` | int | `1` | Min idle JDBC connections. |
 
-### Environment overrides
-`RUNTIME_ENABLED`, `METRICS_ENABLED`, `TELEMETRY_ENABLED`, `REDIS_URL`, `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_DATABASE`, `DATABASE_USER`, `DATABASE_PASSWORD`
+### Runtime and HTTP
+| Key | Type | Default | Description |
+|---|---|---:|---|
+| `runtime.enabled` | boolean | `true` | Enables runtime workers, Redis consumption, retry scheduling, and background jobs. |
+| `runtime.workerCount` | int | `4` | Number of worker coroutines that execute saga steps. |
+| `runtime.bufferSize` | int | `200` | Internal processor channel buffer size. |
+| `runtime.emptyPollDelayMillis` | long | `50` | Delay between empty queue polls. |
+| `runtime.maxStepsPerExecution` | int | `25` | Checkpoint limit per worker cycle before an execution is re-enqueued. |
+| `runtime.store` | enum | `REDIS` | Execution state backend: `REDIS` or `POSTGRES`. |
+| `http.connectTimeoutMillis` | long | `10000` | Outbound HTTP client connect timeout for saga steps. |
+| `http.requestTimeoutMillis` | long | `30000` | Total outbound HTTP request timeout for saga steps. |
+| `http.socketTimeoutMillis` | long | `30000` | Outbound HTTP socket timeout for saga steps. |
+
+### Maintenance
+| Key | Type | Default | Description |
+|---|---|---:|---|
+| `maintenance.enabled` | boolean | `true` | Enables partition creation and retention cleanup jobs. |
+| `maintenance.partitionLookaheadMonths` | int | `13` | Number of future monthly partitions to pre-create. |
+| `maintenance.partitionStartOffsetMonths` | int | `1` | Starting month offset used when generating partitions. |
+| `maintenance.retentionDays` | int | `15` | Retention period for execution data cleanup. |
+| `maintenance.intervalMillis` | long | `3600000` | Interval between maintenance runs. |
+
+### Rate limiting
+| Key | Type | Default | Description |
+|---|---|---:|---|
+| `rateLimit.enabled` | boolean | `true` | Enables saga-level failure-rate throttling. |
+| `rateLimit.maxFailures` | long | `5` | Failure threshold within the observation window. |
+| `rateLimit.windowMillis` | long | `60000` | Failure observation window. |
+| `rateLimit.blockMillis` | long | `60000` | How long a saga is blocked after crossing the threshold. |
+| `rateLimit.keyPrefix` | string | `saga:rate` | Prefix for rate-limit keys. |
+
+### Observability
+| Key | Type | Default | Description |
+|---|---|---:|---|
+| `metrics.enabled` | boolean | `true` | Enables Micrometer collection and the `GET /metrics` endpoint. |
+| `telemetry.enabled` | boolean | `false` | Enables OpenTelemetry initialization. |
+| `telemetry.serviceName` | string | `trama` | OpenTelemetry service name. |
+| `telemetry.otlpEndpoint` | string | `http://localhost:4317` | OTLP collector endpoint. |
+
+### Redis Cluster example
+```yaml
+redis:
+  topology: "CLUSTER"
+  cluster:
+    nodes:
+      - "redis://redis-cluster-0:6379"
+      - "redis://redis-cluster-1:6379"
+      - "redis://redis-cluster-2:6379"
+  queue:
+    keyPrefix: "saga:executions"
+  sharding:
+    virtualShardCount: 1024
+    membershipKey: "saga:runtime:pods"
+    membershipTtlMillis: 10000
+    heartbeatIntervalMillis: 3000
+    refreshIntervalMillis: 2000
+```
+
+In cluster mode, Trama places each execution on a deterministic virtual shard, stores related queue keys with the same Redis hash tag, and lets every runtime pod compute shard ownership locally using rendezvous hashing over the shared membership ZSET. That keeps multi-key queue scripts slot-safe while allowing pods to rebalance without leader election.
 
 ## API Overview
 
@@ -215,7 +287,11 @@ Metrics are exposed at `GET /metrics` when `metrics.enabled=true`.
 | `saga_failed_total` | Counter | Number of executions that ended in non-success outcome in a worker cycle. |
 | `saga_retried_total` | Counter | Number of executions scheduled for retry. |
 | `saga_rate_limited_total` | Counter | Number of executions delayed by rate limiting. |
+| `saga_redis_claim_scans_total` | Counter | Number of Redis shard claim scan attempts performed by consumers. |
 | `saga_inmemory_queue_size` | Gauge | Current size of the in-memory write buffer used before queue persistence. |
+| `saga_redis_active_pods` | Gauge | Current number of live runtime pods seen in Redis membership. |
+| `saga_redis_owned_shards` | Gauge | Number of virtual shards currently owned by this pod. |
+| `saga_redis_membership_refresh_age_ms` | Gauge | Age of the last successful membership refresh on this pod. |
 | `saga_duration_seconds` | Histogram | End-to-end saga duration recorded on terminal status (`SUCCEEDED`, `FAILED`, `CORRUPTED`). |
 | `saga_step_duration_success_seconds` | Histogram | Per-step duration recorded only when a step call succeeds. |
 
@@ -232,11 +308,17 @@ Notes:
 | `saga_failed_total` | `saga_name`, `saga_version`, `phase`, `reason` |
 | `saga_retried_total` | `saga_name`, `saga_version`, `phase` |
 | `saga_rate_limited_total` | `saga_name`, `saga_version`, `phase` |
+| `saga_redis_claim_scans_total` | none |
 | `saga_duration_seconds` | `saga_name`, `saga_version`, `final_status` |
 | `saga_step_duration_success_seconds` | `saga_name`, `saga_version`, `step_name` |
 
 ### Tracing
 OpenTelemetry spans are emitted for request handling and saga processing when `telemetry.enabled=true`.
+
+### Operational notes
+- `GET /healthz` is a simple liveness check.
+- `GET /readyz` validates Redis connectivity and, when the runtime is enabled, also verifies Redis membership freshness for shard ownership.
+- Additional observability references are available in [`GRAFANA_DASHBOARD_OBSERVABILITY.md`](./GRAFANA_DASHBOARD_OBSERVABILITY.md) and [`REDIS_CLUSTER_SHARDING.md`](./REDIS_CLUSTER_SHARDING.md).
 
 ## License
 Licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE).
