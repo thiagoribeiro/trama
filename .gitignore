@@ -1,6 +1,10 @@
 .gradle/
+.gradle-old/
+.gradle-home-old/
+.gradle-home/
 build/
 out/
+site/
 
 # IntelliJ / IDEA
 .idea/
