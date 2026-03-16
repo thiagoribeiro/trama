@@ -1,5 +1,6 @@
 package run.trama.saga
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import run.trama.config.DatabaseConfig
 import run.trama.config.DatabasePoolConfig
 import run.trama.saga.store.DatabaseClient
@@ -26,7 +27,8 @@ class PostgresRepositoryIntegrationTest {
                     user = postgres.username,
                     password = postgres.password,
                     pool = DatabasePoolConfig(),
-                )
+                ),
+                SimpleMeterRegistry(),
             )
             db.withConnection { connection ->
                 connection.createStatement().use { stmt ->

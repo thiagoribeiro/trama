@@ -59,12 +59,12 @@ class RuntimeBootstrap(
     private var maintenanceJob: Job? = null
 
     fun start() {
-        database = DatabaseClient(config.database)
+        val metricsRegistry = if (config.metrics.enabled) meterRegistry else SimpleMeterRegistry()
+        database = DatabaseClient(config.database, metricsRegistry)
         redis = RedisClientProvider(config.redis)
         httpClient = SagaHttpClient(config.http)
         val repo = SagaRepository(database)
         repository = repo
-        val metricsRegistry = if (config.metrics.enabled) meterRegistry else SimpleMeterRegistry()
         val runtimeMetrics = Metrics(metricsRegistry)
         metrics = runtimeMetrics
         val keyspace = RedisShardKeyspace(

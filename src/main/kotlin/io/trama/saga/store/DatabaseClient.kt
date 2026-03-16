@@ -2,11 +2,14 @@ package run.trama.saga.store
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory
+import io.micrometer.core.instrument.MeterRegistry
 import run.trama.config.DatabaseConfig
 import java.sql.Connection
 
 class DatabaseClient(
     private val config: DatabaseConfig,
+    meterRegistry: MeterRegistry,
 ) : AutoCloseable {
     private val dataSource: HikariDataSource
 
@@ -20,6 +23,7 @@ class DatabaseClient(
             minimumIdle = config.pool.minIdle
             isAutoCommit = true
             poolName = "saga-db-pool"
+            metricsTrackerFactory = MicrometerMetricsTrackerFactory(meterRegistry)
         }
         dataSource = HikariDataSource(dsConfig)
     }
