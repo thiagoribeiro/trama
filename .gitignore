@@ -1,7 +1,6 @@
 .gradle/
 .gradle-old/
 .gradle-home-old/
-.gradle-home/
 build/
 out/
 site/
