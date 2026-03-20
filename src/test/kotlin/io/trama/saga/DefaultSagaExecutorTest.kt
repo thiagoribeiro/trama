@@ -161,18 +161,18 @@ private class FakeEnqueuer : SagaEnqueuer {
 
 private class FakeStore : SagaExecutionStore {
     var finalStatus: String? = null
-    override fun upsertStart(execution: SagaExecution) {}
-    override fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
+    override suspend fun upsertStart(execution: SagaExecution) {}
+    override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
         finalStatus = status
     }
-    override fun updateFailure(
+    override suspend fun updateFailure(
         executionId: UUID,
         failureDescription: String,
         failedStepIndex: Int?,
         failedPhase: ExecutionPhase?
     ) {}
-    override fun updateCallbackWarning(executionId: UUID, warning: String) {}
-    override fun insertStepResult(
+    override suspend fun updateCallbackWarning(executionId: UUID, warning: String) {}
+    override suspend fun insertStepResult(
         sagaId: UUID,
         startedAt: Instant,
         stepIdx: Int,
@@ -182,5 +182,5 @@ private class FakeStore : SagaExecutionStore {
         success: Boolean,
         responseBody: String?,
     ) {}
-    override fun loadStepResults(sagaId: UUID): List<SagaRepository.StepResultForTemplate> = emptyList()
+    override suspend fun loadStepResults(sagaId: UUID): List<SagaRepository.StepResultForTemplate> = emptyList()
 }

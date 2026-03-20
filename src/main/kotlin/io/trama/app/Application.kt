@@ -280,7 +280,9 @@ fun Application.module() {
                 call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
                 return@get
             }
-            val list = repo.listDefinitions().map { rec ->
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 200) ?: 50
+            val offset = call.request.queryParameters["offset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+            val list = repo.listDefinitions(limit, offset).map { rec ->
                 val definition = json.decodeFromString(SagaDefinition.serializer(), rec.definitionJson)
                 SagaDefinitionResponse(
                     id = rec.id.toString(),

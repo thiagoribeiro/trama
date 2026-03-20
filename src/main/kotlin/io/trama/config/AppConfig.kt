@@ -65,11 +65,18 @@ data class DatabaseConfig(
     val user: String,
     val password: String,
     val pool: DatabasePoolConfig,
+    val circuitBreaker: DatabaseCircuitBreakerConfig = DatabaseCircuitBreakerConfig(),
+)
+
+data class DatabaseCircuitBreakerConfig(
+    val failureThreshold: Int = 5,
+    val cooldownMillis: Long = 30_000,
 )
 
 data class DatabasePoolConfig(
     val maxPoolSize: Int = 10,
     val minIdle: Int = 1,
+    val definitionCacheMaxSize: Int = 1000,
 )
 
 data class RuntimeConfig(

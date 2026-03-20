@@ -32,7 +32,7 @@ class PartitionMaintenance(
         }
     }
 
-    fun createPartitions() {
+    suspend fun createPartitions() {
         val startMonth = LocalDate.now(ZoneOffset.UTC)
             .withDayOfMonth(1)
             .minusMonths(config.partitionStartOffsetMonths.toLong())
@@ -65,7 +65,7 @@ class PartitionMaintenance(
         }
     }
 
-    fun dropOldPartitions() {
+    suspend fun dropOldPartitions() {
         val cutoff = LocalDate.now(ZoneOffset.UTC).minusDays(config.retentionDays.toLong())
         val oldestMonthToKeep = cutoff.withDayOfMonth(1)
 

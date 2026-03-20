@@ -390,7 +390,7 @@ class DefaultSagaExecutor(
             HttpVerb.OPTIONS -> HttpMethod.Options
         }
 
-    private fun buildTemplateContext(
+    private suspend fun buildTemplateContext(
         execution: SagaExecution,
         stepName: String,
         phase: ExecutionPhase,

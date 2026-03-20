@@ -3,16 +3,16 @@ package run.trama.saga
 import run.trama.saga.store.SagaRepository
 
 interface SagaExecutionStore {
-    fun upsertStart(execution: SagaExecution)
-    fun updateFinal(executionId: java.util.UUID, status: String, failureDescription: String? = null)
-    fun updateFailure(
+    suspend fun upsertStart(execution: SagaExecution)
+    suspend fun updateFinal(executionId: java.util.UUID, status: String, failureDescription: String? = null)
+    suspend fun updateFailure(
         executionId: java.util.UUID,
         failureDescription: String,
         failedStepIndex: Int?,
         failedPhase: ExecutionPhase?,
     )
-    fun updateCallbackWarning(executionId: java.util.UUID, warning: String)
-    fun insertStepResult(
+    suspend fun updateCallbackWarning(executionId: java.util.UUID, warning: String)
+    suspend fun insertStepResult(
         sagaId: java.util.UUID,
         startedAt: java.time.Instant,
         stepIdx: Int,
@@ -22,29 +22,29 @@ interface SagaExecutionStore {
         success: Boolean,
         responseBody: String?,
     )
-    fun loadStepResults(sagaId: java.util.UUID): List<SagaRepository.StepResultForTemplate>
+    suspend fun loadStepResults(sagaId: java.util.UUID): List<SagaRepository.StepResultForTemplate>
 }
 
 class SagaRepositoryStore(
     private val repository: SagaRepository,
 ) : SagaExecutionStore {
-    override fun upsertStart(execution: SagaExecution) =
+    override suspend fun upsertStart(execution: SagaExecution) =
         repository.upsertExecutionStart(execution)
 
-    override fun updateFinal(executionId: java.util.UUID, status: String, failureDescription: String?) =
+    override suspend fun updateFinal(executionId: java.util.UUID, status: String, failureDescription: String?) =
         repository.updateExecutionFinal(executionId, status, failureDescription)
 
-    override fun updateFailure(
+    override suspend fun updateFailure(
         executionId: java.util.UUID,
         failureDescription: String,
         failedStepIndex: Int?,
         failedPhase: ExecutionPhase?,
     ) = repository.updateFailureDescription(executionId, failureDescription, failedStepIndex, failedPhase)
 
-    override fun updateCallbackWarning(executionId: java.util.UUID, warning: String) =
+    override suspend fun updateCallbackWarning(executionId: java.util.UUID, warning: String) =
         repository.updateCallbackWarning(executionId, warning)
 
-    override fun insertStepResult(
+    override suspend fun insertStepResult(
         sagaId: java.util.UUID,
         startedAt: java.time.Instant,
         stepIdx: Int,
@@ -64,6 +64,6 @@ class SagaRepositoryStore(
         responseBody = responseBody,
     )
 
-    override fun loadStepResults(sagaId: java.util.UUID): List<SagaRepository.StepResultForTemplate> =
+    override suspend fun loadStepResults(sagaId: java.util.UUID): List<SagaRepository.StepResultForTemplate> =
         repository.loadStepResultsForTemplate(sagaId)
 }

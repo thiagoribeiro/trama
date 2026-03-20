@@ -14,9 +14,26 @@ import org.jooq.impl.DSL
 
 class SagaRepository(
     private val db: DatabaseClient,
+    definitionCacheMaxSize: Int = 1000,
 ) {
-    private val definitionCache = java.util.concurrent.ConcurrentHashMap<UUID, SagaDefinitionRecord>()
-    private val definitionNameVersionCache = java.util.concurrent.ConcurrentHashMap<String, UUID>()
+    private val definitionCache: MutableMap<UUID, SagaDefinitionRecord> =
+        java.util.Collections.synchronizedMap(
+            object : java.util.LinkedHashMap<UUID, SagaDefinitionRecord>(
+                minOf(definitionCacheMaxSize, 16), 0.75f, true
+            ) {
+                override fun removeEldestEntry(eldest: Map.Entry<UUID, SagaDefinitionRecord>) =
+                    size > definitionCacheMaxSize
+            }
+        )
+    private val definitionNameVersionCache: MutableMap<String, UUID> =
+        java.util.Collections.synchronizedMap(
+            object : java.util.LinkedHashMap<String, UUID>(
+                minOf(definitionCacheMaxSize, 16), 0.75f, true
+            ) {
+                override fun removeEldestEntry(eldest: Map.Entry<String, UUID>) =
+                    size > definitionCacheMaxSize
+            }
+        )
     private val json = Json { ignoreUnknownKeys = true }
 
     private val execTable = DSL.table("saga_execution")
@@ -53,7 +70,7 @@ class SagaRepository(
     private val stepStartedAt = DSL.field("started_at", Instant::class.java)
     private val stepCreatedAt = DSL.field("created_at", Instant::class.java)
 
-    fun upsertExecutionStart(execution: SagaExecution) {
+    suspend fun upsertExecutionStart(execution: SagaExecution) {
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now()
@@ -86,7 +103,7 @@ class SagaRepository(
         }
     }
 
-    fun updateExecutionFinal(
+    suspend fun updateExecutionFinal(
         executionId: UUID,
         status: String,
         failureDescription: String? = null,
@@ -105,7 +122,7 @@ class SagaRepository(
         }
     }
 
-    fun updateFailureDescription(
+    suspend fun updateFailureDescription(
         executionId: UUID,
         failureDescription: String,
         failedStepIndex: Int?,
@@ -125,7 +142,7 @@ class SagaRepository(
         }
     }
 
-    fun updateCallbackWarning(executionId: UUID, warning: String) {
+    suspend fun updateCallbackWarning(executionId: UUID, warning: String) {
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now()
@@ -138,7 +155,7 @@ class SagaRepository(
         }
     }
 
-    fun insertStepResult(
+    suspend fun insertStepResult(
         sagaId: UUID,
         startedAt: Instant,
         stepIdx: Int,
@@ -178,7 +195,7 @@ class SagaRepository(
         }
     }
 
-    fun loadStepResultsForTemplate(sagaId: UUID): List<StepResultForTemplate> {
+    suspend fun loadStepResultsForTemplate(sagaId: UUID): List<StepResultForTemplate> {
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val records = dsl.select(
@@ -220,7 +237,7 @@ class SagaRepository(
         }
     }
 
-    fun getExecutionStatus(sagaId: UUID): SagaExecutionStatus? {
+    suspend fun getExecutionStatus(sagaId: UUID): SagaExecutionStatus? {
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val record = dsl.select(
@@ -262,7 +279,7 @@ class SagaRepository(
         }
     }
 
-    fun markRetrying(executionId: UUID) {
+    suspend fun markRetrying(executionId: UUID) {
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now()
@@ -320,7 +337,7 @@ class SagaRepository(
         val updatedAt: Instant,
     )
 
-    fun getExecutionForRetry(sagaId: UUID): SagaExecutionRetryData? {
+    suspend fun getExecutionForRetry(sagaId: UUID): SagaExecutionRetryData? {
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val record = dsl.select(
@@ -356,7 +373,7 @@ class SagaRepository(
         val startedAt: Instant,
     )
 
-    fun insertDefinition(id: UUID, name: String, version: String, definitionJson: String): Boolean {
+    suspend fun insertDefinition(id: UUID, name: String, version: String, definitionJson: String): Boolean {
         val inserted = db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now()
@@ -397,7 +414,7 @@ class SagaRepository(
         return true
     }
 
-    fun getDefinition(id: UUID): SagaDefinitionRecord? {
+    suspend fun getDefinition(id: UUID): SagaDefinitionRecord? {
         definitionCache[id]?.let { return it }
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
@@ -425,7 +442,7 @@ class SagaRepository(
         }
     }
 
-    fun getDefinitionByNameVersion(name: String, version: String): SagaDefinitionRecord? {
+    suspend fun getDefinitionByNameVersion(name: String, version: String): SagaDefinitionRecord? {
         val key = definitionNameVersionKey(name, version)
         definitionNameVersionCache[key]?.let { id ->
             definitionCache[id]?.let { return it }
@@ -461,7 +478,7 @@ class SagaRepository(
         }
     }
 
-    fun deleteDefinition(id: UUID): Boolean {
+    suspend fun deleteDefinition(id: UUID): Boolean {
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val deleted = dsl.deleteFrom(defTable)
@@ -477,7 +494,7 @@ class SagaRepository(
         }
     }
 
-    fun listDefinitions(): List<SagaDefinitionRecord> {
+    suspend fun listDefinitions(limit: Int = 50, offset: Int = 0): List<SagaDefinitionRecord> {
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             dsl.select(
@@ -490,6 +507,8 @@ class SagaRepository(
             )
                 .from(defTable)
                 .orderBy(defUpdatedAt.desc())
+                .limit(limit)
+                .offset(offset)
                 .fetch()
                 .map { record ->
                     SagaDefinitionRecord(

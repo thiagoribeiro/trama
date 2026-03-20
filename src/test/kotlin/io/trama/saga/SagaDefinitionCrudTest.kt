@@ -1,10 +1,11 @@
 package run.trama.saga
 
-import io.mockk.every
+import io.mockk.coEvery
 import io.mockk.mockk
 import run.trama.saga.store.DatabaseClient
 import run.trama.saga.store.SagaRepository
 import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -20,9 +21,9 @@ class SagaDefinitionCrudTest {
     }
 
     @Test
-    fun `getDefinition reads from cache when available`() {
+    fun `getDefinition reads from cache when available`() = runBlocking {
         val db = mockk<DatabaseClient>(relaxed = true)
-        every { db.withConnection<Int>(any()) } returns 1
+        coEvery { db.withConnection<Int>(any()) } returns 1
         val repo = SagaRepository(db)
         val id = UUID.randomUUID()
         repo.insertDefinition(id, "s1", "1", "{}")
@@ -32,10 +33,10 @@ class SagaDefinitionCrudTest {
     }
 
     @Test
-    fun `getDefinitionByNameVersion reads from cache when available`() {
+    fun `getDefinitionByNameVersion reads from cache when available`() = runBlocking {
         val db = mockk<DatabaseClient>(relaxed = true)
         var calls = 0
-        every { db.withConnection<Int>(any()) } answers {
+        coEvery { db.withConnection<Int>(any()) } coAnswers {
             calls += 1
             1
         }
@@ -54,9 +55,9 @@ class SagaDefinitionCrudTest {
     }
 
     @Test
-    fun `insertDefinition saves square chain definition with template placeholders`() {
+    fun `insertDefinition saves square chain definition with template placeholders`() = runBlocking {
         val db = mockk<DatabaseClient>(relaxed = true)
-        every { db.withConnection<Int>(any()) } returns 1
+        coEvery { db.withConnection<Int>(any()) } returns 1
         val repo = SagaRepository(db)
         val id = UUID.randomUUID()
 
@@ -93,9 +94,9 @@ class SagaDefinitionCrudTest {
     }
 
     @Test
-    fun `insertDefinition saves definition decoded from direct-content json`() {
+    fun `insertDefinition saves definition decoded from direct-content json`() = runBlocking {
         val db = mockk<DatabaseClient>(relaxed = true)
-        every { db.withConnection<Int>(any()) } returns 1
+        coEvery { db.withConnection<Int>(any()) } returns 1
         val repo = SagaRepository(db)
         val id = UUID.randomUUID()
 

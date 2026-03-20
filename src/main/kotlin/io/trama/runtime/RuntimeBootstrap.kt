@@ -63,7 +63,7 @@ class RuntimeBootstrap(
         database = DatabaseClient(config.database, metricsRegistry)
         redis = RedisClientProvider(config.redis)
         httpClient = SagaHttpClient(config.http)
-        val repo = SagaRepository(database)
+        val repo = SagaRepository(database, config.database.pool.definitionCacheMaxSize)
         repository = repo
         val runtimeMetrics = Metrics(metricsRegistry)
         metrics = runtimeMetrics

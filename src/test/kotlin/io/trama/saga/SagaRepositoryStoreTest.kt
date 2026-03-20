@@ -1,16 +1,16 @@
 package run.trama.saga
 
-import io.mockk.every
+import io.mockk.coVerify
 import io.mockk.mockk
-import io.mockk.verify
 import run.trama.saga.store.SagaRepository
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
+import kotlinx.coroutines.runBlocking
 
 class SagaRepositoryStoreTest {
     @Test
-    fun `delegates to repository`() {
+    fun `delegates to repository`() = runBlocking {
         val repo = mockk<SagaRepository>(relaxed = true)
         val store = SagaRepositoryStore(repo)
         val sagaId = UUID.randomUUID()
@@ -30,10 +30,10 @@ class SagaRepositoryStoreTest {
             responseBody = "{}",
         )
 
-        verify { repo.updateFailureDescription(sagaId, "fail", 1, ExecutionPhase.UP) }
-        verify { repo.updateCallbackWarning(sagaId, "warn") }
-        verify { repo.updateExecutionFinal(sagaId, "FAILED", "fail") }
-        verify {
+        coVerify { repo.updateFailureDescription(sagaId, "fail", 1, ExecutionPhase.UP) }
+        coVerify { repo.updateCallbackWarning(sagaId, "warn") }
+        coVerify { repo.updateExecutionFinal(sagaId, "FAILED", "fail") }
+        coVerify {
             repo.insertStepResult(
                 sagaId = sagaId,
                 startedAt = now,

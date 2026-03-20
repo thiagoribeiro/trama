@@ -1,9 +1,11 @@
 package run.trama.saga
 
 import com.github.mustachejava.DefaultMustacheFactory
+import com.github.mustachejava.Mustache
 import run.trama.saga.store.SagaRepository
 import java.io.StringReader
 import java.io.StringWriter
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -16,9 +18,12 @@ interface TemplateRenderer {
 
 class MustacheTemplateRenderer : TemplateRenderer {
     private val mustacheFactory = DefaultMustacheFactory()
+    private val templateCache = ConcurrentHashMap<String, Mustache>()
 
     override fun render(template: TemplateString, context: Map<String, Any?>): String {
-        val mustache = mustacheFactory.compile(StringReader(template.value), "saga-template")
+        val mustache = templateCache.computeIfAbsent(template.value) { key ->
+            mustacheFactory.compile(StringReader(key), "saga-template")
+        }
         val writer = StringWriter()
         mustache.execute(writer, context).flush()
         return writer.toString()

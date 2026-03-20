@@ -124,7 +124,7 @@ private class ClusterBackend(
     config: RedisConfig,
 ) : RedisBackend {
     private val client: RedisClusterClient
-    private val connection: StatefulRedisClusterConnection<ByteArray, ByteArray>
+    private val pool: GenericObjectPool<StatefulRedisClusterConnection<ByteArray, ByteArray>>
 
     init {
         val nodes = if (config.cluster.nodes.isNotEmpty()) {
@@ -134,19 +134,37 @@ private class ClusterBackend(
         }
         val uris = nodes.map(RedisURI::create)
         val clusterClient = RedisClusterClient.create(uris)
-        val clusterConnection = clusterClient.connect(ByteArrayCodec.INSTANCE)
+        val poolConfig = GenericObjectPoolConfig<StatefulRedisClusterConnection<ByteArray, ByteArray>>().apply {
+            maxTotal = config.pool.maxTotal
+            maxIdle = config.pool.maxIdle
+            minIdle = config.pool.minIdle
+            testOnBorrow = config.pool.testOnBorrow
+            testWhileIdle = config.pool.testWhileIdle
+        }
+        val clusterPool = ConnectionPoolSupport.createGenericObjectPool(
+            { clusterClient.connect(ByteArrayCodec.INSTANCE) },
+            poolConfig,
+        )
 
         client = clusterClient
-        connection = clusterConnection
+        pool = clusterPool
+
+        val connection = pool.borrowObject()
+        pool.returnObject(connection)
     }
 
     override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T {
-        val commands = connection.clusterCoroutines()
-        return block(ClusterBinaryCommands(commands))
+        val connection = pool.borrowObject()
+        try {
+            val commands = connection.clusterCoroutines()
+            return block(ClusterBinaryCommands(commands))
+        } finally {
+            pool.returnObject(connection)
+        }
     }
 
     override fun close() {
-        connection.close()
+        pool.close()
         client.shutdown()
     }
 }

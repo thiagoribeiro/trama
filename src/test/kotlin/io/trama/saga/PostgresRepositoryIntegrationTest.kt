@@ -9,13 +9,14 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlinx.coroutines.runBlocking
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.DockerClientFactory
 
 class PostgresRepositoryIntegrationTest {
     @Test
-    fun `persist and fetch saga status`() {
-        if (!DockerClientFactory.instance().isDockerAvailable) return
+    fun `persist and fetch saga status`() = runBlocking {
+        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
         val postgres = PostgreSQLContainer("postgres:15-alpine")
         postgres.start()
         try {

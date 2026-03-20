@@ -13,7 +13,6 @@ import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.store.SagaRepository
 import java.time.Instant
 import java.util.UUID
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -30,7 +29,7 @@ class RedisSagaExecutionStore(
     private val logger = LoggerFactory.getLogger(RedisSagaExecutionStore::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun upsertStart(execution: SagaExecution) {
+    override suspend fun upsertStart(execution: SagaExecution) {
         val meta = RedisExecutionMeta(
             id = execution.id,
             name = execution.definition.name,
@@ -46,7 +45,7 @@ class RedisSagaExecutionStore(
         writeMeta(meta)
     }
 
-    override fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
+    override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
         val existing = readMeta(executionId)
         val meta = existing?.copy(
             status = status,
@@ -107,7 +106,7 @@ class RedisSagaExecutionStore(
         deleteKeys(meta.id)
     }
 
-    override fun updateFailure(
+    override suspend fun updateFailure(
         executionId: UUID,
         failureDescription: String,
         failedStepIndex: Int?,
@@ -127,7 +126,7 @@ class RedisSagaExecutionStore(
         )
     }
 
-    override fun updateCallbackWarning(executionId: UUID, warning: String) {
+    override suspend fun updateCallbackWarning(executionId: UUID, warning: String) {
         val current = readMeta(executionId)
         if (current == null) {
             logger.warn("missing redis meta on callback warning for sagaId={}", executionId)
@@ -136,7 +135,7 @@ class RedisSagaExecutionStore(
         writeMeta(current.copy(callbackWarning = warning))
     }
 
-    override fun insertStepResult(
+    override suspend fun insertStepResult(
         sagaId: UUID,
         startedAt: Instant,
         stepIdx: Int,
@@ -159,14 +158,14 @@ class RedisSagaExecutionStore(
 
         val key = stepsKey(sagaId)
         val payload = json.encodeToString(RedisStepEntry.serializer(), entry).toByteArray()
-        withCommandsBlocking { commands ->
+        redis.withCommands { commands ->
             commands.lpush(key.toByteArray(), payload)
             commands.expire(key.toByteArray(), ttlSeconds)
         }
         touchMetaTtl(sagaId)
     }
 
-    override fun loadStepResults(sagaId: UUID): List<SagaRepository.StepResultForTemplate> {
+    override suspend fun loadStepResults(sagaId: UUID): List<SagaRepository.StepResultForTemplate> {
         val steps = readSteps(sagaId)
         if (steps.isEmpty()) return emptyList()
 
@@ -194,9 +193,9 @@ class RedisSagaExecutionStore(
         return latestByIndex.values.toList()
     }
 
-    private fun readSteps(sagaId: UUID): List<RedisStepEntry> {
+    private suspend fun readSteps(sagaId: UUID): List<RedisStepEntry> {
         val key = stepsKey(sagaId)
-        return withCommandsBlocking { commands ->
+        return redis.withCommands { commands ->
             val raw = commands.lrange(key.toByteArray(), 0, -1)
             raw.mapNotNull { bytes ->
                 runCatching {
@@ -206,36 +205,36 @@ class RedisSagaExecutionStore(
         }
     }
 
-    private fun writeMeta(meta: RedisExecutionMeta) {
+    private suspend fun writeMeta(meta: RedisExecutionMeta) {
         val key = metaKey(meta.id)
         val payload = json.encodeToString(RedisExecutionMeta.serializer(), meta).toByteArray()
-        withCommandsBlocking { commands ->
+        redis.withCommands { commands ->
             commands.set(key.toByteArray(), payload)
             commands.expire(key.toByteArray(), ttlSeconds)
         }
     }
 
-    private fun readMeta(executionId: UUID): RedisExecutionMeta? {
+    private suspend fun readMeta(executionId: UUID): RedisExecutionMeta? {
         val key = metaKey(executionId)
-        return withCommandsBlocking { commands ->
-            val raw = commands.get(key.toByteArray()) ?: return@withCommandsBlocking null
+        return redis.withCommands { commands ->
+            val raw = commands.get(key.toByteArray()) ?: return@withCommands null
             runCatching {
                 json.decodeFromString(RedisExecutionMeta.serializer(), raw.toString(Charsets.UTF_8))
             }.getOrNull()
         }
     }
 
-    private fun touchMetaTtl(executionId: UUID) {
+    private suspend fun touchMetaTtl(executionId: UUID) {
         val key = metaKey(executionId)
-        withCommandsBlocking { commands ->
+        redis.withCommands { commands ->
             commands.expire(key.toByteArray(), ttlSeconds)
         }
     }
 
-    private fun deleteKeys(executionId: UUID) {
+    private suspend fun deleteKeys(executionId: UUID) {
         val meta = metaKey(executionId).toByteArray()
         val steps = stepsKey(executionId).toByteArray()
-        withCommandsBlocking { commands ->
+        redis.withCommands { commands ->
             commands.del(meta, steps)
         }
     }
@@ -251,10 +250,6 @@ class RedisSagaExecutionStore(
             JsonPrimitive(raw)
         }.let { element -> if (element is JsonNull) null else element }
     }
-
-    private fun <T> withCommandsBlocking(
-        block: suspend (RedisBinaryCommands) -> T
-    ): T = runBlocking { redis.withCommands(block) }
 }
 
 @Serializable
