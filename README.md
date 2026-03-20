@@ -266,11 +266,11 @@ curl -X POST http://localhost:8080/sagas/<execution-id>/retry
 ### Project layout
 | Path | Purpose |
 |---|---|
-| `src/main/kotlin/io/trama/app` | Ktor API module. |
-| `src/main/kotlin/io/trama/runtime` | Runtime bootstrap and workers. |
-| `src/main/kotlin/io/trama/saga` | Saga models and execution engine. |
-| `src/main/kotlin/io/trama/saga/redis` | Redis queue/store/rate-limit components. |
-| `src/main/kotlin/io/trama/saga/store` | Postgres persistence. |
+| `src/main/kotlin/run/trama/app` | Ktor API module. |
+| `src/main/kotlin/run/trama/runtime` | Runtime bootstrap and workers. |
+| `src/main/kotlin/run/trama/saga` | Saga models and execution engine. |
+| `src/main/kotlin/run/trama/saga/redis` | Redis queue/store/rate-limit components. |
+| `src/main/kotlin/run/trama/saga/store` | Postgres persistence. |
 | `src/main/resources/application.yaml` | Default runtime configuration. |
 | `openapi.json` | OpenAPI contract for clients/tooling. |
 
