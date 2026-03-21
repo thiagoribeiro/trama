@@ -24,13 +24,6 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.routing
-import io.micrometer.core.instrument.MeterRegistry
-import io.micrometer.core.instrument.binder.jvm.ClassLoaderMetrics
-import io.micrometer.core.instrument.binder.jvm.JvmGcMetrics
-import io.micrometer.core.instrument.binder.jvm.JvmMemoryMetrics
-import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics
-import io.micrometer.core.instrument.binder.system.ProcessorMetrics
-import io.micrometer.core.instrument.binder.system.UptimeMetrics
 import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import java.util.UUID
@@ -73,7 +66,6 @@ fun Application.module() {
         encodeDefaults = true
     }
     val prometheusRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
-    bindJvmMetrics(prometheusRegistry)
     val bootstrap = RuntimeBootstrap(appConfig, prometheusRegistry)
 
     // Install Micrometer before runtime startup so Ktor can configure meter filters
@@ -429,13 +421,4 @@ fun Application.module() {
             }
         }
     }
-}
-
-private fun bindJvmMetrics(registry: MeterRegistry) {
-    ClassLoaderMetrics().bindTo(registry)
-    JvmMemoryMetrics().bindTo(registry)
-    JvmGcMetrics().bindTo(registry)
-    JvmThreadMetrics().bindTo(registry)
-    ProcessorMetrics().bindTo(registry)
-    UptimeMetrics().bindTo(registry)
 }
