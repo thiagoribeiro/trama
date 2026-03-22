@@ -61,6 +61,18 @@ class SagaExecutionRedisConsumer(
         return items
     """.trimIndent()
 
+    // SHA1 digests loaded via SCRIPT LOAD at startup — avoids sending the full script on every poll
+    private var claimScriptSha: String? = null
+    private var requeueExpiredScriptSha: String? = null
+
+    /** Must be called once before the consumer loop starts. Loads scripts into Redis script cache. */
+    suspend fun loadScripts() {
+        redis.withCommands { commands ->
+            claimScriptSha = commands.scriptLoad(claimScript.toByteArray())
+            requeueExpiredScriptSha = commands.scriptLoad(requeueExpiredScript.toByteArray())
+        }
+    }
+
     override suspend fun runProducer(
         buffer: kotlinx.coroutines.channels.SendChannel<ClaimedExecution>,
         emptyPollDelayMillis: Long,
@@ -134,14 +146,26 @@ class SagaExecutionRedisConsumer(
 
         val items = redis.withCommands { commands ->
             metrics.recordRedisClaimScan()
-            commands.eval<List<ByteArray>>(
-                claimScript.toByteArray(),
-                ScriptOutputType.MULTI,
-                arrayOf(readyKey, inFlightKey),
-                now.toString().toByteArray(),
-                limit.toString().toByteArray(),
-                inflightScore.toString().toByteArray(),
-            )
+            val sha = claimScriptSha
+            if (sha != null) {
+                commands.evalsha<List<ByteArray>>(
+                    sha,
+                    ScriptOutputType.MULTI,
+                    arrayOf(readyKey, inFlightKey),
+                    now.toString().toByteArray(),
+                    limit.toString().toByteArray(),
+                    inflightScore.toString().toByteArray(),
+                )
+            } else {
+                commands.eval<List<ByteArray>>(
+                    claimScript.toByteArray(),
+                    ScriptOutputType.MULTI,
+                    arrayOf(readyKey, inFlightKey),
+                    now.toString().toByteArray(),
+                    limit.toString().toByteArray(),
+                    inflightScore.toString().toByteArray(),
+                )
+            }
         } ?: emptyList()
 
         if (items.isEmpty()) return emptyList()
@@ -161,13 +185,24 @@ class SagaExecutionRedisConsumer(
         val inFlightKey = keyspace.queueInFlightKey(shardId).encodeToByteArray()
         val readyKey = keyspace.queueReadyKey(shardId).encodeToByteArray()
         redis.withCommands { commands ->
-            commands.eval<List<ByteArray>>(
-                requeueExpiredScript.toByteArray(),
-                ScriptOutputType.MULTI,
-                arrayOf(inFlightKey, readyKey),
-                now.toString().toByteArray(),
-                limit.toString().toByteArray(),
-            )
+            val sha = requeueExpiredScriptSha
+            if (sha != null) {
+                commands.evalsha<List<ByteArray>>(
+                    sha,
+                    ScriptOutputType.MULTI,
+                    arrayOf(inFlightKey, readyKey),
+                    now.toString().toByteArray(),
+                    limit.toString().toByteArray(),
+                )
+            } else {
+                commands.eval<List<ByteArray>>(
+                    requeueExpiredScript.toByteArray(),
+                    ScriptOutputType.MULTI,
+                    arrayOf(inFlightKey, readyKey),
+                    now.toString().toByteArray(),
+                    limit.toString().toByteArray(),
+                )
+            }
         }
     }
 

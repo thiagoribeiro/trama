@@ -9,6 +9,7 @@ data class AppConfig(
     val maintenance: MaintenanceConfig,
     val rateLimit: RateLimitConfig,
     val metrics: MetricsConfig,
+    val callbackTimeoutScanner: CallbackTimeoutScannerConfig = CallbackTimeoutScannerConfig(),
 )
 
 data class RedisConfig(
@@ -86,6 +87,15 @@ data class RuntimeConfig(
     val emptyPollDelayMillis: Long = 50,
     val maxStepsPerExecution: Int = 25,
     val store: RuntimeStore = RuntimeStore.REDIS,
+    val callback: CallbackConfig = CallbackConfig(),
+)
+
+data class CallbackConfig(
+    /** Public base URL used to build callback URLs injected into async HTTP calls. */
+    val baseUrl: String = "",
+    /** HMAC-SHA256 secret for signing and validating callback tokens. */
+    val hmacSecret: String = "",
+    val hmacKid: String = "default",
 )
 
 enum class RuntimeStore {
@@ -111,6 +121,16 @@ data class MaintenanceConfig(
     val partitionStartOffsetMonths: Int = 1,
     val retentionDays: Int = 15,
     val intervalMillis: Long = 3_600_000,
+)
+
+data class CallbackTimeoutScannerConfig(
+    val enabled: Boolean = true,
+    /** How often the scanner runs, in milliseconds. */
+    val intervalMillis: Long = 300_000,
+    /** Grace period in seconds: skip executions whose deadline passed fewer than this many seconds ago. */
+    val bufferSeconds: Long = 120,
+    /** Maximum executions processed per scanner run. */
+    val batchSize: Int = 100,
 )
 
 data class HttpConfig(

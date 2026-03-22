@@ -65,7 +65,7 @@ class RedisConsumerIntegrationTest {
                 id = java.util.UUID.randomUUID(),
                 startedAt = java.time.Instant.now(),
                 currentStepIndex = 0,
-                state = ExecutionState.InProgress(ExecutionPhase.UP),
+                state = ExecutionState.InProgress(activeNodeId = null, phase = ExecutionPhase.UP),
                 payload = emptyMap(),
             )
 

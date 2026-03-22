@@ -35,37 +35,37 @@ def make_definition(service_url: str, scenario: Scenario) -> Dict[str, Any]:
         if with_prev:
             up_url = f"{service_url}/step/{name}?phase=up&from={{{{step.0.up.body.step}}}}"
             down_url = f"{service_url}/step/{name}?phase=down&from={{{{step.0.up.body.step}}}}"
-            up_body = "{\"prevStep\":\"{{step.0.up.body.step}}\",\"prevStatus\":\"{{step.0.up.body.status}}\"}"
-            down_body = "{\"prevStep\":\"{{step.0.up.body.step}}\",\"compensate\":\"%s\"}" % name
+            up_body = {"prevStep": "{{step.0.up.body.step}}", "prevStatus": "{{step.0.up.body.status}}"}
+            down_body = {"prevStep": "{{step.0.up.body.step}}", "compensate": name}
         else:
             up_url = f"{service_url}/step/{name}?phase=up"
             down_url = f"{service_url}/step/{name}?phase=down"
-            up_body = "{\"step\": \"%s\"}" % name
-            down_body = "{\"compensate\": \"%s\"}" % name
+            up_body = {"step": name}
+            down_body = {"compensate": name}
 
         return {
             "name": name,
             "up": {
-                "url": {"value": up_url},
+                "url": up_url,
                 "verb": "POST",
                 "headers": {
-                    "Content-Type": {"value": "application/json"},
-                    "X-Fail-Step": {"value": "{{payload.fail_step}}"},
-                    "X-Fail-Phase": {"value": "{{payload.fail_phase}}"},
-                    "X-Fail-Mode": {"value": "once"},
+                    "Content-Type": "application/json",
+                    "X-Fail-Step": "{{payload.fail_step}}",
+                    "X-Fail-Phase": "{{payload.fail_phase}}",
+                    "X-Fail-Mode": "once",
                 },
-                "body": {"value": up_body},
+                "body": up_body,
             },
             "down": {
-                "url": {"value": down_url},
+                "url": down_url,
                 "verb": "POST",
                 "headers": {
-                    "Content-Type": {"value": "application/json"},
-                    "X-Fail-Step": {"value": "{{payload.fail_step}}"},
-                    "X-Fail-Phase": {"value": "{{payload.fail_phase}}"},
-                    "X-Fail-Mode": {"value": "once"},
+                    "Content-Type": "application/json",
+                    "X-Fail-Step": "{{payload.fail_step}}",
+                    "X-Fail-Phase": "{{payload.fail_phase}}",
+                    "X-Fail-Mode": "once",
                 },
-                "body": {"value": down_body},
+                "body": down_body,
             },
         }
 
@@ -79,16 +79,16 @@ def make_definition(service_url: str, scenario: Scenario) -> Dict[str, Any]:
         },
         "steps": [step("reserve"), step("charge", with_prev=True)],
         "onSuccessCallback": {
-            "url": {"value": f"{service_url}/callback/success"},
+            "url": f"{service_url}/callback/success",
             "verb": "POST",
-            "headers": {"Content-Type": {"value": "application/json"}},
-            "body": {"value": "{\"status\": \"ok\"}"},
+            "headers": {"Content-Type": "application/json"},
+            "body": {"status": "ok"},
         },
         "onFailureCallback": {
-            "url": {"value": f"{service_url}/callback/failure"},
+            "url": f"{service_url}/callback/failure",
             "verb": "POST",
-            "headers": {"Content-Type": {"value": "application/json"}},
-            "body": {"value": "{\"status\": \"failed\"}"},
+            "headers": {"Content-Type": "application/json"},
+            "body": {"status": "failed"},
         },
     }
 

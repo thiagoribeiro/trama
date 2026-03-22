@@ -8,6 +8,9 @@ Trama helps you coordinate multi-step operations across services with retries, c
 ## Features
 - HTTP API to register, version, and run saga definitions.
 - Inline or stored-definition execution modes.
+- **v2 node-graph definitions** — branching (`switch`), async tasks, arbitrary node DAGs.
+- **Switch nodes** — JSON Logic expressions route execution to different branches at runtime.
+- **Async HTTP tasks** — send a request, pause the saga, resume when an external system calls back via signed token.
 - Retry policies (`retry` and `backoff`) with compensation flows.
 - Redis-backed runtime queue and optional Redis-backed execution store.
 - Redis standalone and Redis Cluster support with virtual-shard distribution and rendezvous-based pod ownership.
@@ -27,16 +30,21 @@ flowchart LR
 
     subgraph Runtime[Runtime Workers]
       P[SagaExecutionProcessor]
-      E[DefaultSagaExecutor]
+      E[WorkflowExecutor]
       RL[Rate Limiter]
     end
 
     A -->|enqueue execution| Q[Queue Backend]
     Q -->|dequeue lease| P
     P --> E
-    E -->|HTTP calls| S1[Service A]
-    E -->|HTTP calls| S2[Service B]
-    E -->|HTTP calls| S3[Service N]
+    E -->|dispatch node| TH[TaskNodeHandler]
+    E -->|dispatch node| SH[SwitchNodeHandler]
+    TH -->|HTTP calls| S1[Service A]
+    TH -->|HTTP calls| S2[Service B]
+    SH -->|json-logic eval| SH
+
+    TH -->|async: pause| CB[CallbackReceiver]
+    CB -->|resume| Q
 
     E --> ST[Execution Store]
     A --> ST
@@ -117,6 +125,9 @@ Configuration is loaded from `application.yaml`, then merged with environment va
 | `runtime.emptyPollDelayMillis` | long | `50` | Delay between empty queue polls. |
 | `runtime.maxStepsPerExecution` | int | `25` | Checkpoint limit per worker cycle before an execution is re-enqueued. |
 | `runtime.store` | enum | `REDIS` | Execution state backend: `REDIS` or `POSTGRES`. |
+| `runtime.callback.baseUrl` | string | `""` | Public base URL this runtime is reachable at — used to build callback URLs injected into async task requests. Required for async tasks. |
+| `runtime.callback.hmacSecret` | string | `""` | HMAC-SHA256 secret for signing and validating callback tokens. Required for async tasks. |
+| `runtime.callback.hmacKid` | string | `default` | Key ID embedded in the token for future key rotation. |
 | `http.connectTimeoutMillis` | long | `10000` | Outbound HTTP client connect timeout for saga steps. |
 | `http.requestTimeoutMillis` | long | `30000` | Total outbound HTTP request timeout for saga steps. |
 | `http.socketTimeoutMillis` | long | `30000` | Outbound HTTP socket timeout for saga steps. |
@@ -175,26 +186,74 @@ In cluster mode, Trama places each execution on a deterministic virtual shard, s
 |---|---|---|
 | `GET` | `/healthz` | Liveness check. |
 | `GET` | `/readyz` | Readiness check. |
-| `POST` | `/sagas/definitions` | Store saga definition. |
+| `POST` | `/sagas/definitions` | Store saga definition (v1 or v2). |
 | `GET` | `/sagas/definitions` | List stored definitions. |
 | `GET` | `/sagas/definitions/{id}` | Get definition by UUID. |
 | `PUT` | `/sagas/definitions/{id}` | Insert definition with explicit UUID. |
 | `DELETE` | `/sagas/definitions/{id}` | Delete definition by UUID. |
 | `POST` | `/sagas/definitions/{name}/{version}/run` | Run stored definition. |
-| `POST` | `/sagas/run` | Run inline definition. |
+| `POST` | `/sagas/run` | Run inline definition (v1 or v2). |
 | `GET` | `/sagas/{id}` | Get execution status. |
 | `POST` | `/sagas/{id}/retry` | Retry failed execution. |
+| `POST` | `/sagas/{id}/node/{nodeId}/callback` | Async callback delivery endpoint. |
 | `GET` | `/metrics` | Prometheus metrics (if enabled). |
 
-### Definition schema quick reference
+### Definition formats
+
+Trama supports two definition formats, auto-detected by the presence of `nodes`.
+
+#### v1 — linear steps (backward-compatible)
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | Yes | Definition name. |
 | `version` | string | Yes | Definition version. |
 | `failureHandling` | object | Yes | Retry/backoff strategy. |
 | `steps` | array | Yes | Ordered saga steps with `up` and `down` calls. |
-| `onSuccessCallback` | `HttpCall` | No | Callback after successful completion. |
-| `onFailureCallback` | `HttpCall` | No | Callback after compensation/failure flow. |
+| `onSuccessCallback` | `HttpCall` | No | Called after successful completion. |
+| `onFailureCallback` | `HttpCall` | No | Called after compensation/failure. |
+
+#### v2 — node graph (branching + async)
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Definition name. |
+| `version` | string | Yes | Definition version. |
+| `failureHandling` | object | Yes | Retry/backoff strategy. |
+| `entrypoint` | string | Yes | ID of the first node to execute. |
+| `nodes` | array | Yes | List of `task` or `switch` node definitions. |
+| `onSuccessCallback` | `HttpCall` | No | Called after successful completion. |
+| `onFailureCallback` | `HttpCall` | No | Called after compensation/failure. |
+
+##### `task` node
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | `"task"` | Yes | Node discriminator. |
+| `id` | string | Yes | Unique node ID within the definition. |
+| `action` | object | Yes | The HTTP action to perform. |
+| `action.mode` | `"sync"` \| `"async"` | Yes | Synchronous or async callback mode. |
+| `action.request` | `HttpCall` | Yes | The outbound HTTP request. |
+| `action.successStatusCodes` | `Set<Int>` | No | Override default success codes. |
+| `action.acceptedStatusCodes` | `Set<Int>` | No | Status codes that mean "accepted for async" (e.g. `[202]`). |
+| `action.callback` | object | Only for `async` | Async callback configuration. |
+| `action.callback.timeoutMillis` | long | Yes (async) | How long to wait for callback before failing. |
+| `action.callback.successWhen` | JSON Logic | No | Expression evaluated against callback body to confirm success. |
+| `action.callback.failureWhen` | JSON Logic | No | Expression evaluated against callback body to trigger failure. |
+| `compensation` | `HttpCall` | No | Called during rollback. |
+| `next` | string | No | Next node ID. Omit for terminal nodes. |
+
+##### `switch` node
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | `"switch"` | Yes | Node discriminator. |
+| `id` | string | Yes | Unique node ID. |
+| `cases` | array | Yes | Ordered list of conditional branches. |
+| `cases[].name` | string | No | Human-readable case label. |
+| `cases[].when` | JSON Logic | Yes | Expression evaluated against `input.*` and `nodes.*` context. |
+| `cases[].target` | string | Yes | Node ID to route to when this case matches. |
+| `default` | string | Yes | Node ID to route to when no case matches. |
+
+Switch expressions can reference:
+- `input.<key>` — execution payload fields
+- `nodes.<nodeId>.response.body.<field>` — response body of a previously completed node
 
 ### `failureHandling` variants
 | Type | Fields |
@@ -202,9 +261,31 @@ In cluster mode, Trama places each execution on a deterministic virtual shard, s
 | `retry` | `maxAttempts`, `delayMillis` |
 | `backoff` | `maxAttempts`, `initialDelayMillis`, `maxDelayMillis`, `multiplier`, `jitterRatio` |
 
+### Async callback token
+
+When an `async` task node fires its outbound request, the orchestrator injects two template variables:
+
+| Template variable | Description |
+|---|---|
+| `{{runtime.callback.url}}` | The full callback URL for this execution and node. |
+| `{{runtime.callback.token}}` | Signed HMAC token that must be sent as the `X-Callback-Token` header. |
+
+The external service must POST to the callback URL with `X-Callback-Token: <token>` to resume the saga.
+
+Callback responses:
+| Status | Meaning |
+|---|---|
+| `202` | Callback accepted, saga will resume. |
+| `400` | Malformed token. |
+| `401` | Invalid signature. |
+| `409` | Nonce replayed or attempt mismatch. |
+| `410` | Token expired or execution no longer waiting. |
+
 ## Usage Examples
 
-### 1) Create a definition
+### v1 — Linear steps
+
+#### 1) Create a v1 definition
 ```bash
 curl -X POST http://localhost:8080/sagas/definitions \
   -H 'Content-Type: application/json' \
@@ -220,40 +301,173 @@ curl -X POST http://localhost:8080/sagas/definitions \
       {
         "name": "reserve",
         "up": {
-          "url": { "value": "http://inventory/reserve" },
+          "url": "http://inventory/reserve",
           "verb": "POST",
-          "body": { "value": "{\"orderId\":\"{{payload.orderId}}\"}" }
+          "body": { "orderId": "{{payload.orderId}}" }
         },
         "down": {
-          "url": { "value": "http://inventory/release" },
+          "url": "http://inventory/release",
           "verb": "POST",
-          "body": { "value": "{\"orderId\":\"{{payload.orderId}}\"}" }
+          "body": { "orderId": "{{payload.orderId}}" }
         }
       }
     ]
   }'
 ```
 
-### 2) Run stored definition
+#### 2) Run stored definition
 ```bash
 curl -X POST http://localhost:8080/sagas/definitions/order-saga/v1/run \
   -H 'Content-Type: application/json' \
-  -d '{
-    "payload": {
-      "orderId": "ord-123",
-      "amount": 99.5
-    }
-  }'
+  -d '{ "payload": { "orderId": "ord-123", "amount": 99.5 } }'
 ```
 
-### 3) Check status
+#### 3) Check status
 ```bash
 curl http://localhost:8080/sagas/<execution-id>
 ```
 
-### 4) Retry failed execution
+#### 4) Retry failed execution
 ```bash
 curl -X POST http://localhost:8080/sagas/<execution-id>/retry
+```
+
+---
+
+### v2 — Node graph with switch branching
+
+Run an inline checkout saga that routes to a different payment node based on `paymentMethod`:
+
+```bash
+curl -X POST http://localhost:8080/sagas/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "definition": {
+      "name": "checkout-v2",
+      "version": "v1",
+      "failureHandling": { "type": "retry", "maxAttempts": 2, "delayMillis": 100 },
+      "entrypoint": "choose-payment",
+      "nodes": [
+        {
+          "kind": "switch",
+          "id": "choose-payment",
+          "cases": [
+            {
+              "name": "pix",
+              "when": { "==": [{ "var": "input.paymentMethod" }, "pix"] },
+              "target": "pix-payment"
+            },
+            {
+              "name": "card",
+              "when": { "==": [{ "var": "input.paymentMethod" }, "card"] },
+              "target": "card-payment"
+            }
+          ],
+          "default": "fallback-payment"
+        },
+        {
+          "kind": "task",
+          "id": "pix-payment",
+          "action": {
+            "mode": "sync",
+            "request": {
+              "url": "http://payments/pix",
+              "verb": "POST",
+              "body": { "orderId": "{{payload.orderId}}" }
+            }
+          },
+          "compensation": { "url": "http://payments/pix/cancel", "verb": "POST" }
+        },
+        {
+          "kind": "task",
+          "id": "card-payment",
+          "action": {
+            "mode": "sync",
+            "request": {
+              "url": "http://payments/card",
+              "verb": "POST",
+              "body": { "orderId": "{{payload.orderId}}" }
+            }
+          },
+          "compensation": { "url": "http://payments/card/cancel", "verb": "POST" }
+        },
+        {
+          "kind": "task",
+          "id": "fallback-payment",
+          "action": {
+            "mode": "sync",
+            "request": {
+              "url": "http://payments/fallback",
+              "verb": "POST"
+            }
+          }
+        }
+      ]
+    },
+    "payload": { "orderId": "ord-456", "paymentMethod": "pix" }
+  }'
+```
+
+---
+
+### v2 — Async task with callback
+
+An `authorize` node sends a request and pauses. The external service calls back using the injected token to resume the saga:
+
+```bash
+curl -X POST http://localhost:8080/sagas/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "definition": {
+      "name": "payment-async",
+      "version": "v1",
+      "failureHandling": { "type": "retry", "maxAttempts": 2, "delayMillis": 200 },
+      "entrypoint": "authorize",
+      "nodes": [
+        {
+          "kind": "task",
+          "id": "authorize",
+          "action": {
+            "mode": "async",
+            "request": {
+              "url": "http://payments/authorize",
+              "verb": "POST",
+              "body": {
+                "orderId": "{{payload.orderId}}",
+                "callbackUrl": "{{runtime.callback.url}}",
+                "callbackToken": "{{runtime.callback.token}}"
+              }
+            },
+            "acceptedStatusCodes": [202],
+            "callback": { "timeoutMillis": 30000 }
+          },
+          "compensation": { "url": "http://payments/authorize/cancel", "verb": "POST" },
+          "next": "capture"
+        },
+        {
+          "kind": "task",
+          "id": "capture",
+          "action": {
+            "mode": "sync",
+            "request": {
+              "url": "http://payments/capture",
+              "verb": "POST"
+            }
+          }
+        }
+      ]
+    },
+    "payload": { "orderId": "ord-789", "amount": 150.00 }
+  }'
+```
+
+The external payment service receives `callbackUrl` and `callbackToken` in the request body, then calls back:
+
+```bash
+curl -X POST http://localhost:8080/sagas/<executionId>/node/authorize/callback \
+  -H 'Content-Type: application/json' \
+  -H 'X-Callback-Token: <token>' \
+  -d '{ "status": "authorized", "authCode": "AUTH-001" }'
 ```
 
 ## Development
@@ -263,16 +477,59 @@ curl -X POST http://localhost:8080/sagas/<execution-id>/retry
 ./gradlew test
 ```
 
+### Demo scripts
+
+#### v1 linear saga demo
+```bash
+cd scripts/saga_demo
+pip install -r requirements.txt
+python flask_server.py &         # start mock service on :5001
+python run_saga.py --scenario success
+python run_saga.py --scenario fail_up
+```
+
+#### v2 switch branching demo
+```bash
+cd scripts/workflow_demo
+pip install -r requirements.txt
+python flask_server.py &         # start mock service on :5002
+python run_switch_demo.py        # runs pix, card, boleto (default) scenarios
+python run_switch_demo.py --scenario pix
+```
+
+#### v2 async callback demo
+
+Async callbacks require the orchestrator to be configured with a reachable `callbackBaseUrl`:
+
+```yaml
+# application.yaml
+runtime:
+  callback:
+    baseUrl: "http://localhost:8080"   # must be reachable by the mock service
+    hmacSecret: "dev-secret-change-me"
+```
+
+```bash
+cd scripts/workflow_demo
+pip install -r requirements.txt
+SAGA_DEMO_ASYNC_DELAY=2 python flask_server.py &   # mock service fires callback after 2s
+python run_async_demo.py
+```
+
 ### Project layout
 | Path | Purpose |
 |---|---|
 | `src/main/kotlin/run/trama/app` | Ktor API module. |
 | `src/main/kotlin/run/trama/runtime` | Runtime bootstrap and workers. |
 | `src/main/kotlin/run/trama/saga` | Saga models and execution engine. |
+| `src/main/kotlin/run/trama/saga/workflow` | v2 IR, `WorkflowExecutor`, node handlers, JSON Logic evaluator. |
+| `src/main/kotlin/run/trama/saga/callback` | Async callback token service and receiver. |
 | `src/main/kotlin/run/trama/saga/redis` | Redis queue/store/rate-limit components. |
 | `src/main/kotlin/run/trama/saga/store` | Postgres persistence. |
 | `src/main/resources/application.yaml` | Default runtime configuration. |
 | `openapi.json` | OpenAPI contract for clients/tooling. |
+| `scripts/saga_demo/` | Demo scripts for v1 linear sagas. |
+| `scripts/workflow_demo/` | Demo scripts for v2 switch branching and async callbacks. |
 
 ## Observability
 
@@ -294,6 +551,11 @@ Metrics are exposed at `GET /metrics` when `metrics.enabled=true`.
 | `saga_redis_membership_refresh_age_ms` | Gauge | Age of the last successful membership refresh on this pod. |
 | `saga_duration_seconds` | Histogram | End-to-end saga duration recorded on terminal status (`SUCCEEDED`, `FAILED`, `CORRUPTED`). |
 | `saga_step_duration_success_seconds` | Histogram | Per-step duration recorded only when a step call succeeds. |
+| `saga_callback_received_total` | Counter | Async callbacks delivered to the orchestrator. |
+| `saga_callback_rejected_total` | Counter | Async callbacks rejected (expired, bad signature, replay, mismatch). |
+| `saga_callback_timeout_total` | Counter | Async tasks that timed out waiting for a callback. |
+| `saga_switch_evaluations_total` | Counter | Switch node evaluations. |
+| `saga_node_duration_seconds` | Histogram | Per-node execution duration. |
 
 Notes:
 - The names above are Prometheus-normalized versions of Micrometer meters defined in code.
@@ -311,6 +573,11 @@ Notes:
 | `saga_redis_claim_scans_total` | none |
 | `saga_duration_seconds` | `saga_name`, `saga_version`, `final_status` |
 | `saga_step_duration_success_seconds` | `saga_name`, `saga_version`, `step_name` |
+| `saga_callback_received_total` | `saga_name`, `saga_version` |
+| `saga_callback_rejected_total` | `saga_name`, `saga_version`, `reason` |
+| `saga_callback_timeout_total` | `saga_name`, `saga_version` |
+| `saga_switch_evaluations_total` | `saga_name`, `saga_version`, `result` (`case`\|`default`) |
+| `saga_node_duration_seconds` | `saga_name`, `saga_version`, `node_kind` (`task`\|`switch`), `mode` (`sync`\|`async`) |
 
 ### Tracing
 OpenTelemetry spans are emitted for request handling and saga processing when `telemetry.enabled=true`.

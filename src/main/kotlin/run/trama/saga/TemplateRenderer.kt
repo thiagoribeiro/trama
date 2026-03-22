@@ -2,15 +2,10 @@ package run.trama.saga
 
 import com.github.mustachejava.DefaultMustacheFactory
 import com.github.mustachejava.Mustache
-import run.trama.saga.store.SagaRepository
 import java.io.StringReader
 import java.io.StringWriter
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 interface TemplateRenderer {
     fun render(template: TemplateString, context: Map<String, Any?>): String
@@ -35,7 +30,7 @@ object TemplateContextBuilder {
         execution: SagaExecution,
         stepName: String,
         phase: ExecutionPhase,
-        stepResults: List<SagaRepository.StepResultForTemplate>,
+        stepResults: List<StepResult>,
         payload: Map<String, PayloadValue> = emptyMap(),
     ): Map<String, Any?> {
         val base = mutableMapOf<String, Any?>(
@@ -45,45 +40,38 @@ object TemplateContextBuilder {
             "stepName" to stepName,
             "phase" to phase.name,
         )
-        base["payload"] = payload.mapValues { jsonToAny(it.value.value) }
+        base["payload"] = payload.mapValues { it.value.value.toAny() }
         val stepsList = stepResults.map { step ->
             mapOf(
                 "index" to step.index,
                 "name" to step.name,
-                "body" to jsonToAny(step.upBody ?: step.downBody),
-                "up" to mapOf("body" to jsonToAny(step.upBody)),
-                "down" to mapOf("body" to jsonToAny(step.downBody)),
+                "body" to (step.upBody ?: step.downBody).toAny(),
+                "up" to mapOf("body" to step.upBody.toAny()),
+                "down" to mapOf("body" to step.downBody.toAny()),
             )
         }
         val stepsByIndex = stepResults.associate { step ->
             step.index.toString() to mapOf(
                 "index" to step.index,
                 "name" to step.name,
-                "body" to jsonToAny(step.upBody ?: step.downBody),
-                "up" to mapOf("body" to jsonToAny(step.upBody)),
-                "down" to mapOf("body" to jsonToAny(step.downBody)),
+                "body" to (step.upBody ?: step.downBody).toAny(),
+                "up" to mapOf("body" to step.upBody.toAny()),
+                "down" to mapOf("body" to step.downBody.toAny()),
             )
         }
         base["steps"] = stepsList
         base["step"] = stepsByIndex
-        return base
-    }
-
-    private fun jsonToAny(element: JsonElement?): Any? {
-        return when (element) {
-            null, JsonNull -> null
-            is JsonPrimitive -> {
-                if (element.isString) {
-                    element.content
-                } else {
-                    element.content.toBooleanStrictOrNull()
-                        ?: element.content.toLongOrNull()
-                        ?: element.content.toDoubleOrNull()
-                        ?: element.content
-                }
-            }
-            is JsonObject -> element.mapValues { jsonToAny(it.value) }
-            is JsonArray -> element.map { jsonToAny(it) }
+        // nodes.<id>.response.body — keyed by node/step name for switch evaluation and templates
+        val nodesMap = stepResults.associate { step ->
+            step.name to mapOf(
+                "response" to mapOf(
+                    "body" to (step.upBody ?: step.downBody).toAny(),
+                ),
+            )
         }
+        base["nodes"] = nodesMap
+        // input.* is an alias for payload.* for use in switch expressions and templates
+        base["input"] = payload.mapValues { it.value.value.toAny() }
+        return base
     }
 }

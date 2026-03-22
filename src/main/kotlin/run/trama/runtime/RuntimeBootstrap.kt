@@ -15,7 +15,6 @@ import kotlinx.coroutines.runBlocking
 import run.trama.config.AppConfig
 import run.trama.config.RuntimeStore
 import run.trama.saga.DefaultRetryPolicy
-import run.trama.saga.DefaultSagaExecutor
 import run.trama.saga.MustacheTemplateRenderer
 import run.trama.saga.RedisSagaEnqueuer
 import run.trama.saga.SagaEnqueuer
@@ -23,6 +22,10 @@ import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionProcessor
 import run.trama.saga.SagaHttpClient
 import run.trama.saga.SagaRepositoryStore
+import run.trama.saga.callback.CallbackReceiver
+import run.trama.saga.callback.CallbackTokenService
+import run.trama.saga.callback.CallbackUrlFactory
+import run.trama.saga.workflow.WorkflowExecutor
 import run.trama.saga.redis.PodMembershipRegistry
 import run.trama.saga.redis.ReadinessStatus
 import run.trama.saga.redis.RedisShardKeyspace
@@ -51,12 +54,14 @@ class RuntimeBootstrap(
     private var processor: SagaExecutionProcessor? = null
     private var repository: SagaRepository? = null
     private var enqueuer: SagaEnqueuer? = null
+    private var callbackReceiver: CallbackReceiver? = null
     private var heartbeatJob: Job? = null
     private var refreshJob: Job? = null
     private var requeueJob: Job? = null
     private var producerJob: Job? = null
     private val workerJobs = mutableListOf<Job>()
     private var maintenanceJob: Job? = null
+    private var callbackScannerJob: Job? = null
 
     fun start() {
         val metricsRegistry = if (config.metrics.enabled) meterRegistry else SimpleMeterRegistry()
@@ -72,7 +77,9 @@ class RuntimeBootstrap(
             virtualShardCount = config.redis.sharding.virtualShardCount,
         )
         val store = when (config.runtime.store) {
-            RuntimeStore.REDIS -> RedisSagaExecutionStore(redis, repo, keyspace)
+            RuntimeStore.REDIS -> RedisSagaExecutionStore(redis, repo, keyspace).also { s ->
+                runBlocking { s.loadScripts() }
+            }
             RuntimeStore.POSTGRES -> SagaRepositoryStore(repo)
         }
         val enq = RedisSagaEnqueuer(redis, keyspace)
@@ -106,15 +113,36 @@ class RuntimeBootstrap(
             claimerCount = claimerCount,
             metrics = runtimeMetrics,
         )
-        val executor = DefaultSagaExecutor(
+        runBlocking { consumer.loadScripts() }
+        val callbackCfg = config.runtime.callback
+        val callbackTokenService = if (callbackCfg.hmacSecret.isNotBlank()) {
+            CallbackTokenService(callbackCfg.hmacSecret, callbackCfg.hmacKid)
+        } else null
+        val callbackUrlFactory = if (callbackCfg.baseUrl.isNotBlank()) {
+            CallbackUrlFactory(callbackCfg.baseUrl)
+        } else null
+
+        val executor = WorkflowExecutor(
             store = store,
             renderer = renderer,
             retryPolicy = retryPolicy,
             enqueuer = enq,
             httpClient = httpClient,
             metrics = runtimeMetrics,
-            maxStepsPerExecution = config.runtime.maxStepsPerExecution,
+            maxNodesPerExecution = config.runtime.maxStepsPerExecution,
+            callbackTokenService = callbackTokenService,
+            callbackUrlFactory = callbackUrlFactory,
         )
+
+        if (callbackTokenService != null) {
+            callbackReceiver = CallbackReceiver(
+                store = store,
+                enqueuer = enq,
+                tokenService = callbackTokenService,
+                retryPolicy = retryPolicy,
+                metrics = runtimeMetrics,
+            )
+        }
         val processor = SagaExecutionProcessor(
             consumer = consumer,
             executor = executor,
@@ -129,6 +157,13 @@ class RuntimeBootstrap(
         Tracing.initialize(config.telemetry)
         val maintenance = PartitionMaintenance(database, config.maintenance)
 
+        val callbackScanner = CallbackTimeoutScanner(
+            repository = repo,
+            enqueuer = enq,
+            metrics = runtimeMetrics,
+            config = config.callbackTimeoutScanner,
+        )
+
         heartbeatJob = scope.launch { membershipRegistry.runHeartbeatLoop() }
         refreshJob = scope.launch { membershipRegistry.runRefreshLoop() }
         requeueJob = scope.launch {
@@ -139,11 +174,12 @@ class RuntimeBootstrap(
         producerJob = scope.launch { processor.runProducer() }
         repeat(config.runtime.workerCount) { workerJobs += scope.launch { processor.runWorker() } }
         maintenanceJob = scope.launch { maintenance.runLoop() }
+        callbackScannerJob = scope.launch { callbackScanner.runLoop() }
     }
 
-    fun repositoryOrNull(): SagaRepository? {
-        return repository
-    }
+    fun repositoryOrNull(): SagaRepository? = repository
+
+    fun callbackReceiverOrNull(): CallbackReceiver? = callbackReceiver
 
     suspend fun enqueueRetry(execution: SagaExecution) {
         val enq = enqueuer ?: error("Runtime not initialized")
@@ -176,7 +212,7 @@ class RuntimeBootstrap(
             processor?.stopPolling()
             runCatching { membership?.unregister() }
 
-            listOfNotNull(heartbeatJob, refreshJob, requeueJob, maintenanceJob).forEach { it.cancel() }
+            listOfNotNull(heartbeatJob, refreshJob, requeueJob, maintenanceJob, callbackScannerJob).forEach { it.cancel() }
             producerJob?.join()
             workerJobs.joinAll()
             runtimeJob.cancelAndJoin()

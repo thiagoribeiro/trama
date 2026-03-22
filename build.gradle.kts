@@ -58,6 +58,7 @@ dependencies {
     implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.43.0")
     implementation("io.opentelemetry:opentelemetry-semconv:1.28.0-alpha")
     implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+    implementation("io.github.jamsesso:json-logic-java:1.0.7")
 
     jooqGenerator("org.jooq:jooq-meta:$jooqVersion")
     jooqGenerator("org.jooq:jooq-codegen:$jooqVersion")
@@ -69,10 +70,11 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
-    testImplementation("org.testcontainers:junit-jupiter:1.20.1")
-    testImplementation("org.testcontainers:postgresql:1.20.1")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.0")
+    testImplementation("org.testcontainers:postgresql:1.21.0")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
     testImplementation("io.mockk:mockk:1.13.12")
+    testImplementation("org.wiremock:wiremock-standalone:3.9.1")
 }
 
 jooq {
@@ -118,4 +120,7 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    environment("DOCKER_HOST", "unix:///var/run/docker.sock")
+    environment("TESTCONTAINERS_RYUK_DISABLED", "true")
+    systemProperty("api.version", "1.44")
 }

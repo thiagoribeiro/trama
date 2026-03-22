@@ -14,4 +14,19 @@
             stripComments="true"/>
     </changeSet>
 
+    <changeSet id="001b-init-partitions" author="codex" runAlways="true">
+        <sqlFile
+            path="db/schema_partitions.sql"
+            relativeToChangelogFile="false"
+            splitStatements="false"
+            stripComments="true"/>
+    </changeSet>
+
+    <changeSet id="002-add-waiting-state" author="codex">
+        <sql>
+            ALTER TABLE saga_execution
+                ADD COLUMN IF NOT EXISTS waiting_state JSONB;
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

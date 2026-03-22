@@ -9,6 +9,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
@@ -89,6 +90,76 @@ sealed class FailureHandling {
         val jitterRatio: Double = 0.0,
     ) : FailureHandling()
 }
+
+// ─── Definition v2 (node-graph model) ────────────────────────────────────────
+
+@Serializable
+enum class TaskMode {
+    @SerialName("sync") SYNC,
+    @SerialName("async") ASYNC,
+}
+
+@Serializable
+data class SagaDefinitionV2(
+    val name: String,
+    val version: String,
+    val failureHandling: FailureHandling,
+    val entrypoint: String,
+    val nodes: List<NodeDefinition>,
+    val onSuccessCallback: HttpCall? = null,
+    val onFailureCallback: HttpCall? = null,
+)
+
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("kind")
+sealed class NodeDefinition {
+    abstract val id: String
+
+    @Serializable
+    @SerialName("task")
+    data class Task(
+        override val id: String,
+        val action: NodeActionDef,
+        val compensation: HttpCall? = null,
+        val next: String? = null,
+    ) : NodeDefinition()
+
+    @Serializable
+    @SerialName("switch")
+    data class Switch(
+        override val id: String,
+        val cases: List<SwitchCaseDef>,
+        val default: String,
+    ) : NodeDefinition()
+}
+
+@Serializable
+data class NodeActionDef(
+    val mode: TaskMode,
+    val request: HttpCall,
+    val successStatusCodes: Set<Int>? = null,
+    val acceptedStatusCodes: Set<Int>? = null,
+    val callback: CallbackConfigDef? = null,
+)
+
+@Serializable
+data class SwitchCaseDef(
+    val name: String? = null,
+    @SerialName("when")
+    @Serializable(with = JsonElementFlexSerializer::class)
+    val whenExpression: JsonElement,
+    val target: String,
+)
+
+@Serializable
+data class CallbackConfigDef(
+    val timeoutMillis: Long,
+    val successWhen: JsonElement? = null,
+    val failureWhen: JsonElement? = null,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 object TemplateStringSerializer : KSerializer<TemplateString> {
     override val descriptor: SerialDescriptor =
