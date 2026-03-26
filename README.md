@@ -199,10 +199,10 @@ curl http://localhost:8080/sagas/<execution-id>
 
 Trama supports two formats:
 
-### v1 — Linear steps
+### Linear steps
 Simple sequential workflows with compensation.
 
-### v2 — Node graph
+### Node graph
 Supports:
 
 - branching (`switch`)
