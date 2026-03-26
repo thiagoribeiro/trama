@@ -32,6 +32,8 @@ class RateLimiterTest {
                 keys: Array<ByteArray>,
                 vararg values: ByteArray,
             ): T? = null
+            override suspend fun scriptLoad(script: ByteArray): String = ""
+            override suspend fun <T> evalsha(digest: String, outputType: io.lettuce.core.ScriptOutputType, keys: Array<ByteArray>, vararg values: ByteArray): T? = null
             override suspend fun get(key: ByteArray): ByteArray? = blocked
             override suspend fun incr(key: ByteArray): Long? = ++count
             override suspend fun pexpire(key: ByteArray, milliseconds: Long): Boolean? = true
@@ -41,6 +43,7 @@ class RateLimiterTest {
             }
             override suspend fun expire(key: ByteArray, seconds: Long): Boolean? = true
             override suspend fun set(key: ByteArray, value: ByteArray): String? = "OK"
+            override suspend fun setNx(key: ByteArray, value: ByteArray, ttlSeconds: Long): Boolean = true
             override suspend fun del(vararg keys: ByteArray): Long? = keys.size.toLong()
             override suspend fun lpush(key: ByteArray, value: ByteArray): Long? = 1L
             override suspend fun lrange(key: ByteArray, start: Long, stop: Long): List<ByteArray> = emptyList()

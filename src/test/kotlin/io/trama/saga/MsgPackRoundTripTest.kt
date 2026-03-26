@@ -42,7 +42,7 @@ class MsgPackRoundTripTest {
             id = UUID.randomUUID(),
             startedAt = Instant.parse("2025-01-10T12:00:00Z"),
             currentStepIndex = 0,
-            state = ExecutionState.InProgress(ExecutionPhase.UP),
+            state = ExecutionState.InProgress(activeNodeId = null, phase = ExecutionPhase.UP),
             payload = mapOf("orderId" to PayloadValue(JsonPrimitive("A1"))),
         )
 

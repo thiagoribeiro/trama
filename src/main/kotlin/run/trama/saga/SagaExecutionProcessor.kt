@@ -84,14 +84,19 @@ class SagaExecutionProcessor(
                     -> consumer.ack(item)
                 }
                 metrics.recordProcessed(execution, outcome.toMetricOutcome())
-                if (outcome != ExecutionOutcome.Succeeded) {
-                    metrics.recordFailed(execution, "non_success_outcome")
+                // Only penalize genuine terminal failures — retries, checkpoints, and async
+                // waits are normal Reenqueued outcomes and must NOT count as failures.
+                if (outcome == ExecutionOutcome.FailedFinal) {
+                    metrics.recordFailed(execution, "failed_final")
                     rateLimiter.recordFailure(execution.definition.name)
                 }
                 if (outcome == ExecutionOutcome.Reenqueued) {
                     metrics.recordRetried(execution)
                 }
             } catch (ex: Exception) {
+                // This catch is mutually exclusive with the outcome block above:
+                // executor.execute() either returns normally (handled above) or throws (handled here).
+                // Both paths call recordFailed but with different reasons — no double-counting.
                 logger.warn(
                     "processing failed",
                     kv("sagaId", item.execution.id.toString()),

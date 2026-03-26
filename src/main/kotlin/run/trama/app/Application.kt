@@ -28,23 +28,28 @@ import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.decodeFromString
 import run.trama.config.ConfigLoader
 import run.trama.runtime.RuntimeBootstrap
-import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.RunSagaRequest
 import run.trama.saga.RunStoredSagaRequest
 import run.trama.saga.SagaCreateResponse
 import run.trama.saga.SagaDefinition
-import run.trama.saga.SagaDefinitionCreateRequest
 import run.trama.saga.SagaDefinitionResponse
+import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.SagaDefinitionValidator
 import run.trama.saga.SagaExecution
 import run.trama.saga.PayloadValue
 import run.trama.saga.SagaRetryResponse
 import run.trama.saga.SagaStatusResponse
 import run.trama.saga.ValidationErrorResponse
+import run.trama.saga.callback.CallbackReceiver
+import run.trama.saga.workflow.WorkflowDefinitionValidator
 import run.trama.telemetry.installRequestTracing
 import org.slf4j.event.Level
 import java.time.Instant
@@ -55,6 +60,33 @@ import org.slf4j.LoggerFactory
 
 fun main(args: Array<String>) {
     EngineMain.main(args)
+}
+
+private data class ParsedDefinitionBody(
+    val name: String,
+    val version: String,
+    val errors: List<String>,
+    val definitionJson: String,
+)
+
+private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject): ParsedDefinitionBody {
+    return if (body.containsKey("nodes")) {
+        val def = json.decodeFromJsonElement(SagaDefinitionV2.serializer(), body)
+        ParsedDefinitionBody(
+            name = def.name,
+            version = def.version,
+            errors = WorkflowDefinitionValidator.validate(def),
+            definitionJson = json.encodeToString(SagaDefinitionV2.serializer(), def),
+        )
+    } else {
+        val def = json.decodeFromJsonElement(SagaDefinition.serializer(), body)
+        ParsedDefinitionBody(
+            name = def.name,
+            version = def.version,
+            errors = SagaDefinitionValidator.validate(def),
+            definitionJson = json.encodeToString(SagaDefinition.serializer(), def),
+        )
+    }
 }
 
 fun Application.module() {
@@ -191,14 +223,28 @@ fun Application.module() {
                 call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("saga definition not stored")))
                 return@post
             }
+            val isV2Definition = runCatching {
+                json.parseToJsonElement(definitionJson).jsonObject.containsKey("nodes")
+            }.getOrDefault(false)
+            if (isV2Definition) {
+                call.respond(HttpStatusCode.UnprocessableEntity, ValidationErrorResponse(listOf("retry of v2 saga definitions is not yet supported")))
+                return@post
+            }
             val definition = json.decodeFromString(SagaDefinition.serializer(), definitionJson)
             val startIndex = retryData.failedStepIndex ?: 0
+            val activeNodeId = definition.steps.getOrElse(startIndex) { definition.steps.last() }.name
+            val completedNodes = definition.steps.take(startIndex).map { it.name }
+            val compensationStack = definition.steps.take(startIndex).reversed().map { it.name }
             val execution = SagaExecution(
                 definition = definition,
                 id = retryData.id,
                 startedAt = retryData.startedAt,
                 currentStepIndex = startIndex,
-                state = ExecutionState.InProgress(ExecutionPhase.UP),
+                state = ExecutionState.InProgress(
+                    activeNodeId = activeNodeId,
+                    completedNodes = completedNodes,
+                    compensationStack = compensationStack,
+                ),
                 payload = emptyMap(),
             )
             repo.markRetrying(id)
@@ -206,38 +252,79 @@ fun Application.module() {
             call.respond(HttpStatusCode.Accepted, SagaRetryResponse(id.toString(), "REQUEUED"))
         }
         post("/sagas/run") {
-            val req = call.receive<RunSagaRequest>()
-            val errors = SagaDefinitionValidator.validate(req.definition)
-            if (errors.isNotEmpty()) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
-                return@post
+            val rawBody = call.receive<JsonObject>()
+            val definitionObj = rawBody["definition"] as? JsonObject
+            if (definitionObj != null && definitionObj.containsKey("nodes")) {
+                // ── V2 node-graph inline run ───────────────────────────────────────
+                val def = runCatching {
+                    json.decodeFromJsonElement(SagaDefinitionV2.serializer(), definitionObj)
+                }.getOrElse {
+                    call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid v2 definition: ${it.message}")))
+                    return@post
+                }
+                val errors = WorkflowDefinitionValidator.validate(def)
+                if (errors.isNotEmpty()) {
+                    call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
+                    return@post
+                }
+                if (bootstrap.repositoryOrNull() == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
+                    return@post
+                }
+                val rawPayload = rawBody["payload"]
+                val payload: Map<String, JsonElement> = if (rawPayload is JsonObject) rawPayload else emptyMap()
+                // Stub v1 definition carries name/version for logging; executor uses definitionV2
+                val stub = SagaDefinition(
+                    name = def.name,
+                    version = def.version,
+                    failureHandling = def.failureHandling,
+                    steps = emptyList(),
+                )
+                val execution = SagaExecution(
+                    definition = stub,
+                    definitionV2 = def,
+                    id = UUID.randomUUID(),
+                    startedAt = Instant.now(),
+                    currentStepIndex = 0,
+                    state = ExecutionState.InProgress(activeNodeId = def.entrypoint),
+                    payload = payload.mapValues { PayloadValue(it.value) },
+                )
+                bootstrap.enqueueRetry(execution)
+                call.respond(SagaCreateResponse(execution.id.toString()))
+            } else {
+                // ── V1 steps-based inline run (existing logic) ─────────────────────
+                val req = runCatching {
+                    json.decodeFromJsonElement(RunSagaRequest.serializer(), rawBody)
+                }.getOrElse {
+                    call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid request: ${it.message}")))
+                    return@post
+                }
+                val errors = SagaDefinitionValidator.validate(req.definition)
+                if (errors.isNotEmpty()) {
+                    call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
+                    return@post
+                }
+                val execution = SagaExecution(
+                    definition = req.definition,
+                    id = UUID.randomUUID(),
+                    startedAt = Instant.now(),
+                    currentStepIndex = 0,
+                    state = ExecutionState.InProgress(
+                        activeNodeId = req.definition.steps.first().name,
+                    ),
+                    payload = req.payload.mapValues { PayloadValue(it.value) },
+                )
+                if (bootstrap.repositoryOrNull() == null) {
+                    call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
+                    return@post
+                }
+                bootstrap.enqueueRetry(execution)
+                call.respond(SagaCreateResponse(execution.id.toString()))
             }
-            val execution = SagaExecution(
-                definition = req.definition,
-                id = UUID.randomUUID(),
-                startedAt = Instant.now(),
-                currentStepIndex = 0,
-                state = ExecutionState.InProgress(ExecutionPhase.UP),
-                payload = req.payload.mapValues { PayloadValue(it.value) },
-            )
-            if (bootstrap.repositoryOrNull() == null) {
-                call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
-                return@post
-            }
-            bootstrap.enqueueRetry(execution)
-            call.respond(SagaCreateResponse(execution.id.toString()))
         }
         post("/sagas/definitions") {
-            val req = call.receive<SagaDefinitionCreateRequest>()
-            val definition = SagaDefinition(
-                name = req.name,
-                version = req.version,
-                failureHandling = req.failureHandling,
-                steps = req.steps,
-                onSuccessCallback = req.onSuccessCallback,
-                onFailureCallback = req.onFailureCallback,
-            )
-            val errors = SagaDefinitionValidator.validate(definition)
+            val body = call.receive<JsonObject>()
+            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
             if (errors.isNotEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                 return@post
@@ -247,20 +334,19 @@ fun Application.module() {
                 call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
                 return@post
             }
-            val id = UUID.randomUUID()
-            val definitionJson = json.encodeToString(SagaDefinition.serializer(), definition)
-            val inserted = repo.insertDefinition(id, definition.name, definition.version, definitionJson)
+            val defId = UUID.randomUUID()
+            val inserted = repo.insertDefinition(defId, name, version, definitionJson)
             if (!inserted) {
                 call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("definition already exists")))
                 return@post
             }
-            val stored = repo.getDefinition(id)!!
+            val stored = repo.getDefinition(defId)!!
             call.respond(
                 SagaDefinitionResponse(
                     id = stored.id.toString(),
                     name = stored.name,
                     version = stored.version,
-                    definition = definition,
+                    definition = json.parseToJsonElement(stored.definitionJson),
                     createdAt = stored.createdAt.toString(),
                     updatedAt = stored.updatedAt.toString(),
                 )
@@ -275,12 +361,11 @@ fun Application.module() {
             val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 200) ?: 50
             val offset = call.request.queryParameters["offset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
             val list = repo.listDefinitions(limit, offset).map { rec ->
-                val definition = json.decodeFromString(SagaDefinition.serializer(), rec.definitionJson)
                 SagaDefinitionResponse(
                     id = rec.id.toString(),
                     name = rec.name,
                     version = rec.version,
-                    definition = definition,
+                    definition = json.parseToJsonElement(rec.definitionJson),
                     createdAt = rec.createdAt.toString(),
                     updatedAt = rec.updatedAt.toString(),
                 )
@@ -304,13 +389,12 @@ fun Application.module() {
                 call.respond(HttpStatusCode.NoContent)
                 return@get
             }
-            val definition = json.decodeFromString(SagaDefinition.serializer(), rec.definitionJson)
             call.respond(
                 SagaDefinitionResponse(
                     id = rec.id.toString(),
                     name = rec.name,
                     version = rec.version,
-                    definition = definition,
+                    definition = json.parseToJsonElement(rec.definitionJson),
                     createdAt = rec.createdAt.toString(),
                     updatedAt = rec.updatedAt.toString(),
                 )
@@ -323,16 +407,8 @@ fun Application.module() {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid definition id")))
                 return@put
             }
-            val req = call.receive<SagaDefinitionCreateRequest>()
-            val definition = SagaDefinition(
-                name = req.name,
-                version = req.version,
-                failureHandling = req.failureHandling,
-                steps = req.steps,
-                onSuccessCallback = req.onSuccessCallback,
-                onFailureCallback = req.onFailureCallback,
-            )
-            val errors = SagaDefinitionValidator.validate(definition)
+            val body = call.receive<JsonObject>()
+            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
             if (errors.isNotEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                 return@put
@@ -342,8 +418,7 @@ fun Application.module() {
                 call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
                 return@put
             }
-            val definitionJson = json.encodeToString(SagaDefinition.serializer(), definition)
-            val inserted = repo.insertDefinition(id, definition.name, definition.version, definitionJson)
+            val inserted = repo.insertDefinition(id, name, version, definitionJson)
             if (!inserted) {
                 call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("definition already exists")))
                 return@put
@@ -354,7 +429,7 @@ fun Application.module() {
                     id = stored.id.toString(),
                     name = stored.name,
                     version = stored.version,
-                    definition = definition,
+                    definition = json.parseToJsonElement(stored.definitionJson),
                     createdAt = stored.createdAt.toString(),
                     updatedAt = stored.updatedAt.toString(),
                 )
@@ -397,6 +472,13 @@ fun Application.module() {
                 call.respond(HttpStatusCode.NoContent)
                 return@post
             }
+            val isV2StoredDef = runCatching {
+                json.parseToJsonElement(rec.definitionJson).jsonObject.containsKey("nodes")
+            }.getOrDefault(false)
+            if (isV2StoredDef) {
+                call.respond(HttpStatusCode.UnprocessableEntity, ValidationErrorResponse(listOf("running stored v2 saga definitions is not yet supported")))
+                return@post
+            }
             val definition = json.decodeFromString(SagaDefinition.serializer(), rec.definitionJson)
             val errors = SagaDefinitionValidator.validate(definition)
             if (errors.isNotEmpty()) {
@@ -408,11 +490,40 @@ fun Application.module() {
                 id = UUID.randomUUID(),
                 startedAt = Instant.now(),
                 currentStepIndex = 0,
-                state = ExecutionState.InProgress(ExecutionPhase.UP),
+                state = ExecutionState.InProgress(
+                    activeNodeId = definition.steps.first().name,
+                ),
                 payload = req.payload.mapValues { PayloadValue(it.value) },
             )
             bootstrap.enqueueRetry(execution)
             call.respond(SagaCreateResponse(execution.id.toString()))
+        }
+
+        post("/sagas/{executionId}/node/{nodeId}/callback") {
+            val executionIdParam = call.parameters["executionId"]
+            val nodeId = call.parameters["nodeId"]?.trim().orEmpty()
+            val executionId = runCatching { UUID.fromString(executionIdParam) }.getOrNull()
+            if (executionId == null || nodeId.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid executionId or nodeId")))
+                return@post
+            }
+            val receiver = bootstrap.callbackReceiverOrNull()
+            if (receiver == null) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("async callbacks not configured")))
+                return@post
+            }
+            val token = call.request.headers["X-Callback-Token"].orEmpty()
+            if (token.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("missing X-Callback-Token header")))
+                return@post
+            }
+            val rawBody = runCatching { call.receive<String>() }.getOrDefault("")
+            when (val result = receiver.receive(executionId, nodeId, token, rawBody)) {
+                is CallbackReceiver.CallbackResult.Accepted ->
+                    call.respond(HttpStatusCode.Accepted)
+                is CallbackReceiver.CallbackResult.Rejected ->
+                    call.respond(HttpStatusCode(result.httpStatus, result.message), ValidationErrorResponse(listOf(result.message)))
+            }
         }
 
         if (appConfig.metrics.enabled) {

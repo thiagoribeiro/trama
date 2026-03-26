@@ -5,6 +5,7 @@ package run.trama.saga.redis
 import io.lettuce.core.Limit
 import io.lettuce.core.Range
 import io.lettuce.core.RedisClient
+import io.lettuce.core.SetArgs
 import io.lettuce.core.RedisURI
 import io.lettuce.core.ScriptOutputType
 import io.lettuce.core.api.StatefulRedisConnection
@@ -34,12 +35,23 @@ interface RedisBinaryCommands {
         keys: Array<ByteArray>,
         vararg values: ByteArray,
     ): T?
+    /** Loads a Lua script into Redis script cache. Returns the SHA1 digest. */
+    suspend fun scriptLoad(script: ByteArray): String
+    /** Executes a cached Lua script by its SHA1 digest (EVALSHA). */
+    suspend fun <T> evalsha(
+        digest: String,
+        outputType: ScriptOutputType,
+        keys: Array<ByteArray>,
+        vararg values: ByteArray,
+    ): T?
     suspend fun get(key: ByteArray): ByteArray?
     suspend fun incr(key: ByteArray): Long?
     suspend fun pexpire(key: ByteArray, milliseconds: Long): Boolean?
     suspend fun psetex(key: ByteArray, milliseconds: Long, value: ByteArray): String?
     suspend fun expire(key: ByteArray, seconds: Long): Boolean?
     suspend fun set(key: ByteArray, value: ByteArray): String?
+    /** SET key value NX EX ttlSeconds — returns true if key was set (fresh), false if already existed. */
+    suspend fun setNx(key: ByteArray, value: ByteArray, ttlSeconds: Long): Boolean
     suspend fun del(vararg keys: ByteArray): Long?
     suspend fun lpush(key: ByteArray, value: ByteArray): Long?
     suspend fun lrange(key: ByteArray, start: Long, stop: Long): List<ByteArray>
@@ -202,6 +214,16 @@ private class StandaloneBinaryCommands(
         vararg values: ByteArray,
     ): T? = delegate.eval(script, outputType, keys, *values)
 
+    override suspend fun scriptLoad(script: ByteArray): String =
+        delegate.scriptLoad(script) ?: error("SCRIPT LOAD returned null")
+
+    override suspend fun <T> evalsha(
+        digest: String,
+        outputType: ScriptOutputType,
+        keys: Array<ByteArray>,
+        vararg values: ByteArray,
+    ): T? = delegate.evalsha(digest, outputType, keys, *values)
+
     override suspend fun get(key: ByteArray): ByteArray? = delegate.get(key)
 
     override suspend fun incr(key: ByteArray): Long? = delegate.incr(key)
@@ -217,6 +239,9 @@ private class StandaloneBinaryCommands(
 
     override suspend fun set(key: ByteArray, value: ByteArray): String? =
         delegate.set(key, value)
+
+    override suspend fun setNx(key: ByteArray, value: ByteArray, ttlSeconds: Long): Boolean =
+        delegate.set(key, value, SetArgs.Builder.nx().ex(ttlSeconds)) != null
 
     override suspend fun del(vararg keys: ByteArray): Long? =
         delegate.del(*keys)
@@ -264,6 +289,16 @@ private class ClusterBinaryCommands(
         vararg values: ByteArray,
     ): T? = delegate.eval(script, outputType, keys, *values)
 
+    override suspend fun scriptLoad(script: ByteArray): String =
+        delegate.scriptLoad(script) ?: error("SCRIPT LOAD returned null")
+
+    override suspend fun <T> evalsha(
+        digest: String,
+        outputType: ScriptOutputType,
+        keys: Array<ByteArray>,
+        vararg values: ByteArray,
+    ): T? = delegate.evalsha(digest, outputType, keys, *values)
+
     override suspend fun get(key: ByteArray): ByteArray? = delegate.get(key)
 
     override suspend fun incr(key: ByteArray): Long? = delegate.incr(key)
@@ -279,6 +314,9 @@ private class ClusterBinaryCommands(
 
     override suspend fun set(key: ByteArray, value: ByteArray): String? =
         delegate.set(key, value)
+
+    override suspend fun setNx(key: ByteArray, value: ByteArray, ttlSeconds: Long): Boolean =
+        delegate.set(key, value, SetArgs.Builder.nx().ex(ttlSeconds)) != null
 
     override suspend fun del(vararg keys: ByteArray): Long? =
         delegate.del(*keys)

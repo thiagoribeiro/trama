@@ -40,6 +40,10 @@ runtime:
   emptyPollDelayMillis: 50
   maxStepsPerExecution: 25
   store: "REDIS"
+  callback:
+    baseUrl: ""
+    hmacSecret: ""
+    hmacKid: "default"
 
 http:
   connectTimeoutMillis: 10000

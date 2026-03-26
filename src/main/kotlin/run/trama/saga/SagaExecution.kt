@@ -11,11 +11,15 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 data class SagaExecution(
     val definition: SagaDefinition,
+    /** Non-null when this execution was created from a v2 node-graph definition. */
+    val definitionV2: SagaDefinitionV2? = null,
     @Serializable(with = UuidAsStringSerializer::class)
     val id: UUID,
     @Serializable(with = InstantAsStringSerializer::class)
@@ -33,19 +37,63 @@ data class PayloadValue(
 
 @Serializable
 sealed class ExecutionState {
+    /**
+     * Execution is progressing forward through nodes.
+     *
+     * [activeNodeId] is the node currently being executed (null = legacy format,
+     * derive from [SagaExecution.currentStepIndex] + definition).
+     * [compensationStack] lists node ids to compensate (front = next to run), built
+     * up as nodes complete successfully.
+     * [phase] is kept only for backward-compatible deserialization of pre-PR2 data.
+     */
     @Serializable
     @SerialName("in_progress")
     data class InProgress(
-        val phase: ExecutionPhase,
+        val activeNodeId: String? = null,
+        val completedNodes: List<String> = emptyList(),
+        val compensationStack: List<String> = emptyList(),
+        /** Legacy field — present only in pre-PR2 serialized data. */
+        val phase: ExecutionPhase? = null,
+        val retry: RetryState = RetryState.None,
+    ) : ExecutionState()
+
+    /**
+     * Execution failed forward; running compensations in reverse order.
+     */
+    @Serializable
+    @SerialName("compensating")
+    data class Compensating(
+        /** Remaining nodes to compensate, front = next to run. */
+        val compensationStack: List<String>,
+        val completedNodes: List<String>,
+        val failureReason: FailureReason,
         val retry: RetryState = RetryState.None,
     ) : ExecutionState()
 
     @Serializable
     @SerialName("failed")
     data class Failed(
-        val phase: ExecutionPhase,
-        val failedStepIndex: Int,
-        val reason: FailureReason,
+        val reason: FailureReason? = null,
+        val failedNodeId: String? = null,
+        /** Legacy fields kept for backward-compat deserialization. */
+        val phase: ExecutionPhase? = null,
+        val failedStepIndex: Int? = null,
+    ) : ExecutionState()
+
+    /**
+     * Execution sent an async HTTP request and is waiting for an external callback.
+     * A timeout sentinel is enqueued in Redis ZSET with score = deadlineAt.toEpochMilli().
+     */
+    @Serializable
+    @SerialName("waiting_callback")
+    data class WaitingCallback(
+        val nodeId: String,
+        val attempt: Int,
+        @Serializable(with = InstantAsStringSerializer::class)
+        val deadlineAt: Instant,
+        val nonce: String,
+        val completedNodes: List<String>,
+        val compensationStack: List<String>,
     ) : ExecutionState()
 
     @Serializable
@@ -60,6 +108,7 @@ sealed class ExecutionState {
 enum class ExecutionPhase {
     UP,
     DOWN,
+    SWITCH,
 }
 
 @Serializable
@@ -132,7 +181,8 @@ data class SagaDefinitionResponse(
     val id: String,
     val name: String,
     val version: String,
-    val definition: SagaDefinition,
+    /** Raw definition JSON — supports both v1 (steps) and v2 (nodes) formats. */
+    val definition: JsonElement,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -188,5 +238,32 @@ object JsonElementAsStringSerializer : KSerializer<JsonElement> {
 
     override fun deserialize(decoder: Decoder): JsonElement {
         return Json.parseToJsonElement(decoder.decodeString())
+    }
+}
+
+/**
+ * Serializes a [JsonElement] as a JSON string for non-JSON formats (e.g., MsgPack),
+ * but accepts both raw JSON elements AND pre-encoded strings when decoding from JSON.
+ * Used for fields that arrive as JSON objects from the API but must survive MsgPack round-trips.
+ */
+object JsonElementFlexSerializer : KSerializer<JsonElement> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("JsonElementFlex", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: JsonElement) {
+        encoder.encodeString(Json.encodeToString(JsonElement.serializer(), value))
+    }
+
+    override fun deserialize(decoder: Decoder): JsonElement {
+        return if (decoder is JsonDecoder) {
+            val element = decoder.decodeJsonElement()
+            if (element is JsonPrimitive && element.isString) {
+                Json.parseToJsonElement(element.content)
+            } else {
+                element
+            }
+        } else {
+            Json.parseToJsonElement(decoder.decodeString())
+        }
     }
 }

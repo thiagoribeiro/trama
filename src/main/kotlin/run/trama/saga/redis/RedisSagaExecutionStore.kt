@@ -2,14 +2,16 @@
 
 package run.trama.saga.redis
 
+import io.lettuce.core.ScriptOutputType
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.InstantAsStringSerializer
-import run.trama.saga.RetryState
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
+import run.trama.saga.StepResult
 import run.trama.saga.UuidAsStringSerializer
+import run.trama.saga.WaitingInfo
 import run.trama.saga.store.SagaRepository
 import java.time.Instant
 import java.util.UUID
@@ -28,6 +30,49 @@ class RedisSagaExecutionStore(
 ) : SagaExecutionStore {
     private val logger = LoggerFactory.getLogger(RedisSagaExecutionStore::class.java)
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Atomically reads and deletes a key in a single round-trip.
+     * Equivalent to Redis 6.2+ GETDEL but works on all versions via Lua.
+     */
+    private val getDelScript = """
+        local v = redis.call('GET', KEYS[1])
+        if v then redis.call('DEL', KEYS[1]) end
+        return v
+    """.trimIndent()
+
+    /**
+     * Atomically LPUSH + EXPIRE for step result insertion.
+     * Avoids two separate round-trips per step result.
+     */
+    private val lpushExpireScript = """
+        redis.call('LPUSH', KEYS[1], ARGV[1])
+        redis.call('EXPIRE', KEYS[1], ARGV[2])
+        return 1
+    """.trimIndent()
+
+    // SHA1 digests for pre-loaded scripts. Populated by [loadScripts].
+    private var getDelScriptSha: String? = null
+    private var lpushExpireScriptSha: String? = null
+
+    /** Loads Lua scripts into Redis at startup. Call once before processing begins. */
+    suspend fun loadScripts() {
+        redis.withCommands { commands ->
+            getDelScriptSha = commands.scriptLoad(getDelScript.toByteArray())
+            lpushExpireScriptSha = commands.scriptLoad(lpushExpireScript.toByteArray())
+        }
+    }
+
+    private suspend fun atomicGetDel(key: ByteArray): ByteArray? {
+        return redis.withCommands { commands ->
+            val sha = getDelScriptSha
+            if (sha != null) {
+                commands.evalsha<ByteArray>(sha, ScriptOutputType.VALUE, arrayOf(key))
+            } else {
+                commands.eval<ByteArray>(getDelScript.toByteArray(), ScriptOutputType.VALUE, arrayOf(key))
+            }
+        }
+    }
 
     override suspend fun upsertStart(execution: SagaExecution) {
         val meta = RedisExecutionMeta(
@@ -58,24 +103,13 @@ class RedisSagaExecutionStore(
         }
         writeMeta(meta)
 
-        val definition = runCatching {
-            json.decodeFromString(SagaDefinition.serializer(), meta.definitionJson)
-        }.getOrElse { ex ->
-            logger.warn("failed to decode definition for sagaId={}", meta.id, ex)
-            null
-        }
-
-        if (definition != null) {
-            val execution = SagaExecution(
-                definition = definition,
-                id = meta.id,
-                startedAt = meta.startedAt,
-                currentStepIndex = 0,
-                state = ExecutionState.InProgress(ExecutionPhase.UP, RetryState.None),
-                payload = emptyMap(),
-            )
-            repository.upsertExecutionStart(execution)
-        }
+        repository.upsertExecutionRecord(
+            id = meta.id,
+            name = meta.name,
+            version = meta.version,
+            definitionJson = meta.definitionJson,
+            startedAt = meta.startedAt,
+        )
 
         meta.failureDescription?.let {
             repository.updateFailureDescription(
@@ -156,27 +190,38 @@ class RedisSagaExecutionStore(
             createdAt = Instant.now(),
         )
 
-        val key = stepsKey(sagaId)
+        val key = stepsKey(sagaId).toByteArray()
         val payload = json.encodeToString(RedisStepEntry.serializer(), entry).toByteArray()
         redis.withCommands { commands ->
-            commands.lpush(key.toByteArray(), payload)
-            commands.expire(key.toByteArray(), ttlSeconds)
+            val sha = lpushExpireScriptSha
+            if (sha != null) {
+                commands.evalsha<Long>(
+                    sha,
+                    ScriptOutputType.INTEGER,
+                    arrayOf(key),
+                    payload,
+                    ttlSeconds.toString().toByteArray(),
+                )
+            } else {
+                commands.lpush(key, payload)
+                commands.expire(key, ttlSeconds)
+            }
         }
         touchMetaTtl(sagaId)
     }
 
-    override suspend fun loadStepResults(sagaId: UUID): List<SagaRepository.StepResultForTemplate> {
+    override suspend fun loadStepResults(sagaId: UUID): List<StepResult> {
         val steps = readSteps(sagaId)
         if (steps.isEmpty()) return emptyList()
 
-        val latestByIndex = linkedMapOf<Int, SagaRepository.StepResultForTemplate>()
+        val latestByIndex = linkedMapOf<Int, StepResult>()
         val sorted = steps.sortedByDescending { it.createdAt }
         for (step in sorted) {
             val index = step.stepIndex
             val body = toJsonElement(step.responseBody)
             val current = latestByIndex[index]
             if (current == null) {
-                latestByIndex[index] = SagaRepository.StepResultForTemplate(
+                latestByIndex[index] = StepResult(
                     index = index,
                     name = step.stepName,
                     upBody = if (step.phase == ExecutionPhase.UP.name) body else null,
@@ -231,6 +276,66 @@ class RedisSagaExecutionStore(
         }
     }
 
+    override suspend fun saveWaiting(execution: SagaExecution, signature: String) {
+        val state = execution.state as? ExecutionState.WaitingCallback ?: return
+        val executionJson = json.encodeToString(SagaExecution.serializer(), execution)
+        val entry = RedisWaitingEntry(
+            executionId = execution.id,
+            nodeId = state.nodeId,
+            attempt = state.attempt,
+            nonce = state.nonce,
+            signature = signature,
+            expiresAt = state.deadlineAt,
+            executionJson = executionJson,
+        )
+        val key = waitingKey(execution.id).toByteArray()
+        val value = json.encodeToString(RedisWaitingEntry.serializer(), entry).toByteArray()
+        val ttl = (state.deadlineAt.epochSecond - Instant.now().epochSecond + 120).coerceAtLeast(60)
+        redis.withCommands { commands ->
+            commands.set(key, value)
+            commands.expire(key, ttl)
+        }
+
+        // Write to Postgres so the status endpoint can surface WAITING_CALLBACK
+        // and the callback timeout scanner can find timed-out executions.
+        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
+        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
+        repository.saveWaitingState(
+            executionId = execution.id,
+            nodeId = state.nodeId,
+            attempt = state.attempt,
+            nonce = state.nonce,
+            signature = signature,
+            expiresAt = state.deadlineAt,
+            executionJson = executionJson,
+        )
+    }
+
+    override suspend fun consumeWaiting(executionId: UUID): WaitingInfo? {
+        val key = waitingKey(executionId).toByteArray()
+        val raw = atomicGetDel(key) ?: return null
+        return runCatching {
+            val entry = json.decodeFromString(RedisWaitingEntry.serializer(), raw.toString(Charsets.UTF_8))
+            val execution = json.decodeFromString(SagaExecution.serializer(), entry.executionJson)
+            WaitingInfo(
+                nodeId = entry.nodeId,
+                attempt = entry.attempt,
+                nonce = entry.nonce,
+                signature = entry.signature,
+                expiresAt = entry.expiresAt,
+                execution = execution,
+            )
+        }.getOrNull()
+    }
+
+    override suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean {
+        val key = "saga:nonce:$nonce".toByteArray()
+        val value = "1".toByteArray()
+        return redis.withCommands { commands ->
+            commands.setNx(key, value, ttlSeconds)
+        }
+    }
+
     private suspend fun deleteKeys(executionId: UUID) {
         val meta = metaKey(executionId).toByteArray()
         val steps = stepsKey(executionId).toByteArray()
@@ -241,6 +346,7 @@ class RedisSagaExecutionStore(
 
     private fun metaKey(executionId: UUID): String = keyspace.executionMetaKey(executionId)
     private fun stepsKey(executionId: UUID): String = keyspace.executionStepsKey(executionId)
+    private fun waitingKey(executionId: UUID): String = keyspace.waitingKey(executionId)
 
     private fun toJsonElement(raw: String?): JsonElement? {
         if (raw == null) return null
@@ -280,4 +386,18 @@ data class RedisStepEntry(
     val startedAt: Instant,
     @Serializable(with = InstantAsStringSerializer::class)
     val createdAt: Instant,
+)
+
+@Serializable
+data class RedisWaitingEntry(
+    @Serializable(with = UuidAsStringSerializer::class)
+    val executionId: UUID,
+    val nodeId: String,
+    val attempt: Int,
+    val nonce: String,
+    val signature: String,
+    @Serializable(with = InstantAsStringSerializer::class)
+    val expiresAt: Instant,
+    /** Full [SagaExecution] JSON (with WaitingCallback state) for re-enqueueing on valid callback. */
+    val executionJson: String,
 )

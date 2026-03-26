@@ -3,19 +3,24 @@ package run.trama.saga.store
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
+import run.trama.saga.WaitingInfo
+import run.trama.runtime.CallbackTimeoutRepository
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.jooq.JSONB
 import org.jooq.impl.DSL
+import run.trama.saga.InstantAsStringSerializer
+import run.trama.saga.StepResult
 
 class SagaRepository(
     private val db: DatabaseClient,
     definitionCacheMaxSize: Int = 1000,
-) {
+) : CallbackTimeoutRepository {
     private val definitionCache: MutableMap<UUID, SagaDefinitionRecord> =
         java.util.Collections.synchronizedMap(
             object : java.util.LinkedHashMap<UUID, SagaDefinitionRecord>(
@@ -51,6 +56,7 @@ class SagaRepository(
     private val execStartedAt = DSL.field("started_at", Instant::class.java)
     private val execCompletedAt = DSL.field("completed_at", Instant::class.java)
     private val execUpdatedAt = DSL.field("updated_at", Instant::class.java)
+    private val execWaitingState = DSL.field("waiting_state", JSONB::class.java)
 
     private val defTable = DSL.table("saga_definition")
     private val defId = DSL.field("id", UUID::class.java)
@@ -62,7 +68,7 @@ class SagaRepository(
 
     private val stepSagaId = DSL.field("saga_id", UUID::class.java)
     private val stepIndex = DSL.field("step_index", Int::class.java)
-    private val stepName = DSL.field("step_name", String::class.java)
+    private val stepNameField = DSL.field("step_name", String::class.java)
     private val stepPhase = DSL.field("phase", String::class.java)
     private val stepStatusCode = DSL.field("status_code", Int::class.java)
     private val stepSuccess = DSL.field("success", Boolean::class.java)
@@ -71,10 +77,31 @@ class SagaRepository(
     private val stepCreatedAt = DSL.field("created_at", Instant::class.java)
 
     suspend fun upsertExecutionStart(execution: SagaExecution) {
+        upsertExecutionRecord(
+            id = execution.id,
+            name = execution.definition.name,
+            version = execution.definition.version,
+            definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition),
+            startedAt = execution.startedAt,
+        )
+    }
+
+    /**
+     * Ensures a row exists in `saga_execution` for the given [id]/[startedAt] combination.
+     * On conflict, preserves any existing definition and resets status to `IN_PROGRESS`.
+     * Prefer this over constructing a dummy [SagaExecution] when only raw metadata is available.
+     */
+    suspend fun upsertExecutionRecord(
+        id: UUID,
+        name: String,
+        version: String,
+        definitionJson: String,
+        startedAt: Instant,
+    ) {
+        val definitionJsonb = JSONB.valueOf(definitionJson)
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now()
-            val definitionJson = JSONB.valueOf(json.encodeToString(SagaDefinition.serializer(), execution.definition))
             dsl.insertInto(execTable)
                 .columns(
                     execId,
@@ -86,18 +113,18 @@ class SagaRepository(
                     execUpdatedAt,
                 )
                 .values(
-                    execution.id,
-                    execution.definition.name,
-                    execution.definition.version,
-                    definitionJson,
+                    id,
+                    name,
+                    version,
+                    definitionJsonb,
                     "IN_PROGRESS",
-                    execution.startedAt,
+                    startedAt,
                     now,
                 )
                 .onConflict(execId, execStartedAt)
                 .doUpdate()
                 .set(execStatus, "IN_PROGRESS")
-                .set(execDefinition, DSL.coalesce(execTable.field(execDefinition), definitionJson))
+                .set(execDefinition, DSL.coalesce(execTable.field(execDefinition), definitionJsonb))
                 .set(execUpdatedAt, now)
                 .execute()
         }
@@ -172,7 +199,7 @@ class SagaRepository(
                 .columns(
                     stepSagaId,
                     stepIndex,
-                    stepName,
+                    stepNameField,
                     stepPhase,
                     stepStatusCode,
                     stepSuccess,
@@ -195,12 +222,12 @@ class SagaRepository(
         }
     }
 
-    suspend fun loadStepResultsForTemplate(sagaId: UUID): List<StepResultForTemplate> {
+    suspend fun loadStepResultsForTemplate(sagaId: UUID): List<StepResult> {
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val records = dsl.select(
                 stepIndex,
-                stepName,
+                stepNameField,
                 stepPhase,
                 stepBody,
                 stepCreatedAt,
@@ -211,15 +238,15 @@ class SagaRepository(
                 .orderBy(stepIndex.asc(), stepCreatedAt.desc())
                 .fetch()
 
-            val latestByIndex = linkedMapOf<Int, StepResultForTemplate>()
+            val latestByIndex = linkedMapOf<Int, StepResult>()
             for (record in records) {
                 val index = record.get(stepIndex) ?: continue
-                val name = record.get(stepName) ?: ""
+                val name = record.get(stepNameField) ?: ""
                 val phase = record.get(stepPhase) ?: ExecutionPhase.UP.name
                 val body = record.get(stepBody)?.data()?.let { parseJson(it) }
                 val current = latestByIndex[index]
                 if (current == null) {
-                    latestByIndex[index] = StepResultForTemplate(
+                    latestByIndex[index] = StepResult(
                         index = index,
                         name = name,
                         upBody = if (phase == ExecutionPhase.UP.name) body else null,
@@ -296,6 +323,103 @@ class SagaRepository(
         }
     }
 
+    suspend fun saveWaitingState(
+        executionId: UUID,
+        nodeId: String,
+        attempt: Int,
+        nonce: String,
+        signature: String,
+        expiresAt: Instant,
+        executionJson: String,
+    ) {
+        val state = WaitingStateJson(
+            nodeId = nodeId,
+            attempt = attempt,
+            nonce = nonce,
+            signature = signature,
+            expiresAt = expiresAt,
+            executionJson = executionJson,
+        )
+        val waitingJson = JSONB.valueOf(json.encodeToString(WaitingStateJson.serializer(), state))
+        db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            dsl.update(execTable)
+                .set(execWaitingState, waitingJson)
+                .set(execStatus, "WAITING_CALLBACK")
+                .set(execUpdatedAt, Instant.now())
+                .where(execId.eq(executionId))
+                .and(execStartedAt.ge(cutoff()))
+                .execute()
+        }
+    }
+
+    override suspend fun consumeWaitingState(executionId: UUID): WaitingInfo? {
+        return db.withConnection { connection ->
+            // Atomically clear and return waiting_state in one round-trip (CR-2).
+            val sql = """
+                UPDATE saga_execution
+                SET waiting_state = NULL, updated_at = now()
+                WHERE id = ?
+                  AND started_at >= ?
+                  AND waiting_state IS NOT NULL
+                RETURNING waiting_state
+            """.trimIndent()
+            val rs = connection.prepareStatement(sql).also { ps ->
+                ps.setObject(1, executionId)
+                ps.setObject(2, java.sql.Timestamp.from(cutoff()))
+            }.executeQuery()
+            if (!rs.next()) return@withConnection null
+            val rawJson = rs.getString("waiting_state") ?: return@withConnection null
+
+            runCatching {
+                val state = json.decodeFromString(WaitingStateJson.serializer(), rawJson)
+                val execution = json.decodeFromString(run.trama.saga.SagaExecution.serializer(), state.executionJson)
+                WaitingInfo(
+                    nodeId = state.nodeId,
+                    attempt = state.attempt,
+                    nonce = state.nonce,
+                    signature = state.signature,
+                    expiresAt = state.expiresAt,
+                    execution = execution,
+                )
+            }.getOrNull()
+        }
+    }
+
+    /**
+     * Returns execution IDs whose `waiting_state` has a `deadlineAt` older than [bufferSeconds]
+     * seconds ago. These are executions that should have been processed via the Redis sentinel
+     * but were missed (e.g., Redis data loss).
+     *
+     * @param bufferSeconds grace period — execution whose deadline passed less than this many
+     *   seconds ago are skipped to avoid double-processing items still in the Redis ZSET.
+     * @param limit maximum rows to return per scan.
+     */
+    override suspend fun findExpiredWaitingExecutions(bufferSeconds: Long, limit: Int): List<UUID> {
+        return db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            val sql = """
+                SELECT id FROM saga_execution
+                WHERE status = 'WAITING_CALLBACK'
+                AND waiting_state IS NOT NULL
+                AND (waiting_state->>'expiresAt')::timestamptz < now() - make_interval(secs => ?)
+                AND started_at >= ?
+                ORDER BY started_at DESC
+                LIMIT ?
+            """.trimIndent()
+            val rs = connection.prepareStatement(sql).also { ps ->
+                ps.setLong(1, bufferSeconds)
+                ps.setObject(2, java.sql.Timestamp.from(cutoff()))
+                ps.setInt(3, limit)
+            }.executeQuery()
+            val ids = mutableListOf<UUID>()
+            while (rs.next()) {
+                ids += UUID.fromString(rs.getString("id"))
+            }
+            ids
+        }
+    }
+
     private fun parseJson(raw: String): JsonElement? {
         return try {
             json.parseToJsonElement(raw)
@@ -314,13 +438,6 @@ class SagaRepository(
     }
 
     private fun cutoff(): Instant = Instant.now().minus(15, ChronoUnit.DAYS)
-
-    data class StepResultForTemplate(
-        val index: Int,
-        val name: String,
-        val upBody: JsonElement?,
-        val downBody: JsonElement?,
-    )
 
     data class SagaExecutionStatus(
         val id: UUID,
@@ -394,8 +511,7 @@ class SagaRepository(
                     now,
                     now,
                 )
-                .onConflict(defId)
-                .doNothing()
+                .onConflictDoNothing()
                 .execute()
         }
         if (inserted == 0) {
@@ -542,5 +658,16 @@ class SagaRepository(
         val definitionJson: String,
         val createdAt: Instant,
         val updatedAt: Instant,
+    )
+
+    @Serializable
+    private data class WaitingStateJson(
+        val nodeId: String,
+        val attempt: Int,
+        val nonce: String,
+        val signature: String,
+        @Serializable(with = InstantAsStringSerializer::class)
+        val expiresAt: Instant,
+        val executionJson: String,
     )
 }

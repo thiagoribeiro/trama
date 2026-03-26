@@ -83,6 +83,8 @@ class RedisShardingTest {
                         keys: Array<ByteArray>,
                         vararg values: ByteArray,
                     ): T? = null
+                    override suspend fun scriptLoad(script: ByteArray): String = ""
+                    override suspend fun <T> evalsha(digest: String, outputType: ScriptOutputType, keys: Array<ByteArray>, vararg values: ByteArray): T? = null
 
                     override suspend fun get(key: ByteArray): ByteArray? = null
                     override suspend fun incr(key: ByteArray): Long? = 0L
@@ -90,6 +92,7 @@ class RedisShardingTest {
                     override suspend fun psetex(key: ByteArray, milliseconds: Long, value: ByteArray): String? = "OK"
                     override suspend fun expire(key: ByteArray, seconds: Long): Boolean? = true
                     override suspend fun set(key: ByteArray, value: ByteArray): String? = "OK"
+                    override suspend fun setNx(key: ByteArray, value: ByteArray, ttlSeconds: Long): Boolean = true
                     override suspend fun del(vararg keys: ByteArray): Long? = 0L
                     override suspend fun lpush(key: ByteArray, value: ByteArray): Long? = 0L
                     override suspend fun lrange(key: ByteArray, start: Long, stop: Long): List<ByteArray> = emptyList()
@@ -121,7 +124,7 @@ class RedisShardingTest {
             id = UUID.fromString("4f70fd63-b3dc-4c85-8902-7506c27fbf19"),
             startedAt = Instant.parse("2026-03-14T00:00:00Z"),
             currentStepIndex = 0,
-            state = ExecutionState.InProgress(ExecutionPhase.UP),
+            state = ExecutionState.InProgress(activeNodeId = null, phase = ExecutionPhase.UP),
             payload = emptyMap(),
         )
 

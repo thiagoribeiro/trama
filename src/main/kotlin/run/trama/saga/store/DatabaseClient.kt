@@ -6,6 +6,10 @@ import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory
 import io.micrometer.core.instrument.MeterRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import liquibase.Liquibase
+import liquibase.database.DatabaseFactory
+import liquibase.database.jvm.JdbcConnection
+import liquibase.resource.ClassLoaderResourceAccessor
 import run.trama.config.DatabaseConfig
 import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
@@ -36,6 +40,16 @@ class DatabaseClient(
             metricsTrackerFactory = MicrometerMetricsTrackerFactory(meterRegistry)
         }
         dataSource = HikariDataSource(dsConfig)
+        runMigrations()
+    }
+
+    private fun runMigrations() {
+        dataSource.connection.use { conn ->
+            val database = DatabaseFactory.getInstance()
+                .findCorrectDatabaseImplementation(JdbcConnection(conn))
+            Liquibase("db/changelog/db.changelog-master.xml", ClassLoaderResourceAccessor(), database)
+                .update("")
+        }
     }
 
     suspend fun <T> withConnection(block: (Connection) -> T): T =

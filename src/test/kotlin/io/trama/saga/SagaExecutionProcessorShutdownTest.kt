@@ -76,7 +76,7 @@ class SagaExecutionProcessorShutdownTest {
             id = UUID.randomUUID(),
             startedAt = Instant.now(),
             currentStepIndex = 0,
-            state = ExecutionState.InProgress(ExecutionPhase.UP),
+            state = ExecutionState.InProgress(activeNodeId = null, phase = ExecutionPhase.UP),
         )
 
     private class TestConsumer(

@@ -1,6 +1,7 @@
 package run.trama.saga
 
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.random.Random
 
 interface RetryPolicy {
@@ -26,7 +27,7 @@ class DefaultRetryPolicy : RetryPolicy {
                 if (attempt > handling.maxAttempts) {
                     RetryDecision(false, attempt, 0)
                 } else {
-                    val baseDelay = handling.initialDelayMillis * pow(handling.multiplier, attempt - 1)
+                    val baseDelay = handling.initialDelayMillis * handling.multiplier.pow(attempt - 1)
                     val capped = min(baseDelay, handling.maxDelayMillis.toDouble())
                     val jitter = capped * handling.jitterRatio * (Random.nextDouble() - 0.5) * 2.0
                     val delay = (capped + jitter).toLong().coerceAtLeast(0)
@@ -34,12 +35,6 @@ class DefaultRetryPolicy : RetryPolicy {
                 }
             }
         }
-    }
-
-    private fun pow(base: Double, exp: Int): Double {
-        var result = 1.0
-        repeat(exp) { result *= base }
-        return result
     }
 }
 

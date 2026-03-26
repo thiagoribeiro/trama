@@ -32,6 +32,9 @@ object ConfigLoader {
             ?: System.getenv("DATABASE_USER")
         val dbPassword = System.getProperty("database.password")
             ?: System.getenv("DATABASE_PASSWORD")
+        val callbackBaseUrl = System.getProperty("runtime.callback.baseUrl")
+        val callbackHmacSecret = System.getProperty("runtime.callback.hmacSecret")
+        val callbackHmacKid = System.getProperty("runtime.callback.hmacKid")
 
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
@@ -56,6 +59,17 @@ object ConfigLoader {
                     database = dbName ?: config.database.database,
                     user = dbUser ?: config.database.user,
                     password = dbPassword ?: config.database.password,
+                )
+            )
+        }
+        if (!callbackBaseUrl.isNullOrBlank() || !callbackHmacSecret.isNullOrBlank() || !callbackHmacKid.isNullOrBlank()) {
+            config = config.copy(
+                runtime = config.runtime.copy(
+                    callback = config.runtime.callback.copy(
+                        baseUrl = callbackBaseUrl ?: config.runtime.callback.baseUrl,
+                        hmacSecret = callbackHmacSecret ?: config.runtime.callback.hmacSecret,
+                        hmacKid = callbackHmacKid ?: config.runtime.callback.hmacKid,
+                    )
                 )
             )
         }
