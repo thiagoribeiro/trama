@@ -2,24 +2,40 @@
 
 > Stop building orchestration logic inside your services.
 
-Trama is a lightweight way to orchestrate distributed workflows using HTTP â€” without heavy infrastructure, complex runtimes, or vendor lock-in.
+Trama is a lightweight way to orchestrate distributed workflows using HTTP — without heavy infrastructure, complex runtimes, or vendor lock-in.
 
 ---
 
 ## The problem
 
-Every backend eventually ends up doing this:
+Most systems don’t lack orchestration — they implement it implicitly.
 
-- retries scattered across services  
-- async callbacks with no control  
-- cron jobs polling databases  
-- state machines hidden in application code  
+Teams start with event-driven choreography:
 
-It works â€” until it doesnâ€™t.
+- Service A emits an event  
+- Service B reacts and emits another event  
+- Service C continues the flow  
+
+At first, it works.
+
+As complexity grows, teams start adding:
+
+- retries inside each service  
+- ad-hoc logic to handle async flows  
+- cron jobs to recover inconsistencies  
+
+Over time, this becomes an **implicit workflow engine**:
+
+- no single place to understand the flow  
+- no clear execution state  
+- hard to debug and reason about  
+- difficult to evolve safely  
 
 ---
 
 ## The solution
+
+Make orchestration explicit.
 
 Define your workflow as JSON. Trama handles execution, retries, async callbacks, and state.
 
@@ -71,28 +87,36 @@ A payment flow with async authorization and sync capture:
 }
 ```
 
-ðŸ‘‰ No polling. No cron. No manual state tracking.
+👉 No polling. No cron. No hidden state machines.
 
 ---
 
-## Why not just use queues?
+## Why not just use events and queues?
 
-Queues are great â€” but they donâ€™t solve orchestration:
+Event-driven systems are great — but choreography has limits.
 
-- no execution state tracking  
-- no branching logic  
-- no async coordination  
-- no retry semantics across steps  
+As flows become complex, you end up with:
 
-You end up rebuilding orchestration logic in every service.
+- implicit execution order  
+- duplicated retry logic  
+- inconsistent recovery strategies  
+- no global visibility of the workflow  
+
+You already built an orchestrator — just not an explicit one.
 
 ---
 
 ## Why not Temporal?
 
-Temporal is powerful â€” but often too heavy for most teams.
+Temporal is powerful — but often too heavy for most teams.
 
-Trama focuses on:
+It introduces:
+
+- new programming model  
+- dedicated infrastructure  
+- operational complexity  
+
+Trama focuses on a different tradeoff:
 
 - minimal setup  
 - HTTP-first integration  
@@ -173,7 +197,14 @@ curl http://localhost:8080/sagas/<execution-id>
 
 ## Definition formats
 
-- linear flows
+Trama supports two formats:
+
+### v1 — Linear steps
+Simple sequential workflows with compensation.
+
+### v2 — Node graph
+Supports:
+
 - branching (`switch`)
 - async tasks
 - DAG-style execution
