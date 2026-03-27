@@ -19,6 +19,8 @@ services:
       RUNTIME_ENABLED: "true"
       METRICS_ENABLED: "true"
       TELEMETRY_ENABLED: "false"
+      RUNTIME_CALLBACK_BASEURL: "http://127.0.0.1:8080"
+      RUNTIME_CALLBACK_HMACSECRET: "demo-secret"
     depends_on:
       - db
       - redis

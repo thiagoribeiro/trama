@@ -59,6 +59,8 @@ import io.ktor.server.netty.EngineMain
 import org.slf4j.LoggerFactory
 
 fun main(args: Array<String>) {
+    System.setProperty("org.jooq.no-logo", "true")
+    System.setProperty("org.jooq.no-tips", "true")
     EngineMain.main(args)
 }
 
@@ -134,6 +136,12 @@ fun Application.module() {
     install(CallLogging) {
         level = Level.INFO
         callIdMdc("callId")
+        format { call ->
+            val status = call.response.status()
+            val method = call.request.local.method.value
+            val uri    = call.request.local.uri
+            "$status $method $uri"
+        }
     }
     install(Compression) {
         gzip()

@@ -33,8 +33,11 @@ object ConfigLoader {
         val dbPassword = System.getProperty("database.password")
             ?: System.getenv("DATABASE_PASSWORD")
         val callbackBaseUrl = System.getProperty("runtime.callback.baseUrl")
+            ?: System.getenv("RUNTIME_CALLBACK_BASEURL")
         val callbackHmacSecret = System.getProperty("runtime.callback.hmacSecret")
+            ?: System.getenv("RUNTIME_CALLBACK_HMACSECRET")
         val callbackHmacKid = System.getProperty("runtime.callback.hmacKid")
+            ?: System.getenv("RUNTIME_CALLBACK_HMACKID")
 
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
