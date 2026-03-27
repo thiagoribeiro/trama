@@ -1,0 +1,12 @@
+{
+  "payload": {
+    "orderId": "ord-demo-001",
+    "amount":  "99.90",
+    "paymentMethod": "pix"
+  },
+  "steps": {
+    "validate":    { "status": 200, "body": { "valid": true } },
+    "pix-payment": { "status": 200, "body": { "charged": true, "method": "pix" } },
+    "notify":      { "status": 200, "body": { "notified": true } }
+  }
+}

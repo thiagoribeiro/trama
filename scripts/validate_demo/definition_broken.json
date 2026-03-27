@@ -1,0 +1,47 @@
+{
+  "name": "checkout-full-demo",
+  "version": "v1",
+  "failureHandling": { "type": "retry", "maxAttempts": 2, "delayMillis": 500 },
+  "entrypoint": "validaet",
+  "nodes": [
+    {
+      "kind": "task",
+      "id": "validate",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/validate",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}" }
+        }
+      },
+      "next": "choose-payement"
+    },
+    {
+      "kind": "switch",
+      "id": "choose-payment",
+      "cases": [
+        {
+          "name": "pix",
+          "when": { "==": [ { "var": "input.paymentMethod" }, "pix" ] },
+          "target": "pix-payment"
+        }
+      ],
+      "default": "pix-payment"
+    },
+    {
+      "kind": "task",
+      "id": "pix-payment",
+      "action": {
+        "mode": "async",
+        "request": {
+          "url": "http://localhost:5003/step/pix-payment",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}" }
+        }
+      }
+    }
+  ]
+}

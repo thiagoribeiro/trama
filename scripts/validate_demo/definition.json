@@ -1,0 +1,117 @@
+{
+  "name": "checkout-full-demo",
+  "version": "v1",
+  "failureHandling": { "type": "retry", "maxAttempts": 2, "delayMillis": 500 },
+  "entrypoint": "validate",
+  "nodes": [
+    {
+      "kind": "task",
+      "id": "validate",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/validate",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}", "amount": "{{payload.amount}}" }
+        }
+      },
+      "compensation": {
+        "url": "http://localhost:5003/step/validate?phase=down",
+        "verb": "POST",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "orderId": "{{payload.orderId}}" }
+      },
+      "next": "choose-payment"
+    },
+    {
+      "kind": "switch",
+      "id": "choose-payment",
+      "cases": [
+        {
+          "name": "pix",
+          "when": { "==": [ { "var": "input.paymentMethod" }, "pix" ] },
+          "target": "pix-payment"
+        },
+        {
+          "name": "card",
+          "when": { "==": [ { "var": "input.paymentMethod" }, "card" ] },
+          "target": "card-payment"
+        }
+      ],
+      "default": "pix-payment"
+    },
+    {
+      "kind": "task",
+      "id": "pix-payment",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/pix-payment",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}", "method": "pix" }
+        }
+      },
+      "compensation": {
+        "url": "http://localhost:5003/step/pix-payment?phase=down",
+        "verb": "POST",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "orderId": "{{payload.orderId}}" }
+      },
+      "next": "notify"
+    },
+    {
+      "kind": "task",
+      "id": "card-payment",
+      "action": {
+        "mode": "async",
+        "request": {
+          "url": "http://localhost:5003/async-step/card-payment",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": {
+            "orderId":       "{{payload.orderId}}",
+            "method":        "card",
+            "callbackUrl":   "{{runtime.callback.url}}",
+            "callbackToken": "{{runtime.callback.token}}"
+          }
+        },
+        "acceptedStatusCodes": [ 202 ],
+        "callback": { "timeoutMillis": 60000 }
+      },
+      "compensation": {
+        "url": "http://localhost:5003/step/card-payment?phase=down",
+        "verb": "POST",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "orderId": "{{payload.orderId}}" }
+      },
+      "next": "notify"
+    },
+    {
+      "kind": "task",
+      "id": "notify",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/notify",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}" }
+        }
+      }
+    }
+  ],
+  "onSuccessCallback": {
+    "url": "http://localhost:5003/callback/success",
+    "verb": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": { "orderId": "{{payload.orderId}}", "result": "succeeded" }
+  },
+  "onFailureCallback": {
+    "url": "http://localhost:5003/callback/failure",
+    "verb": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": { "orderId": "{{payload.orderId}}", "result": "failed" }
+  }
+}

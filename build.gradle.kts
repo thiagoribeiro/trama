@@ -109,6 +109,13 @@ application {
     mainClass.set("run.trama.app.ApplicationKt")
 }
 
+tasks.register<JavaExec>("trama-validate") {
+    group       = "application"
+    description = "Validate a v2 saga definition offline (no orchestrator required)"
+    classpath   = sourceSets.main.get().runtimeClasspath
+    mainClass.set("run.trama.cli.ValidateCommandKt")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_21)

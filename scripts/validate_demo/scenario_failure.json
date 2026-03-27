@@ -1,0 +1,10 @@
+{
+  "payload": {
+    "orderId": "ord-expired",
+    "amount":  "0.00",
+    "paymentMethod": "pix"
+  },
+  "steps": {
+    "validate": { "status": 500, "body": { "error": "order not found or already expired" } }
+  }
+}
