@@ -26,8 +26,8 @@ class SwitchNodeHandlerTest {
     @Test
     fun `first case matches returns first target`() {
         val node = switchNode(
-            SwitchCase("pix", condition("input.type", "pix"), "pix-node"),
-            SwitchCase("card", condition("input.type", "card"), "card-node"),
+            SwitchCase("pix", condition("payload.type", "pix"), "pix-node"),
+            SwitchCase("card", condition("payload.type", "card"), "card-node"),
             default = "fallback",
         )
         val payload = payloadOf("type" to "pix")
@@ -42,8 +42,8 @@ class SwitchNodeHandlerTest {
     @Test
     fun `second case matches when first is false`() {
         val node = switchNode(
-            SwitchCase("pix", condition("input.type", "pix"), "pix-node"),
-            SwitchCase("card", condition("input.type", "card"), "card-node"),
+            SwitchCase("pix", condition("payload.type", "pix"), "pix-node"),
+            SwitchCase("card", condition("payload.type", "card"), "card-node"),
             default = "fallback",
         )
         val payload = payloadOf("type" to "card")
@@ -58,8 +58,8 @@ class SwitchNodeHandlerTest {
     @Test
     fun `no case matches uses default target`() {
         val node = switchNode(
-            SwitchCase("pix", condition("input.type", "pix"), "pix-node"),
-            SwitchCase("card", condition("input.type", "card"), "card-node"),
+            SwitchCase("pix", condition("payload.type", "pix"), "pix-node"),
+            SwitchCase("card", condition("payload.type", "card"), "card-node"),
             default = "fallback",
         )
         val payload = payloadOf("type" to "boleto")
@@ -69,6 +69,69 @@ class SwitchNodeHandlerTest {
         assertEquals("fallback", result.targetNodeId)
         assertNull(result.matchedCaseName)
         assertTrue(result.usedDefault)
+    }
+
+    @Test
+    fun `matching on prev body works`() {
+        val node = switchNode(
+            SwitchCase("approved", condition("prev.body.status", "approved"), "ship"),
+            default = "cancel",
+        )
+        val stepResults = listOf(
+            StepResult(
+                index = 0,
+                name = "pay",
+                upBody = Json.parseToJsonElement("""{"status":"approved"}"""),
+                downBody = null,
+            )
+        )
+
+        val result = SwitchNodeHandler.evaluate(node, execution(), emptyMap(), stepResults)
+
+        assertEquals("ship", result.targetNodeId)
+        assertFalse(result.usedDefault)
+    }
+
+    @Test
+    fun `matching on step by name works`() {
+        val node = switchNode(
+            SwitchCase("approved", condition("step.pay.body.status", "approved"), "ship"),
+            default = "cancel",
+        )
+        val stepResults = listOf(
+            StepResult(
+                index = 0,
+                name = "pay",
+                upBody = Json.parseToJsonElement("""{"status":"approved"}"""),
+                downBody = null,
+            )
+        )
+
+        val result = SwitchNodeHandler.evaluate(node, execution(), emptyMap(), stepResults)
+
+        assertEquals("ship", result.targetNodeId)
+        assertFalse(result.usedDefault)
+    }
+
+    @Test
+    fun `matching on step by index works`() {
+        val node = switchNode(
+            SwitchCase("approved", condition("step.0.body.status", "approved"), "ship"),
+            default = "cancel",
+        )
+        val stepResults = listOf(
+            StepResult(
+                index = 0,
+                name = "pay",
+                upBody = Json.parseToJsonElement("""{"status":"approved"}"""),
+                downBody = null,
+            )
+        )
+
+        val result = SwitchNodeHandler.evaluate(node, execution(), emptyMap(), stepResults)
+
+        assertEquals("ship", result.targetNodeId)
+        assertFalse(result.usedDefault)
     }
 
     @Test

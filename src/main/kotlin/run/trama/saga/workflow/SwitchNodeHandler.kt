@@ -47,7 +47,7 @@ object SwitchNodeHandler {
         payload: Map<String, PayloadValue>,
         stepResults: List<StepResult>,
     ): Map<String, Any?> {
-        val inputMap = payload.mapValues { it.value.value.toAny() }
+        val payloadMap = payload.mapValues { it.value.value.toAny() }
         val nodesMap = stepResults.associate { step ->
             step.name to mapOf(
                 "response" to mapOf(
@@ -55,9 +55,22 @@ object SwitchNodeHandler {
                 ),
             )
         }
+        fun stepEntry(step: StepResult): Map<String, Any?> = mapOf(
+            "index" to step.index,
+            "name"  to step.name,
+            "body"  to (step.upBody ?: step.downBody).toAny(),
+        )
+        val stepMap: Map<String, Any?> =
+            stepResults.associate { it.index.toString() to stepEntry(it) } +
+            stepResults.associate { it.name to stepEntry(it) }
+        val prevMap = stepResults.lastOrNull()?.let {
+            mapOf("body" to (it.upBody ?: it.downBody).toAny())
+        }
         return mapOf(
-            "input" to inputMap,
-            "nodes" to nodesMap,
+            "payload" to payloadMap,
+            "nodes"   to nodesMap,
+            "step"    to stepMap,
+            "prev"    to prevMap,
         )
     }
 }

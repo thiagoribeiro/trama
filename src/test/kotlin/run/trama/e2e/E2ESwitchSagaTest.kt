@@ -47,7 +47,7 @@ class E2ESwitchSagaTest {
     private fun svc(path: String) = "http://localhost:${wm.port()}$path"
 
     /**
-     * Builds a v2 definition with a switch node routing by [input.paymentMethod].
+     * Builds a v2 definition with a switch node routing by [payload.paymentMethod].
      * Routes: pix → pix-payment → notify, card → card-payment → notify, default → fallback-payment → notify.
      */
     private fun switchDefinition(name: String): Map<*, *> {
@@ -86,8 +86,8 @@ class E2ESwitchSagaTest {
                         "kind" to "switch",
                         "id" to "choose-payment",
                         "cases" to listOf(
-                            mapOf("name" to "pix", "when" to mapOf("==" to listOf(mapOf("var" to "input.paymentMethod"), "pix")), "target" to "pix-payment"),
-                            mapOf("name" to "card", "when" to mapOf("==" to listOf(mapOf("var" to "input.paymentMethod"), "card")), "target" to "card-payment"),
+                            mapOf("name" to "pix", "when" to mapOf("==" to listOf(mapOf("var" to "payload.paymentMethod"), "pix")), "target" to "pix-payment"),
+                            mapOf("name" to "card", "when" to mapOf("==" to listOf(mapOf("var" to "payload.paymentMethod"), "card")), "target" to "card-payment"),
                         ),
                         "default" to "fallback-payment",
                     ),
@@ -201,7 +201,7 @@ class E2ESwitchSagaTest {
                             "id" to "choose",
                             // No "default" field — should be rejected
                             "cases" to listOf(
-                                mapOf("name" to "a", "when" to mapOf("==" to listOf(mapOf("var" to "input.x"), "1")), "target" to "task1"),
+                                mapOf("name" to "a", "when" to mapOf("==" to listOf(mapOf("var" to "payload.x"), "1")), "target" to "task1"),
                             ),
                         ),
                         mapOf(

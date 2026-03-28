@@ -89,12 +89,12 @@ def make_definition(service_url: str) -> dict:
                 "cases": [
                     {
                         "name": "pix",
-                        "when": {"==": [{"var": "input.paymentMethod"}, "pix"]},
+                        "when": {"==": [{"var": "payload.paymentMethod"}, "pix"]},
                         "target": "pix-payment",
                     },
                     {
                         "name": "card",
-                        "when": {"==": [{"var": "input.paymentMethod"}, "card"]},
+                        "when": {"==": [{"var": "payload.paymentMethod"}, "card"]},
                         "target": "card-payment",
                     },
                 ],

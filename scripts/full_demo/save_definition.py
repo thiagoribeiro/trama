@@ -79,7 +79,7 @@ DEFINITION = {
 
         # ── 2. choose-payment (switch) ────────────────────────────────────────
         # Routes execution based on the caller's payload.paymentMethod.
-        # In the switch context, payload fields are accessed via `input.*`.
+        # Switch case conditions use json-logic; payload fields are accessed via `payload.*`.
         # `default` is required and acts as a fallback if no case matches.
         {
             "kind": "switch",
@@ -87,14 +87,14 @@ DEFINITION = {
             "cases": [
                 {
                     "name": "pix",
-                    # json-logic: input.paymentMethod == "pix"
-                    "when": {"==": [{"var": "input.paymentMethod"}, "pix"]},
+                    # json-logic: payload.paymentMethod == "pix"
+                    "when": {"==": [{"var": "payload.paymentMethod"}, "pix"]},
                     "target": "pix-payment",
                 },
                 {
                     "name": "card",
-                    # json-logic: input.paymentMethod == "card"
-                    "when": {"==": [{"var": "input.paymentMethod"}, "card"]},
+                    # json-logic: payload.paymentMethod == "card"
+                    "when": {"==": [{"var": "payload.paymentMethod"}, "card"]},
                     "target": "card-payment",
                 },
             ],

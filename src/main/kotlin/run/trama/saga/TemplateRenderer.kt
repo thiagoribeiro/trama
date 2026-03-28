@@ -41,37 +41,28 @@ object TemplateContextBuilder {
             "phase" to phase.name,
         )
         base["payload"] = payload.mapValues { it.value.value.toAny() }
-        val stepsList = stepResults.map { step ->
-            mapOf(
-                "index" to step.index,
-                "name" to step.name,
-                "body" to (step.upBody ?: step.downBody).toAny(),
-                "up" to mapOf("body" to step.upBody.toAny()),
-                "down" to mapOf("body" to step.downBody.toAny()),
-            )
-        }
-        val stepsByIndex = stepResults.associate { step ->
-            step.index.toString() to mapOf(
-                "index" to step.index,
-                "name" to step.name,
-                "body" to (step.upBody ?: step.downBody).toAny(),
-                "up" to mapOf("body" to step.upBody.toAny()),
-                "down" to mapOf("body" to step.downBody.toAny()),
-            )
-        }
-        base["steps"] = stepsList
-        base["step"] = stepsByIndex
-        // nodes.<id>.response.body — keyed by node/step name for switch evaluation and templates
-        val nodesMap = stepResults.associate { step ->
+        fun stepEntry(step: StepResult): Map<String, Any?> = mapOf(
+            "index" to step.index,
+            "name"  to step.name,
+            "body"  to (step.upBody ?: step.downBody).toAny(),
+            "up"    to mapOf("body" to step.upBody.toAny()),
+            "down"  to mapOf("body" to step.downBody.toAny()),
+        )
+        base["steps"] = stepResults.map { stepEntry(it) }
+        base["step"] =
+            stepResults.associate { it.index.toString() to stepEntry(it) } +
+            stepResults.associate { it.name to stepEntry(it) }
+        // nodes.<name>.response.body — keyed by node name
+        base["nodes"] = stepResults.associate { step ->
             step.name to mapOf(
                 "response" to mapOf(
                     "body" to (step.upBody ?: step.downBody).toAny(),
                 ),
             )
         }
-        base["nodes"] = nodesMap
-        // input.* is an alias for payload.* for use in switch expressions and templates
-        base["input"] = payload.mapValues { it.value.value.toAny() }
+        base["prev"] = stepResults.lastOrNull()?.let {
+            mapOf("body" to (it.upBody ?: it.downBody).toAny())
+        }
         return base
     }
 }
