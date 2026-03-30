@@ -1,6 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val ktorVersion = "3.4.0"
+val ktorVersion = "3.4.2"
 val kotlinxSerializationVersion = "1.7.3"
 val msgpackVersion = "0.6.0"
 val jooqVersion = "3.19.10"
