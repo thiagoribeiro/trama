@@ -85,9 +85,9 @@ jooq {
             jooqConfiguration.apply {
                 jdbc.apply {
                     driver = "org.postgresql.Driver"
-                    url = "jdbc:postgresql://${'$'}{env:PGHOST}:${'$'}{env:PGPORT}/${'$'}{env:PGDATABASE}"
-                    user = "${'$'}{env:PGUSER}"
-                    password = "${'$'}{env:PGPASSWORD}"
+                    url = "jdbc:postgresql://${System.getenv("PGHOST") ?: "localhost"}:${System.getenv("PGPORT") ?: "5432"}/${System.getenv("PGDATABASE") ?: "saga"}"
+                    user = System.getenv("PGUSER") ?: "saga"
+                    password = System.getenv("PGPASSWORD") ?: "saga"
                 }
                 generator.apply {
                     name = "org.jooq.codegen.DefaultGenerator"
@@ -97,7 +97,7 @@ jooq {
                     }
                     target.apply {
                         packageName = "com.example.jooq"
-                        directory = "${'$'}{project.buildDir}/generated-src/jooq/main"
+                        directory = "src/generated/jooq"
                     }
                 }
             }
@@ -114,6 +114,12 @@ tasks.register<JavaExec>("trama-validate") {
     description = "Validate a v2 saga definition offline (no orchestrator required)"
     classpath   = sourceSets.main.get().runtimeClasspath
     mainClass.set("run.trama.cli.ValidateCommandKt")
+}
+
+sourceSets {
+    main {
+        kotlin.srcDir("src/generated/jooq")
+    }
 }
 
 kotlin {
