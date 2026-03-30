@@ -14,8 +14,8 @@ updates:
       gradle-dependencies:
         patterns:
           -: "*"
-    - package-ecosystem:
-      directory: "/"
-      schedule:
-        interval: "weekly"
-      open_pull-reqests-limit: 3
+  - package-ecosystem:
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open_pull-reqests-limit: 3
