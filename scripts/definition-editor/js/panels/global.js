@@ -91,6 +91,44 @@ function draw() {
   // onFailureCallback
   callbackSection(_panel, 'On Failure Callback', meta.onFailureCallback,
     cb => state.setMeta({ onFailureCallback: cb }));
+
+  // Payload schema — defines expected input fields, used as autocomplete hints
+  section(_panel, 'Payload Schema', false, sec => {
+    const schema = meta.payloadSchema ?? [];
+
+    const redraw = () => {
+      // remove all children except the summary
+      while (sec.children.length > 1) sec.removeChild(sec.lastChild);
+      schema.forEach((field, i) => {
+        const row = d('div', 'schema-row');
+
+        const nameIn = d('input', 'prop-input schema-name');
+        nameIn.type = 'text'; nameIn.placeholder = 'fieldName'; nameIn.value = field.name;
+        nameIn.oninput = () => { schema[i].name = nameIn.value; state.setMeta({ payloadSchema: [...schema] }); };
+
+        const typeIn = d('select', 'prop-input schema-type');
+        ['string', 'number', 'boolean', 'object', 'array'].forEach(t => {
+          const o = document.createElement('option');
+          o.value = t; o.textContent = t; o.selected = t === field.type;
+          typeIn.appendChild(o);
+        });
+        typeIn.onchange = () => { schema[i].type = typeIn.value; state.setMeta({ payloadSchema: [...schema] }); };
+
+        const rm = d('button', 'btn btn--icon');
+        rm.textContent = '×';
+        rm.onclick = () => { schema.splice(i, 1); state.setMeta({ payloadSchema: [...schema] }); redraw(); };
+
+        row.appendChild(nameIn); row.appendChild(typeIn); row.appendChild(rm);
+        sec.appendChild(row);
+      });
+
+      const addBtn = d('button', 'btn btn--sm');
+      addBtn.textContent = '+ Field';
+      addBtn.onclick = () => { schema.push({ name: '', type: 'string' }); state.setMeta({ payloadSchema: [...schema] }); redraw(); };
+      sec.appendChild(addBtn);
+    };
+    redraw();
+  });
 }
 
 function callbackSection(parent, title, cb, onChange) {

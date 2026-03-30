@@ -16,12 +16,13 @@ let _uid = 0;
 /**
  * Creates a json-logic builder UI inside `container`.
  *
- * @param {HTMLElement} container     - Where to render the builder
- * @param {object|null} initialExpr  - Existing json-logic object (or null)
- * @param {function}    onChange     - Called with the new json-logic object on every change
- * @param {string[]}    nodeIds      - Current graph node IDs (for path suggestions)
+ * @param {HTMLElement}          container     - Where to render the builder
+ * @param {object|null}          initialExpr  - Existing json-logic object (or null)
+ * @param {function}             onChange     - Called with the new json-logic object on every change
+ * @param {string[]}             nodeIds      - Current graph node IDs (for path suggestions)
+ * @param {{ name, type }[]}     payloadSchema - Known payload fields for autocomplete
  */
-export function createJsonLogicBuilder(container, initialExpr, onChange, nodeIds = []) {
+export function createJsonLogicBuilder(container, initialExpr, onChange, nodeIds = [], payloadSchema = []) {
   const uid = ++_uid;
 
   let st = { mode: 'visual', combinator: 'and', conditions: [] };
@@ -37,6 +38,11 @@ export function createJsonLogicBuilder(container, initialExpr, onChange, nodeIds
     } else {
       try { onChange(JSON.parse(st.rawJson)); } catch { /* invalid — don't emit */ }
     }
+  }
+
+  function _getRule() {
+    if (st.mode === 'visual') return toJsonLogic(st);
+    return JSON.parse(st.rawJson || 'null');
   }
 
   function draw() {
@@ -109,6 +115,7 @@ export function createJsonLogicBuilder(container, initialExpr, onChange, nodeIds
     const dl = document.createElement('datalist');
     dl.id = listId;
     const suggestions = [
+      ...payloadSchema.map(f => `payload.${f.name}`),
       'payload.',
       'prev.body.',
       ...nodeIds.map(id => `nodes.${id}.response.body.`),
@@ -176,6 +183,87 @@ export function createJsonLogicBuilder(container, initialExpr, onChange, nodeIds
   }
 
   draw();
+  drawTestSandbox(container, _getRule);
+}
+
+// ── Test sandbox ───────────────────────────────────────────────────────────────
+
+function drawTestSandbox(container, _getRule) {
+  // Requires window.jsonLogic (json-logic-js loaded from CDN)
+  // Renders inline below the builder — collapsed by default.
+  const det = document.createElement('details');
+  const sum = document.createElement('summary');
+  sum.className = 'jlb-test-summary';
+  sum.textContent = 'Test condition';
+  det.appendChild(sum);
+
+  const body = document.createElement('div');
+  body.className = 'jlb-test-body';
+
+  const payloadLabel = document.createElement('div');
+  payloadLabel.className = 'jlb-test-label';
+  payloadLabel.textContent = 'Sample payload JSON:';
+  body.appendChild(payloadLabel);
+
+  // Pre-fill sample from schema if available
+  const samplePayload = {};
+  // We don't have payloadSchema here directly, but we can infer from suggestions
+  const ta = document.createElement('textarea');
+  ta.className = 'jlb-raw';
+  ta.rows = 3;
+  ta.spellcheck = false;
+  ta.placeholder = '{"paymentMethod": "pix"}';
+  body.appendChild(ta);
+
+  const runBtn = document.createElement('button');
+  runBtn.className = 'jlb-validate';
+  runBtn.textContent = 'Evaluate';
+
+  const resultEl = document.createElement('div');
+  resultEl.className = 'jlb-test-result';
+
+  runBtn.onclick = () => {
+    if (!window.jsonLogic) {
+      resultEl.textContent = '⚠ json-logic-js not loaded';
+      resultEl.className = 'jlb-test-result jlb-test-warn';
+      return;
+    }
+    let data;
+    try { data = JSON.parse(ta.value || '{}'); }
+    catch (e) { resultEl.textContent = `JSON error: ${e.message}`; resultEl.className = 'jlb-test-result jlb-test-fail'; return; }
+
+    // Get current expression — build from visual or raw state
+    let rule;
+    try {
+      // Retrieve the last emitted expression by evaluating the builder state
+      // We re-compute here from the outer closure's `st` and helper functions
+      rule = _getRule();
+    } catch (e) {
+      resultEl.textContent = `Rule error: ${e.message}`;
+      resultEl.className = 'jlb-test-result jlb-test-fail';
+      return;
+    }
+
+    if (rule == null) {
+      resultEl.textContent = '⚠ No conditions defined';
+      resultEl.className = 'jlb-test-result jlb-test-warn';
+      return;
+    }
+
+    try {
+      const result = window.jsonLogic.apply(rule, data);
+      resultEl.textContent = result ? '✓ true' : '✗ false';
+      resultEl.className = `jlb-test-result ${result ? 'jlb-test-pass' : 'jlb-test-fail'}`;
+    } catch (e) {
+      resultEl.textContent = `Eval error: ${e.message}`;
+      resultEl.className = 'jlb-test-result jlb-test-fail';
+    }
+  };
+
+  body.appendChild(runBtn);
+  body.appendChild(resultEl);
+  det.appendChild(body);
+  container.appendChild(det);
 }
 
 // ── Serialise visual → json-logic ──────────────────────────────────────────────

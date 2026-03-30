@@ -1,4 +1,4 @@
-// drag.js — Palette→canvas drop, node repositioning, port→edge connection drawing
+// drag.js — Palette→canvas drop, node repositioning, port→edge connection, edge deletion
 
 import * as state from './state.js';
 import { screenToCanvas } from './graph.js';
@@ -28,9 +28,30 @@ export function init() {
     state.selectNode(id);
   });
 
-  // ── Mousedown: port connection (priority) OR node repositioning ────────────
+  // ── Click on edge hit-path → delete connection ─────────────────────────────
+  canvas.addEventListener('click', e => {
+    const hit = e.target.closest('[data-edge-src]');
+    if (!hit) return;
+    const srcId   = hit.getAttribute('data-edge-src');
+    const caseKey = hit.getAttribute('data-edge-case');
+    const src = state.getNodes().get(srcId);
+    if (!src) return;
+
+    if (src.kind === 'task') {
+      state.updateNode(srcId, { next: null });
+    } else if (src.kind === 'switch') {
+      if (caseKey === 'default') {
+        state.updateNode(srcId, { default: null });
+      } else {
+        const idx = parseInt(caseKey);
+        state.updateNode(srcId, { cases: src.cases.filter((_, i) => i !== idx) });
+      }
+    }
+  });
+
+  // ── Mousedown: output port (connection) OR node body (reposition) ──────────
   canvas.addEventListener('mousedown', e => {
-    // Priority 1: output port → start connection draw
+    // Priority 1: output port → draw connection
     const portEl = e.target.closest('[data-port-type="out"]');
     if (portEl) {
       e.preventDefault();
@@ -39,7 +60,7 @@ export function init() {
       return;
     }
 
-    // Priority 2: any node group → reposition
+    // Priority 2: node group → reposition + select
     const g = e.target.closest('[data-id]');
     if (!g) return;
 
@@ -71,13 +92,11 @@ export function init() {
 
 function startConnection(portEl) {
   const srcId = portEl.getAttribute('data-port-node');
-  // cx/cy are already in canvas coordinates (set by graph.js renderPorts)
-  const srcX = parseFloat(portEl.getAttribute('cx'));
-  const srcY = parseFloat(portEl.getAttribute('cy'));
+  const srcX  = parseFloat(portEl.getAttribute('cx'));
+  const srcY  = parseFloat(portEl.getAttribute('cy'));
 
-  // Append draft path to canvas-root so it lives in canvas coordinate space
-  const root = document.getElementById('canvas-root');
-  const NS = 'http://www.w3.org/2000/svg';
+  const root  = document.getElementById('canvas-root');
+  const NS    = 'http://www.w3.org/2000/svg';
   const draft = document.createElementNS(NS, 'path');
   draft.setAttribute('stroke', '#7c9ef8');
   draft.setAttribute('stroke-width', '2');
@@ -86,28 +105,24 @@ function startConnection(portEl) {
   draft.setAttribute('pointer-events', 'none');
   root.appendChild(draft);
 
-  // Highlight source port while dragging
   portEl.setAttribute('fill', '#4a80e8');
   portEl.setAttribute('stroke', '#7c9ef8');
 
   const onMove = ev => {
     const cur = screenToCanvas(ev.clientX, ev.clientY);
-    const dy = cur.y - srcY;
-    const cp = Math.max(40, Math.abs(dy) * 0.55);
+    const cp  = Math.max(40, Math.abs(cur.x - srcX) * 0.55);
     draft.setAttribute('d',
-      `M ${srcX} ${srcY} C ${srcX} ${srcY + cp} ${cur.x} ${cur.y - cp} ${cur.x} ${cur.y}`
+      `M ${srcX} ${srcY} C ${srcX + cp} ${srcY} ${cur.x - cp} ${cur.y} ${cur.x} ${cur.y}`
     );
   };
 
   const onUp = ev => {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
-
     draft.remove();
     portEl.setAttribute('fill', '#0d1117');
     portEl.setAttribute('stroke', '#3a6090');
 
-    // Find node under cursor (draft has pointer-events:none so it won't intercept)
     const el = document.elementFromPoint(ev.clientX, ev.clientY);
     const targetG = el?.closest('[data-id]');
     if (!targetG) return;
@@ -120,7 +135,6 @@ function startConnection(portEl) {
     if (src.kind === 'task') {
       state.updateNode(srcId, { next: dstId });
     } else if (src.kind === 'switch') {
-      // Add a new case pointing at the target; user fills in the condition
       state.updateNode(srcId, {
         cases: [...src.cases, { name: '', when: null, target: dstId }],
       });

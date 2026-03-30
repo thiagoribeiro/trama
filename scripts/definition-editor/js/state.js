@@ -10,6 +10,7 @@ const _state = {
     failureHandling: { type: 'retry', maxAttempts: 2, delayMillis: 500 },
     onSuccessCallback: null,
     onFailureCallback: null,
+    payloadSchema: [],   // [{ name: string, type: string }]
   },
   nodes: new Map(),
   entrypoint: null,
@@ -52,6 +53,30 @@ export function addNode(kind, x, y) {
   if (!_state.entrypoint) _state.entrypoint = id;
   notify();
   return id;
+}
+
+/** Rename a node ID and propagate all references. Returns false if newId is already taken. */
+export function renameNode(oldId, newId) {
+  newId = newId.trim();
+  if (!newId || oldId === newId) return true;
+  if (_state.nodes.has(newId)) return false;
+  const node = _state.nodes.get(oldId);
+  if (!node) return false;
+  node.id = newId;
+  _state.nodes = new Map(
+    [..._state.nodes.entries()].map(([k, v]) => [k === oldId ? newId : k, v])
+  );
+  for (const [, n] of _state.nodes) {
+    if (n.kind === 'task' && n.next === oldId) n.next = newId;
+    if (n.kind === 'switch') {
+      n.cases = n.cases.map(c => ({ ...c, target: c.target === oldId ? newId : c.target }));
+      if (n.default === oldId) n.default = newId;
+    }
+  }
+  if (_state.entrypoint === oldId) _state.entrypoint = newId;
+  if (_state.selectedNodeId === oldId) _state.selectedNodeId = newId;
+  notify();
+  return true;
 }
 
 export function updateNode(id, patch) {
@@ -107,7 +132,7 @@ export function setMeta(patch) {
 }
 
 export function replaceAll(snapshot) {
-  _state.meta = snapshot.meta;
+  _state.meta = { payloadSchema: [], ...snapshot.meta };
   _state.nodes = new Map(snapshot.nodes.map(n => [n.id, n]));
   _state.entrypoint = snapshot.entrypoint;
   _state.selectedNodeId = null;

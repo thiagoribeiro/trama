@@ -39,9 +39,20 @@ function draw(node) {
   const badge = d('span', `props-badge props-badge--${node.kind}`);
   badge.textContent = node.kind.toUpperCase();
   header.appendChild(badge);
-  const idSpan = d('span', 'props-id');
-  idSpan.textContent = node.id;
-  header.appendChild(idSpan);
+
+  // Editable ID — rename propagates to all references
+  const idInput = d('input', 'props-id-input');
+  idInput.value = node.id;
+  idInput.title = 'Click to rename node';
+  idInput.addEventListener('change', () => {
+    const ok = state.renameNode(node.id, idInput.value);
+    if (!ok) {
+      idInput.value = node.id; // revert — name already taken
+      idInput.classList.add('props-id-input--error');
+      setTimeout(() => idInput.classList.remove('props-id-input--error'), 1200);
+    }
+  });
+  header.appendChild(idInput);
   _panel.appendChild(header);
 
   if (node.kind === 'task') drawTask(node);
@@ -97,18 +108,19 @@ function drawTask(node) {
         v => state.updateNode(node.id, { callback: { timeoutMillis: parseInt(v) || 60000 } })));
 
       const nodeIds = [...state.getNodes().keys()].filter(id => id !== node.id);
+      const schema  = state.getState().meta.payloadSchema ?? [];
 
       label(sec, 'Success when (json-logic)');
       const successDiv = d('div', 'jlb-wrap');
       sec.appendChild(successDiv);
       createJsonLogicBuilder(successDiv, node.callback?.successWhen, expr =>
-        state.updateNode(node.id, { callback: { successWhen: expr } }), nodeIds);
+        state.updateNode(node.id, { callback: { successWhen: expr } }), nodeIds, schema);
 
       label(sec, 'Failure when (json-logic)');
       const failureDiv = d('div', 'jlb-wrap');
       sec.appendChild(failureDiv);
       createJsonLogicBuilder(failureDiv, node.callback?.failureWhen, expr =>
-        state.updateNode(node.id, { callback: { failureWhen: expr } }), nodeIds);
+        state.updateNode(node.id, { callback: { failureWhen: expr } }), nodeIds, schema);
     });
   }
 
@@ -145,6 +157,7 @@ function drawSwitch(node) {
   _panel.appendChild(entryBtn);
 
   const nodeIds = [...state.getNodes().keys()].filter(id => id !== node.id);
+  const schema  = state.getState().meta.payloadSchema ?? [];
 
   label(_panel, 'Cases');
 
@@ -178,7 +191,7 @@ function drawSwitch(node) {
       const cases = [...node.cases];
       cases[i] = { ...cases[i], when: expr };
       state.updateNode(node.id, { cases });
-    }, nodeIds);
+    }, nodeIds, schema);
 
     field(block, 'Target node', nodeSelect(c.target, node.id, v => {
       const cases = [...node.cases];
