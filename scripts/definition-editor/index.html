@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saga Definition Editor</title>
+  <link rel="stylesheet" href="css/editor.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->
+  <header id="toolbar">
+    <span class="toolbar-title">Saga Editor</span>
+
+    <button class="btn btn--sm" id="btn-import" title="Import JSON definition">
+      ↑ Import
+    </button>
+    <button class="btn btn--sm" id="btn-export" title="Export JSON definition (Ctrl+S)">
+      ↓ Export
+    </button>
+
+    <div class="sep"></div>
+
+    <button class="btn btn--sm" id="btn-layout" title="Auto-layout graph">
+      ⊞ Layout
+    </button>
+    <button class="btn btn--icon" id="btn-zoom-in"  title="Zoom in">+</button>
+    <button class="btn btn--icon" id="btn-zoom-out" title="Zoom out">−</button>
+    <button class="btn btn--icon" id="btn-zoom-fit" title="Fit to screen">⊡</button>
+
+    <div class="spacer"></div>
+
+    <button class="btn btn--sm" id="btn-settings" title="Saga global settings">
+      ⚙ Settings
+    </button>
+  </header>
+
+  <!-- ── Workspace ───────────────────────────────────────────────────────────── -->
+  <div id="workspace">
+
+    <!-- Palette -->
+    <aside id="palette">
+      <div class="palette-label">Nodes</div>
+
+      <div class="palette-item" data-kind="task" draggable="true" title="HTTP task node">
+        <span class="pi-icon">▭</span>
+        Task
+      </div>
+
+      <div class="palette-item" data-kind="switch" draggable="true" title="Switch / condition node">
+        <span class="pi-icon">◇</span>
+        Switch
+      </div>
+    </aside>
+
+    <!-- Canvas -->
+    <div id="canvas-wrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="canvas-empty-hint">
+        Drag a node from the palette to get started
+      </div>
+    </div>
+
+    <!-- Properties panel (right) -->
+    <aside id="props-panel" class="hidden"></aside>
+
+    <!-- Global settings panel (right, replaces props when open) -->
+    <aside id="global-panel" class="hidden"></aside>
+
+  </div><!-- #workspace -->
+
+</div><!-- #app -->
+
+<!-- ── Export dialog ─────────────────────────────────────────────────────────── -->
+<dialog id="export-dialog">
+  <div class="dialog-header">
+    <span class="dialog-title">Export Definition JSON</span>
+    <button class="btn btn--icon" onclick="document.getElementById('export-dialog').close()">×</button>
+  </div>
+  <div class="dialog-body">
+    <textarea id="export-content" readonly spellcheck="false"></textarea>
+  </div>
+  <div class="dialog-footer">
+    <button class="btn" id="export-copy">Copy</button>
+    <button class="btn btn--primary" id="export-download">Download</button>
+  </div>
+</dialog>
+
+<!-- ── Import dialog ─────────────────────────────────────────────────────────── -->
+<dialog id="import-dialog">
+  <div class="dialog-header">
+    <span class="dialog-title">Import Definition JSON</span>
+    <button class="btn btn--icon" onclick="document.getElementById('import-dialog').close()">×</button>
+  </div>
+  <div class="dialog-body">
+    <div class="import-file-row">
+      <span class="import-file-label">Load from file:</span>
+      <input type="file" id="import-file" accept=".json,application/json" />
+    </div>
+    <textarea id="import-content" placeholder="…or paste JSON here" spellcheck="false"></textarea>
+    <div id="import-error"></div>
+  </div>
+  <div class="dialog-footer">
+    <button class="btn" onclick="document.getElementById('import-dialog').close()">Cancel</button>
+    <button class="btn btn--primary" id="import-apply">Import</button>
+  </div>
+</dialog>
+
+<!-- ── Modules ────────────────────────────────────────────────────────────────── -->
+<script type="module" src="js/main.js"></script>
+
+<script>
+  // Hide empty-canvas hint once any node is added.
+  // We do this outside the module to avoid circular deps.
+  const hint = document.getElementById('canvas-empty-hint');
+  document.getElementById('canvas').addEventListener('DOMSubtreeModified', () => {
+    const hasNodes = document.querySelector('#canvas [data-id]');
+    hint.style.display = hasNodes ? 'none' : '';
+  }, { passive: true });
+</script>
+
+</body>
+</html>
