@@ -1,4 +1,4 @@
-FROM gradle:8.10.2-jdk21 AS build
+FROM --platform=linux/amd64 gradle:8.10.2-jdk21 AS build
 WORKDIR /app
 COPY gradle gradle
 COPY gradlew gradlew
