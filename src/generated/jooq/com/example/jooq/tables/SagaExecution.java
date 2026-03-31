@@ -24,13 +24,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -209,7 +210,7 @@ public class SagaExecution extends TableImpl<SagaExecutionRecord> {
      */
     @Override
     public SagaExecution where(Condition condition) {
-        return new SagaExecution(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new SagaExecution(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -276,7 +277,7 @@ public class SagaExecution extends TableImpl<SagaExecutionRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public SagaExecution whereExists(Select<?> select) {
+    public SagaExecution whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -284,7 +285,7 @@ public class SagaExecution extends TableImpl<SagaExecutionRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public SagaExecution whereNotExists(Select<?> select) {
+    public SagaExecution whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

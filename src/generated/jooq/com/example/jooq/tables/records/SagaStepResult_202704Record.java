@@ -198,6 +198,6 @@ public class SagaStepResult_202704Record extends UpdatableRecordImpl<SagaStepRes
         setResponseBody(responseBody);
         setStartedAt(startedAt);
         setCreatedAt(createdAt);
-        resetChangedOnNotNull();
+        resetTouchedOnNotNull();
     }
 }

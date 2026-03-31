@@ -245,6 +245,6 @@ public class SagaExecution_202701Record extends UpdatableRecordImpl<SagaExecutio
         setCompletedAt(completedAt);
         setUpdatedAt(updatedAt);
         setWaitingState(waitingState);
-        resetChangedOnNotNull();
+        resetTouchedOnNotNull();
     }
 }

@@ -246,6 +246,6 @@ public class DatabasechangelogRecord extends TableRecordImpl<DatabasechangelogRe
         setContexts(contexts);
         setLabels(labels);
         setDeploymentId(deploymentId);
-        resetChangedOnNotNull();
+        resetTouchedOnNotNull();
     }
 }

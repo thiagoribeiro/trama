@@ -18,13 +18,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -155,7 +156,7 @@ public class Databasechangeloglock extends TableImpl<DatabasechangeloglockRecord
      */
     @Override
     public Databasechangeloglock where(Condition condition) {
-        return new Databasechangeloglock(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new Databasechangeloglock(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -222,7 +223,7 @@ public class Databasechangeloglock extends TableImpl<DatabasechangeloglockRecord
      * Create an inline derived table from this table
      */
     @Override
-    public Databasechangeloglock whereExists(Select<?> select) {
+    public Databasechangeloglock whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -230,7 +231,7 @@ public class Databasechangeloglock extends TableImpl<DatabasechangeloglockRecord
      * Create an inline derived table from this table
      */
     @Override
-    public Databasechangeloglock whereNotExists(Select<?> select) {
+    public Databasechangeloglock whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

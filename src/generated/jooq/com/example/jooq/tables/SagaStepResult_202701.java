@@ -17,7 +17,6 @@ import java.util.UUID;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Identity;
 import org.jooq.Index;
 import org.jooq.JSONB;
 import org.jooq.Name;
@@ -25,13 +24,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -60,7 +60,7 @@ public class SagaStepResult_202701 extends TableImpl<SagaStepResult_202701Record
     /**
      * The column <code>public.saga_step_result_202701.id</code>.
      */
-    public final TableField<SagaStepResult_202701Record, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<SagaStepResult_202701Record, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false), this, "");
 
     /**
      * The column <code>public.saga_step_result_202701.saga_id</code>.
@@ -149,11 +149,6 @@ public class SagaStepResult_202701 extends TableImpl<SagaStepResult_202701Record
     }
 
     @Override
-    public Identity<SagaStepResult_202701Record, Long> getIdentity() {
-        return (Identity<SagaStepResult_202701Record, Long>) super.getIdentity();
-    }
-
-    @Override
     public UniqueKey<SagaStepResult_202701Record> getPrimaryKey() {
         return Keys.SAGA_STEP_RESULT_202701_PKEY;
     }
@@ -202,7 +197,7 @@ public class SagaStepResult_202701 extends TableImpl<SagaStepResult_202701Record
      */
     @Override
     public SagaStepResult_202701 where(Condition condition) {
-        return new SagaStepResult_202701(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new SagaStepResult_202701(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -269,7 +264,7 @@ public class SagaStepResult_202701 extends TableImpl<SagaStepResult_202701Record
      * Create an inline derived table from this table
      */
     @Override
-    public SagaStepResult_202701 whereExists(Select<?> select) {
+    public SagaStepResult_202701 whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -277,7 +272,7 @@ public class SagaStepResult_202701 extends TableImpl<SagaStepResult_202701Record
      * Create an inline derived table from this table
      */
     @Override
-    public SagaStepResult_202701 whereNotExists(Select<?> select) {
+    public SagaStepResult_202701 whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

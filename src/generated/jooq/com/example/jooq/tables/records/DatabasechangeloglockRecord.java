@@ -106,6 +106,6 @@ public class DatabasechangeloglockRecord extends UpdatableRecordImpl<Databasecha
         setLocked(locked);
         setLockgranted(lockgranted);
         setLockedby(lockedby);
-        resetChangedOnNotNull();
+        resetTouchedOnNotNull();
     }
 }

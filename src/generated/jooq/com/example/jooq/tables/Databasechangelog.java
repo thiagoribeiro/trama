@@ -17,12 +17,13 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -196,7 +197,7 @@ public class Databasechangelog extends TableImpl<DatabasechangelogRecord> {
      */
     @Override
     public Databasechangelog where(Condition condition) {
-        return new Databasechangelog(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new Databasechangelog(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -263,7 +264,7 @@ public class Databasechangelog extends TableImpl<DatabasechangelogRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public Databasechangelog whereExists(Select<?> select) {
+    public Databasechangelog whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -271,7 +272,7 @@ public class Databasechangelog extends TableImpl<DatabasechangelogRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public Databasechangelog whereNotExists(Select<?> select) {
+    public Databasechangelog whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }
