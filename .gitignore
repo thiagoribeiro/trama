@@ -29,8 +29,8 @@ __pycache__/
 .venv/
 scripts/saga_demo/.venv/
 
-# Gradle wrapper cache
-gradle/wrapper/gradle-wrapper.jar
+# Gradle wrapper cache (jar committed intentionally for CI/Docker builds)
+# gradle/wrapper/gradle-wrapper.jar
 
 # Local env files
 .env

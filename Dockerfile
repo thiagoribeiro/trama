@@ -5,7 +5,7 @@ COPY gradlew gradlew
 COPY gradlew.bat gradlew.bat
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY src src
-RUN ./gradlew clean installDist
+RUN ./gradlew clean installDist --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
