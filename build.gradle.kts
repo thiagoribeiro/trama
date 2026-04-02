@@ -6,8 +6,8 @@ val msgpackVersion = "0.6.0"
 val jooqVersion = "3.21.1"
 
 plugins {
-    kotlin("jvm") version "2.3.20"
-    kotlin("plugin.serialization") version "2.3.20"
+    kotlin("jvm") version "2.3.10"
+    kotlin("plugin.serialization") version "2.3.10"
     application
     id("nu.studer.jooq") version "9.0"
 }
