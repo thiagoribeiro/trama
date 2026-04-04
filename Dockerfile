@@ -1,11 +1,8 @@
 FROM gradle:8.10.2-jdk21 AS build
 WORKDIR /app
-COPY gradle gradle
-COPY gradlew gradlew
-COPY gradlew.bat gradlew.bat
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
-COPY src src
-RUN ./gradlew clean installDist
+COPY app app
+RUN gradle clean installDist --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

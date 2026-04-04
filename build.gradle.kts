@@ -85,23 +85,37 @@ jooq {
             jooqConfiguration.apply {
                 jdbc.apply {
                     driver = "org.postgresql.Driver"
-                    url = "jdbc:postgresql://${'$'}{env:PGHOST}:${'$'}{env:PGPORT}/${'$'}{env:PGDATABASE}"
-                    user = "${'$'}{env:PGUSER}"
-                    password = "${'$'}{env:PGPASSWORD}"
+                    url = "jdbc:postgresql://${System.getenv("PGHOST") ?: "localhost"}:${System.getenv("PGPORT") ?: "5432"}/${System.getenv("PGDATABASE") ?: "saga"}"
+                    user = System.getenv("PGUSER") ?: "saga"
+                    password = System.getenv("PGPASSWORD") ?: "saga"
                 }
                 generator.apply {
                     name = "org.jooq.codegen.DefaultGenerator"
                     database.apply {
                         name = "org.jooq.meta.postgres.PostgresDatabase"
                         inputSchema = "public"
+                        // Only generate the four parent tables — exclude all partition child
+                        // tables (saga_execution_YYYYMM, etc.) and Liquibase metadata tables.
+                        includes = "saga_execution|saga_step_result|saga_step_call|saga_definition"
                     }
                     target.apply {
-                        packageName = "com.example.jooq"
-                        directory = "${'$'}{project.buildDir}/generated-src/jooq/main"
+                        packageName = "run.trama.jooq"
+                        directory = "app/generated/jooq"
                     }
                 }
             }
         }
+    }
+}
+
+sourceSets {
+    main {
+        kotlin.srcDirs("app/main/kotlin", "app/generated/jooq")
+        resources.srcDirs("app/main/resources")
+    }
+    test {
+        kotlin.srcDirs("app/test/kotlin")
+        resources.srcDirs("app/test/resources")
     }
 }
 

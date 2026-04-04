@@ -27,7 +27,7 @@ Usage:
 
 Requirements:
     pip install -r requirements.txt
-    Trama orchestrator running on SAGA_API (default http://127.0.0.1:8080)
+    Trama orchestrator running on SAGA_API (default http://127.0.0.1:9080)
     server.py running on SAGA_SERVICE   (default http://127.0.0.1:5003)
 """
 from __future__ import annotations
@@ -120,7 +120,7 @@ def main() -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--saga-api",       default=os.getenv("SAGA_API",     "http://127.0.0.1:8080"))
+    parser.add_argument("--saga-api",       default=os.getenv("SAGA_API",     "http://127.0.0.1:9080"))
     parser.add_argument("--service-url",    default=os.getenv("SAGA_SERVICE", SERVICE_URL))
     parser.add_argument("--order-id",       default=f"ord-{uuid.uuid4().hex[:8]}")
     parser.add_argument("--payment-method", choices=["pix", "card"],
