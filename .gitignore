@@ -39,3 +39,7 @@ gradle/wrapper/gradle-wrapper.jar
 # Testcontainers / runtime artifacts
 docker-data/
 tmp/
+
+
+dist/
+node_modules/
