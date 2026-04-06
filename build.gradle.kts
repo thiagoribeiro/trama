@@ -56,7 +56,7 @@ dependencies {
     implementation("io.opentelemetry:opentelemetry-sdk:1.43.0")
     implementation("io.opentelemetry:opentelemetry-sdk-trace:1.43.0")
     implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.43.0")
-    implementation("io.opentelemetry:opentelemetry-semconv:1.28.0-alpha")
+    implementation("io.opentelemetry:opentelemetry-semconv:1.30.1-alpha")
     implementation("net.logstash.logback:logstash-logback-encoder:7.4")
     implementation("io.github.jamsesso:json-logic-java:1.0.7")
 
