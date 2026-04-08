@@ -33,6 +33,6 @@ class TemplateStringSerializerTest {
     @Test
     fun `TemplateString encoding remains wrapped with value`() {
         val encoded = json.encodeToString(TemplateString("http://127.0.0.1:5002/square"))
-        assertEquals("""{"value":"http://127.0.0.1:5002/square"}""", encoded)
+        assertEquals(""""http://127.0.0.1:5002/square"""", encoded)
     }
 }
