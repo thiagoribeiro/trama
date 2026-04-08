@@ -13,53 +13,90 @@ import * as properties from './panels/properties.js';
 
 const bus = new EventTarget();
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+// ── Embeddable mount API ───────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
+/**
+ * Mount the editor into `container` (any DOM element that contains the
+ * expected ids/classes from index.html / DefinitionEditorWidget.vue).
+ * Returns { load(def), getDefinition(), destroy() }.
+ */
+export function mount(container) {
   state.init(bus);
 
-  const svg = document.getElementById('canvas');
+  const $ = id => container.querySelector('#' + id);
+  const svg = $('canvas');
   graph.init(svg, bus);
-  drag.init();
+  drag.init(container);
 
-  properties.init(document.getElementById('props-panel'), bus);
-  globalPanel.init(document.getElementById('global-panel'), bus);
+  properties.init($('props-panel'), bus);
+  globalPanel.init($('global-panel'), bus);
 
-  wireToolbar();
-  wireKeyboard();
+  const kbHandler = wireKeyboard();
+  wireToolbar(container);
+  wireDialogs(container);
   initVSCodeBridge();
+
+  function load(def) {
+    const result = importDefinition(def);
+    if (result.ok) state.replaceAll(result.snapshot);
+  }
+
+  function getDefinition() {
+    return exportDefinition(state.getState());
+  }
+
+  function destroy() {
+    document.removeEventListener('keydown', kbHandler);
+    document.removeEventListener('click', _templateMenuCloser);
+  }
+
+  return { load, getDefinition, destroy };
+}
+
+// ── Standalone bootstrap (index.html) ─────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Only auto-mount in the standalone editor context (canvas element must exist).
+  // When imported by the Vue management UI, this guard prevents mounting into the wrong root.
+  if (!document.getElementById('canvas')) return;
+  const container = document.getElementById('app');
+  if (!container) return;
+  mount(container);
 });
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
-function wireToolbar() {
-  document.getElementById('btn-settings').addEventListener('click', () => globalPanel.toggle());
+let _templateMenuCloser = null;
 
-  document.getElementById('btn-layout').addEventListener('click', () => {
+function wireToolbar(container) {
+  const $ = id => container.querySelector('#' + id);
+
+  $('btn-settings').addEventListener('click', () => globalPanel.toggle());
+
+  $('btn-layout').addEventListener('click', () => {
     autoLayout(state.getState());
     bus.dispatchEvent(new CustomEvent('state:changed'));
   });
 
-  document.getElementById('btn-export').addEventListener('click', openExportDialog);
-  document.getElementById('btn-import').addEventListener('click', openImportDialog);
+  $('btn-export').addEventListener('click', () => openExportDialog(container));
+  $('btn-import').addEventListener('click', () => openImportDialog(container));
 
-  document.getElementById('btn-zoom-in').addEventListener('click',  () => zoom(1.25));
-  document.getElementById('btn-zoom-out').addEventListener('click', () => zoom(0.8));
-  document.getElementById('btn-zoom-fit').addEventListener('click', () => zoomFit(state.getState()));
+  $('btn-zoom-in').addEventListener('click',  () => zoom(1.25));
+  $('btn-zoom-out').addEventListener('click', () => zoom(0.8));
+  $('btn-zoom-fit').addEventListener('click', () => zoomFit(state.getState()));
 
   // Templates dropdown
-  document.getElementById('btn-templates').addEventListener('click', e => {
-    const menu = document.getElementById('templates-menu');
+  $('btn-templates').addEventListener('click', e => {
+    const menu = $('templates-menu');
     menu.classList.toggle('hidden');
     e.stopPropagation();
   });
-  document.addEventListener('click', () => {
-    document.getElementById('templates-menu')?.classList.add('hidden');
-  });
-  document.querySelectorAll('[data-template]').forEach(item => {
+  _templateMenuCloser = () => { container.querySelector('#templates-menu')?.classList.add('hidden'); };
+  document.addEventListener('click', _templateMenuCloser);
+  container.querySelectorAll('[data-template]').forEach(item => {
     item.addEventListener('click', () => {
       loadTemplate(item.dataset.template);
-      document.getElementById('templates-menu').classList.add('hidden');
+      container.querySelector('#templates-menu').classList.add('hidden');
     });
   });
 }
@@ -105,11 +142,12 @@ function validateDefinition(st) {
 
 // ── Export dialog ─────────────────────────────────────────────────────────────
 
-function openExportDialog() {
+function openExportDialog(container) {
+  const $ = id => container.querySelector('#' + id);
   const st = state.getState();
   const { errors, warnings } = validateDefinition(st);
 
-  const issuesEl = document.getElementById('export-issues');
+  const issuesEl = $('export-issues');
   issuesEl.innerHTML = '';
   issuesEl.className = '';
 
@@ -129,21 +167,40 @@ function openExportDialog() {
   }
 
   const json = JSON.stringify(exportDefinition(st), null, 2);
-  document.getElementById('export-content').value = json;
-  document.getElementById('export-dialog').showModal();
+  $('export-content').value = json;
+  $('export-dialog').showModal();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('export-copy').addEventListener('click', () => {
-    const area = document.getElementById('export-content');
+// ── Import dialog ─────────────────────────────────────────────────────────────
+
+let _pendingImport = null;
+let _importContainer = null;
+
+function openImportDialog(container) {
+  _importContainer = container;
+  const $ = id => container.querySelector('#' + id);
+  _pendingImport = null;
+  $('import-content').value = '';
+  $('import-error').textContent = '';
+  $('import-diff').innerHTML = '';
+  $('import-apply').disabled = true;
+  $('import-dialog').showModal();
+}
+
+function wireDialogs(container) {
+  const $ = id => container.querySelector('#' + id);
+
+  // Export dialog
+  $('export-copy').addEventListener('click', () => {
+    const area = $('export-content');
     navigator.clipboard?.writeText(area.value).catch(() => { area.select(); document.execCommand('copy'); });
-    const btn = document.getElementById('export-copy');
+    const btn = $('export-copy');
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
   });
 
-  document.getElementById('export-download').addEventListener('click', () => {
-    const area = document.getElementById('export-content');
+  $('export-download').addEventListener('click', () => {
+    const area = $('export-content');
     const name = (state.getState().meta.name || 'saga') + '.json';
     const blob = new Blob([area.value], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
@@ -152,54 +209,45 @@ document.addEventListener('DOMContentLoaded', () => {
     URL.revokeObjectURL(url);
   });
 
-  document.getElementById('export-dialog').addEventListener('click', e => {
+  $('export-dialog').addEventListener('click', e => {
     if (e.target === e.currentTarget) e.currentTarget.close();
   });
-});
 
-// ── Import dialog ─────────────────────────────────────────────────────────────
+  $('export-close')?.addEventListener('click', () => $('export-dialog').close());
+  $('import-close')?.addEventListener('click', () => $('import-dialog').close());
+  $('import-close-cancel')?.addEventListener('click', () => $('import-dialog').close());
 
-let _pendingImport = null;
-
-function openImportDialog() {
-  _pendingImport = null;
-  document.getElementById('import-content').value = '';
-  document.getElementById('import-error').textContent = '';
-  document.getElementById('import-diff').innerHTML = '';
-  document.getElementById('import-apply').disabled = true;
-  document.getElementById('import-dialog').showModal();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('import-file').addEventListener('change', e => {
+  // Import dialog
+  $('import-file').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      document.getElementById('import-content').value = ev.target.result;
-      parseAndPreviewImport();
+      $('import-content').value = ev.target.result;
+      parseAndPreviewImport(container);
     };
     reader.readAsText(file);
   });
 
-  document.getElementById('import-content').addEventListener('input', parseAndPreviewImport);
+  $('import-content').addEventListener('input', () => parseAndPreviewImport(container));
 
-  document.getElementById('import-apply').addEventListener('click', () => {
+  $('import-apply').addEventListener('click', () => {
     if (!_pendingImport) return;
     state.replaceAll(_pendingImport);
-    document.getElementById('import-dialog').close();
+    $('import-dialog').close();
   });
 
-  document.getElementById('import-dialog').addEventListener('click', e => {
+  $('import-dialog').addEventListener('click', e => {
     if (e.target === e.currentTarget) e.currentTarget.close();
   });
-});
+}
 
-function parseAndPreviewImport() {
-  const raw = document.getElementById('import-content').value.trim();
-  const errEl  = document.getElementById('import-error');
-  const diffEl = document.getElementById('import-diff');
-  const applyBtn = document.getElementById('import-apply');
+function parseAndPreviewImport(container) {
+  const $ = id => container.querySelector('#' + id);
+  const raw = $('import-content').value.trim();
+  const errEl  = $('import-error');
+  const diffEl = $('import-diff');
+  const applyBtn = $('import-apply');
 
   errEl.textContent = '';
   diffEl.innerHTML  = '';
@@ -297,11 +345,10 @@ function loadTemplate(name) {
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────────
 
 function wireKeyboard() {
-  document.addEventListener('keydown', e => {
+  const handler = e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       if (window.EDITOR?.save) window.EDITOR.save();
-      else openExportDialog();
       return;
     }
     if (e.key === 'Escape') {
@@ -314,5 +361,7 @@ function wireKeyboard() {
       const sel = state.getState().selectedNodeId;
       if (sel) state.deleteNode(sel);
     }
-  });
+  };
+  document.addEventListener('keydown', handler);
+  return handler;
 }

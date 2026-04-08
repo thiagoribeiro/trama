@@ -191,6 +191,17 @@ function renderNode(parent, node, selected, terminal, inCycle, issues) {
   else drawSwitch(g, node, selected, inCycle, issues);
 
   renderPorts(g, node);
+
+  // Hover: slightly brighten the first shape child (rect or polygon)
+  g.addEventListener('mouseenter', () => {
+    const shape = g.querySelector('rect, polygon');
+    if (shape && !selected) shape.style.filter = 'brightness(1.25)';
+  });
+  g.addEventListener('mouseleave', () => {
+    const shape = g.querySelector('rect, polygon');
+    if (shape) shape.style.filter = '';
+  });
+
   parent.appendChild(g);
 }
 
@@ -224,7 +235,7 @@ function drawTask(g, node, selected, terminal, inCycle, issues) {
 
   if (node.request?.url) {
     const urlText = sa(svgNS('text'), { x: x + 10, y: y + h - 8, fill: '#4a6080', 'font-size': 9, 'font-family': 'monospace' });
-    urlText.textContent = trunc(node.request.url.replace(/^https?:\/\//, ''), 28);
+    urlText.textContent = trunc(String(node.request.url).replace(/^https?:\/\//, ''), 28);
     g.appendChild(urlText);
   }
 
@@ -456,7 +467,7 @@ const MM_W = 180, MM_H = 110, MM_PAD = 8;
 let minimapSvg;
 
 function initMinimap() {
-  const wrap = document.getElementById('canvas-wrap');
+  const wrap = svgEl?.parentElement;
   if (!wrap) return;
 
   const container = document.createElement('div');

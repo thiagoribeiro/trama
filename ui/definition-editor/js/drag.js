@@ -3,11 +3,11 @@
 import * as state from './state.js';
 import { screenToCanvas } from './graph.js';
 
-export function init() {
-  const canvas = document.getElementById('canvas');
+export function init(container) {
+  const canvas = container.querySelector('#canvas');
 
   // ── Palette → canvas ───────────────────────────────────────────────────────
-  document.querySelectorAll('.palette-item').forEach(item => {
+  container.querySelectorAll('.palette-item').forEach(item => {
     item.addEventListener('dragstart', e => {
       e.dataTransfer.setData('kind', item.dataset.kind);
       e.dataTransfer.effectAllowed = 'copy';
@@ -56,7 +56,7 @@ export function init() {
     if (portEl) {
       e.preventDefault();
       e.stopPropagation();
-      startConnection(portEl);
+      startConnection(portEl, container);
       return;
     }
 
@@ -90,12 +90,12 @@ export function init() {
 
 // ── Connection drawing ─────────────────────────────────────────────────────────
 
-function startConnection(portEl) {
+function startConnection(portEl, container) {
   const srcId = portEl.getAttribute('data-port-node');
   const srcX  = parseFloat(portEl.getAttribute('cx'));
   const srcY  = parseFloat(portEl.getAttribute('cy'));
 
-  const root  = document.getElementById('canvas-root');
+  const root  = container.querySelector('#canvas-root');
   const NS    = 'http://www.w3.org/2000/svg';
   const draft = document.createElementNS(NS, 'path');
   draft.setAttribute('stroke', '#7c9ef8');

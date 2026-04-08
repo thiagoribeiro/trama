@@ -244,9 +244,10 @@ function renderNode(parent, node, terminal, inCycle, status) {
     nameText.textContent = trunc(node.id, 18)
     g.appendChild(nameText)
 
-    if (node.request?.url) {
+    const rawUrl = node.request?.url
+    if (rawUrl) {
       const urlText = sa(el('text'), { x: node.x + 10, y: node.y + H - 8, fill: '#4a6080', 'font-size': 9, 'font-family': 'monospace' })
-      urlText.textContent = trunc(node.request.url.replace(/^https?:\/\//, ''), 28)
+      urlText.textContent = trunc(String(rawUrl).replace(/^https?:\/\//, ''), 28)
       g.appendChild(urlText)
     }
 
@@ -376,6 +377,9 @@ onUnmounted(() => {
 .def-graph__wrap {
   flex: 1;
   overflow: hidden;
+  background: #0d1117;
+  background-image: radial-gradient(circle, #1e2d50 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 .def-graph__svg {

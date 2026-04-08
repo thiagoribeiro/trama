@@ -2,6 +2,7 @@
   <div>
     <header class="page-header">
       <h1>Executions</h1>
+      <button class="btn" @click="load" :disabled="loading">Refresh</button>
     </header>
 
     <!-- Filters -->

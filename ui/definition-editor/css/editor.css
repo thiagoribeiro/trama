@@ -65,19 +65,11 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 4px 12px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  height: 44px;
-}
-
-#toolbar .toolbar-title {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--accent-hi);
-  letter-spacing: 0.3px;
-  margin-right: 8px;
+  height: 38px;
 }
 
 #toolbar .sep {
@@ -154,8 +146,8 @@ body {
   overflow: hidden;
   background: var(--bg-base);
   background-image:
-    radial-gradient(circle, #1e2d50 1px, transparent 1px);
-  background-size: 32px 32px;
+    radial-gradient(circle, rgba(30, 45, 80, 0.5) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
 #canvas {
@@ -851,7 +843,41 @@ dialog::backdrop {
 .schema-name { flex: 2; min-width: 0; }
 .schema-type { flex: 1; min-width: 0; font-size: 11px; }
 
-/* ── Legend in palette ───────────────────────────────────────────────────────── */
+/* ── Palette divider + node states ──────────────────────────────────────────── */
+.palette-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 0 4px;
+}
+
+.state-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  padding: 3px 2px;
+}
+
+.state-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.state-swatch--amber { background: #92400e; }
+.state-swatch--red   { background: #7f1d1d; }
+.state-swatch--green { background: #14532d; }
+
+/* Keep legacy .legend-item/.legend-dot for standalone editor */
 .legend-item {
   display: flex;
   align-items: center;

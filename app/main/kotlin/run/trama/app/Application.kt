@@ -553,6 +553,34 @@ fun Application.module() {
             }
             call.respond(HttpStatusCode.NoContent)
         }
+        get("/sagas/definitions/{name}/{version}") {
+            val name = call.parameters["name"]?.trim().orEmpty()
+            val version = call.parameters["version"]?.trim().orEmpty()
+            if (name.isBlank() || version.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid definition name/version")))
+                return@get
+            }
+            val repo = repository
+            if (repo == null) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
+                return@get
+            }
+            val rec = repo.getDefinitionByNameVersion(name, version)
+            if (rec == null) {
+                call.respond(HttpStatusCode.NoContent)
+                return@get
+            }
+            call.respond(
+                SagaDefinitionResponse(
+                    id = rec.id.toString(),
+                    name = rec.name,
+                    version = rec.version,
+                    definition = json.parseToJsonElement(rec.definitionJson),
+                    createdAt = rec.createdAt.toString(),
+                    updatedAt = rec.updatedAt.toString(),
+                )
+            )
+        }
         post("/sagas/definitions/{name}/{version}/run") {
             val name = call.parameters["name"]?.trim().orEmpty()
             val version = call.parameters["version"]?.trim().orEmpty()

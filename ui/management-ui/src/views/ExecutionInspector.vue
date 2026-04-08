@@ -6,6 +6,11 @@
         <h1 class="mono">{{ execution?.name ?? 'Loading…' }}</h1>
         <StatusBadge v-if="execution" :status="execution.status" />
       </div>
+      <RouterLink
+        v-if="definition?.id"
+        :to="`/definitions/${definition.id}`"
+        class="btn"
+      >Edit Definition</RouterLink>
       <button
         v-if="execution?.status === 'FAILED'"
         class="btn btn--primary"
@@ -36,9 +41,19 @@
 
     <div v-else class="inspector__body">
       <!-- Definition Graph -->
-      <section v-if="definition" class="graph-section">
+      <section v-if="definitionGraph" class="graph-section">
         <h2>Definition Graph</h2>
-        <DefinitionGraph :definition="definition" :steps="steps" />
+        <DefinitionGraph :definition="definitionGraph" :steps="steps" />
+      </section>
+      <section v-else-if="!loading" class="graph-section">
+        <h2>Definition Graph</h2>
+        <p class="dim">Graph unavailable — this saga was run with an inline definition that is not stored.</p>
+      </section>
+
+      <!-- Gantt chart -->
+      <section>
+        <h2>Timeline</h2>
+        <StepGantt :started-at="execution?.startedAt" :steps="steps" :calls="calls" />
       </section>
 
       <!-- Step Timeline -->
@@ -51,40 +66,68 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import StatusBadge from '../components/StatusBadge.vue'
 import StepTimeline from '../components/StepTimeline.vue'
 import DefinitionGraph from '../components/DefinitionGraph.vue'
+import StepGantt from '../components/StepGantt.vue'
 import { api } from '../api/index.js'
 
 const route = useRoute()
 
-const execution  = ref(null)
-const steps      = ref([])
-const calls      = ref([])
-const definition = ref(null)
-const loading    = ref(true)
-const error      = ref(null)
-const retrying   = ref(false)
-const retryMsg   = ref(null)
+const execution      = ref(null)
+const steps          = ref([])
+const calls          = ref([])
+/** Full SagaDefinitionResponse (has .id for the Edit link) */
+const definition     = ref(null)
+/** Inner definition object passed to the graph renderer */
+const definitionGraph = ref(null)
+const loading        = ref(true)
+const error          = ref(null)
+const retrying       = ref(false)
+const retryMsg       = ref(null)
+
+const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'CORRUPTED'])
+let _pollTimer = null
 
 onMounted(load)
+onUnmounted(() => clearInterval(_pollTimer))
 
 async function load() {
   loading.value = true
   error.value = null
   try {
     const detail = await api.getExecutionDetail(route.params.id)
-    execution.value  = detail?.execution ?? null
-    steps.value      = detail?.steps ?? []
-    calls.value      = detail?.calls ?? []
-    // detail.definition is SagaDefinitionResponse; the graph uses .definition (the inner object)
-    definition.value = detail?.definition?.definition ?? null
+    execution.value       = detail?.execution ?? null
+    steps.value           = detail?.steps ?? []
+    calls.value           = detail?.calls ?? []
+    definition.value      = detail?.definition ?? null
+    definitionGraph.value = detail?.definition?.definition ?? null
+    schedulePollIfNeeded()
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+function schedulePollIfNeeded() {
+  clearInterval(_pollTimer)
+  if (execution.value && !TERMINAL.has(execution.value.status)) {
+    _pollTimer = setInterval(async () => {
+      try {
+        const detail = await api.getExecutionDetail(route.params.id)
+        execution.value       = detail?.execution ?? null
+        steps.value           = detail?.steps ?? []
+        calls.value           = detail?.calls ?? []
+        definition.value      = detail?.definition ?? null
+        definitionGraph.value = detail?.definition?.definition ?? null
+        if (execution.value && TERMINAL.has(execution.value.status)) {
+          clearInterval(_pollTimer)
+        }
+      } catch { /* silently ignore poll errors */ }
+    }, 3000)
   }
 }
 
