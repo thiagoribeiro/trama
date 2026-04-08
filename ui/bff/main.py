@@ -180,10 +180,12 @@ async def static_files(full_path: str):
 
     static_root = STATIC_DIR.resolve()
     static_root_real = os.path.realpath(str(static_root))
-
-    normalized_rel = os.path.normpath(full_path).lstrip("/\\")
+    safe_input = full_path.replace("\\", "/").lstrip("/")
+    parts = safe_input.split("/") if safe_input else []
+    if any(p in ("", ".", "..") for p in parts):
     if normalized_rel in ("", "."):
         return FileResponse(static_root / "index.html")
+    requested_path = Path(*parts) if parts else Path()
 
     candidate_real = os.path.realpath(os.path.join(static_root_real, normalized_rel))
     if os.path.commonpath([static_root_real, candidate_real]) != static_root_real:
