@@ -94,14 +94,28 @@ jooq {
                     database.apply {
                         name = "org.jooq.meta.postgres.PostgresDatabase"
                         inputSchema = "public"
+                        // Only generate the four parent tables — exclude all partition child
+                        // tables (saga_execution_YYYYMM, etc.) and Liquibase metadata tables.
+                        includes = "saga_execution|saga_step_result|saga_step_call|saga_definition"
                     }
                     target.apply {
-                        packageName = "com.example.jooq"
-                        directory = "src/generated/jooq"
+                        packageName = "run.trama.jooq"
+                        directory = "app/generated/jooq"
                     }
                 }
             }
         }
+    }
+}
+
+sourceSets {
+    main {
+        kotlin.srcDirs("app/main/kotlin", "app/generated/jooq")
+        resources.srcDirs("app/main/resources")
+    }
+    test {
+        kotlin.srcDirs("app/test/kotlin")
+        resources.srcDirs("app/test/resources")
     }
 }
 
@@ -129,6 +143,10 @@ kotlin {
             "-Xjsr305=strict"
         )
     }
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    options.compilerArgs.addAll(listOf("-Xlint:-removal"))
 }
 
 tasks.test {

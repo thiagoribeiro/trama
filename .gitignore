@@ -39,3 +39,7 @@ scripts/saga_demo/.venv/
 # Testcontainers / runtime artifacts
 docker-data/
 tmp/
+
+
+dist/
+node_modules/

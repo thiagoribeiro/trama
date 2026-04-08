@@ -19,7 +19,8 @@ services:
       RUNTIME_ENABLED: "true"
       METRICS_ENABLED: "true"
       TELEMETRY_ENABLED: "false"
-      RUNTIME_CALLBACK_BASEURL: "http://127.0.0.1:8080"
+      PORT: "9080"
+      RUNTIME_CALLBACK_BASEURL: "http://127.0.0.1:9080"
       RUNTIME_CALLBACK_HMACSECRET: "demo-secret"
     depends_on:
       - db
@@ -40,6 +41,16 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  bff:
+    build:
+      context: .
+      dockerfile: ui/bff/Dockerfile
+    network_mode: host
+    environment:
+      ORCHESTRATOR_URL: "http://localhost:9080"
+    depends_on:
+      - app
 
 volumes:
   db_data:
