@@ -179,7 +179,12 @@ async def static_files(full_path: str):
         raise HTTPException(status_code=503, detail="UI not built")
 
     static_root = STATIC_DIR.resolve()
-    candidate = (static_root / full_path).resolve()
+
+    requested_path = Path(full_path)
+    if requested_path.is_absolute() or ".." in requested_path.parts:
+        return FileResponse(static_root / "index.html")
+
+    candidate = (static_root / requested_path).resolve()
 
     try:
         candidate.relative_to(static_root)
