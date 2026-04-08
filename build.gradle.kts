@@ -145,6 +145,10 @@ kotlin {
     }
 }
 
+tasks.named<JavaCompile>("compileJava") {
+    options.compilerArgs.addAll(listOf("-Xlint:-removal"))
+}
+
 tasks.test {
     useJUnitPlatform()
     environment("DOCKER_HOST", "unix:///var/run/docker.sock")

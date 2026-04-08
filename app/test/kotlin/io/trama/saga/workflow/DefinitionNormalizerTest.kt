@@ -89,8 +89,8 @@ class DefinitionNormalizerTest {
 
         assertEquals("my-saga", workflow.name)
         assertEquals("2", workflow.version)
-        assertNotNull(workflow.onSuccessCallback)
-        assertEquals("http://cb", workflow.onSuccessCallback!!.url.value)
+        val onSuccessCallback = requireNotNull(workflow.onSuccessCallback)
+        assertEquals("http://cb", onSuccessCallback.url.value)
     }
 
     // ── v2 (nodes) normalization ──────────────────────────────────────────────
@@ -221,8 +221,8 @@ class DefinitionNormalizerTest {
 
         assertEquals(TaskMode.ASYNC, node.action.mode)
         assertEquals(setOf(202), node.action.acceptedStatusCodes)
-        assertNotNull(node.action.callbackConfig)
-        assertEquals(60_000L, node.action.callbackConfig!!.timeoutMillis)
+        val callbackConfig = requireNotNull(node.action.callbackConfig)
+        assertEquals(60_000L, callbackConfig.timeoutMillis)
     }
 
     // ── v2 validation ─────────────────────────────────────────────────────────
