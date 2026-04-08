@@ -179,18 +179,17 @@ async def static_files(full_path: str):
         raise HTTPException(status_code=503, detail="UI not built")
 
     static_root = STATIC_DIR.resolve()
+    static_root_real = os.path.realpath(str(static_root))
 
-    requested_path = Path(full_path)
-    if requested_path.is_absolute() or ".." in requested_path.parts:
+    normalized_rel = os.path.normpath(full_path).lstrip("/\\")
+    if normalized_rel in ("", "."):
         return FileResponse(static_root / "index.html")
 
-    candidate = (static_root / requested_path).resolve()
-
-    try:
-        candidate.relative_to(static_root)
-    except ValueError:
+    candidate_real = os.path.realpath(os.path.join(static_root_real, normalized_rel))
+    if os.path.commonpath([static_root_real, candidate_real]) != static_root_real:
         return FileResponse(static_root / "index.html")
 
+    candidate = Path(candidate_real)
     if candidate.is_file():
         return FileResponse(candidate)
     return FileResponse(static_root / "index.html")
