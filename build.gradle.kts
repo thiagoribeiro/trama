@@ -1,9 +1,9 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val ktorVersion = "3.4.0"
-val kotlinxSerializationVersion = "1.7.3"
+val ktorVersion = "3.4.2"
+val kotlinxSerializationVersion = "1.9.0"
 val msgpackVersion = "0.6.0"
-val jooqVersion = "3.19.10"
+val jooqVersion = "3.21.1"
 
 plugins {
     kotlin("jvm") version "2.3.10"
@@ -50,8 +50,8 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.3")
     implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("org.liquibase:liquibase-core:4.29.2")
-    implementation("com.sksamuel.hoplite:hoplite-core:2.8.1")
-    implementation("com.sksamuel.hoplite:hoplite-yaml:2.8.1")
+    implementation("com.sksamuel.hoplite:hoplite-core:2.9.0")
+    implementation("com.sksamuel.hoplite:hoplite-yaml:2.9.0")
     implementation("io.opentelemetry:opentelemetry-api:1.43.0")
     implementation("io.opentelemetry:opentelemetry-sdk:1.43.0")
     implementation("io.opentelemetry:opentelemetry-sdk-trace:1.43.0")
@@ -67,7 +67,7 @@ dependencies {
     runtimeOnly("ch.qos.logback:logback-classic:1.5.16")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("org.testcontainers:junit-jupiter:1.21.0")
@@ -128,6 +128,12 @@ tasks.register<JavaExec>("trama-validate") {
     description = "Validate a v2 saga definition offline (no orchestrator required)"
     classpath   = sourceSets.main.get().runtimeClasspath
     mainClass.set("run.trama.cli.ValidateCommandKt")
+}
+
+sourceSets {
+    main {
+        kotlin.srcDir("src/generated/jooq")
+    }
 }
 
 kotlin {
