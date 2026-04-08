@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -25,6 +26,8 @@ _HOP_BY_HOP = {
 }
 
 app = FastAPI(title="Trama BFF", docs_url="/api/docs")
+
+logger = logging.getLogger(__name__)
 
 _client: httpx.AsyncClient | None = None
 
@@ -69,7 +72,8 @@ async def _proxy(request: Request, upstream_path: str) -> Response:
     except httpx.TimeoutException:
         return JSONResponse({"errors": ["orchestrator request timed out"]}, status_code=504)
     except Exception as e:
-        return JSONResponse({"errors": [str(e)]}, status_code=500)
+        logger.exception("Unexpected error while proxying request", exc_info=e)
+        return JSONResponse({"errors": ["internal server error"]}, status_code=500)
 
     forwarded_headers = {
         k: v for k, v in resp.headers.items() if k.lower() not in _HOP_BY_HOP
