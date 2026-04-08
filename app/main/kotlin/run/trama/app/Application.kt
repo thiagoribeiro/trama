@@ -74,6 +74,17 @@ private data class ParsedDefinitionBody(
     val definitionJson: String,
 )
 
+private fun normalizeDefinitionJson(json: Json, definitionJson: String): JsonElement {
+    val raw = json.parseToJsonElement(definitionJson)
+    return if (raw is JsonObject && raw.containsKey("nodes")) {
+        val def = json.decodeFromJsonElement(SagaDefinitionV2.serializer(), raw)
+        json.parseToJsonElement(json.encodeToString(SagaDefinitionV2.serializer(), def))
+    } else {
+        val def = json.decodeFromJsonElement(SagaDefinition.serializer(), raw)
+        json.parseToJsonElement(json.encodeToString(SagaDefinition.serializer(), def))
+    }
+}
+
 private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject): ParsedDefinitionBody {
     return if (body.containsKey("nodes")) {
         val def = json.decodeFromJsonElement(SagaDefinitionV2.serializer(), body)
@@ -445,7 +456,7 @@ fun Application.module() {
                     id = stored.id.toString(),
                     name = stored.name,
                     version = stored.version,
-                    definition = json.parseToJsonElement(stored.definitionJson),
+                    definition = normalizeDefinitionJson(json, stored.definitionJson),
                     createdAt = stored.createdAt.toString(),
                     updatedAt = stored.updatedAt.toString(),
                 )
@@ -464,7 +475,7 @@ fun Application.module() {
                     id = rec.id.toString(),
                     name = rec.name,
                     version = rec.version,
-                    definition = json.parseToJsonElement(rec.definitionJson),
+                    definition = normalizeDefinitionJson(json, rec.definitionJson),
                     createdAt = rec.createdAt.toString(),
                     updatedAt = rec.updatedAt.toString(),
                 )
@@ -493,7 +504,7 @@ fun Application.module() {
                     id = rec.id.toString(),
                     name = rec.name,
                     version = rec.version,
-                    definition = json.parseToJsonElement(rec.definitionJson),
+                    definition = normalizeDefinitionJson(json, rec.definitionJson),
                     createdAt = rec.createdAt.toString(),
                     updatedAt = rec.updatedAt.toString(),
                 )
@@ -528,7 +539,7 @@ fun Application.module() {
                     id = stored.id.toString(),
                     name = stored.name,
                     version = stored.version,
-                    definition = json.parseToJsonElement(stored.definitionJson),
+                    definition = normalizeDefinitionJson(json, stored.definitionJson),
                     createdAt = stored.createdAt.toString(),
                     updatedAt = stored.updatedAt.toString(),
                 )
@@ -575,7 +586,7 @@ fun Application.module() {
                     id = rec.id.toString(),
                     name = rec.name,
                     version = rec.version,
-                    definition = json.parseToJsonElement(rec.definitionJson),
+                    definition = normalizeDefinitionJson(json, rec.definitionJson),
                     createdAt = rec.createdAt.toString(),
                     updatedAt = rec.updatedAt.toString(),
                 )

@@ -166,10 +166,6 @@ object TemplateStringSerializer : KSerializer<TemplateString> {
         PrimitiveSerialDescriptor("TemplateString", PrimitiveKind.STRING)
 
     override fun serialize(encoder: Encoder, value: TemplateString) {
-        if (encoder is JsonEncoder) {
-            encoder.encodeJsonElement(JsonObject(mapOf("value" to JsonPrimitive(value.value))))
-            return
-        }
         encoder.encodeString(value.value)
     }
 
