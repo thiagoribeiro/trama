@@ -157,6 +157,27 @@ Avoid it if:
 - Postgres persistence
 - OpenTelemetry tracing
 - Prometheus metrics
+- visual management UI
+
+---
+
+## Management UI
+
+Trama ships a built-in web interface for managing and debugging workflows.
+
+![Management UI](assets/img/management-ui.png)
+
+**Key features:**
+
+- **Definitions** — list, create, edit, and delete saga definitions with a visual graph editor
+- **Executions** — search and inspect executions by ID
+- **Execution inspector**:
+  - Definition graph with per-step status overlay (success / failed / compensated)
+  - Gantt timeline showing step latency and compensation phases
+  - Per-step request / response detail with HTTP status and duration
+  - Retry failed executions from the UI
+
+The UI is served by a lightweight Python BFF (`ui/bff/`) and available at `http://localhost:9000` when running via Docker Compose.
 
 ---
 
