@@ -173,7 +173,15 @@ async def run_definition(request: Request, name: str, version: str):
 async def static_files(full_path: str):
     if not STATIC_DIR.exists():
         raise HTTPException(status_code=503, detail="UI not built")
-    candidate = STATIC_DIR / full_path
+
+    static_root = STATIC_DIR.resolve()
+    candidate = (static_root / full_path).resolve()
+
+    try:
+        candidate.relative_to(static_root)
+    except ValueError:
+        return FileResponse(static_root / "index.html")
+
     if candidate.is_file():
         return FileResponse(candidate)
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(static_root / "index.html")
