@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -9,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:9080").rstrip("/")
 STATIC_DIR = Path(__file__).parent / "static"
+_SAFE_STATIC_PATH_RE = re.compile(r"^[A-Za-z0-9_./-]*$")
 
 # Headers that must not be forwarded from the upstream response.
 # httpx already decodes content-encoding and reassembles transfer-encoding,
@@ -181,6 +183,9 @@ async def static_files(full_path: str):
     static_root = STATIC_DIR.resolve()
     static_root_real = os.path.realpath(str(static_root))
     safe_input = full_path.replace("\\", "/").lstrip("/")
+    if not _SAFE_STATIC_PATH_RE.fullmatch(full_path) or ".." in full_path:
+        return FileResponse(static_root / "index.html")
+
     parts = safe_input.split("/") if safe_input else []
     if any(p in ("", ".", "..") for p in parts):
     if normalized_rel in ("", "."):
