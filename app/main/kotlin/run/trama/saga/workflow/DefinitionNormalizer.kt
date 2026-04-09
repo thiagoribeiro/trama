@@ -99,6 +99,11 @@ object DefinitionNormalizer {
                     },
                     defaultTarget = nodeDef.default,
                 )
+                is NodeDefinition.Sleep -> SleepNode(
+                    id = nodeDef.id,
+                    durationMillis = nodeDef.durationMillis,
+                    next = nodeDef.next,
+                )
             }
         }
 

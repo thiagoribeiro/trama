@@ -48,6 +48,9 @@
         <div class="palette-item" data-kind="switch" draggable="true" title="Conditional switch node — drag onto canvas">
           <span class="pi-icon">◇</span> Switch
         </div>
+        <div class="palette-item" data-kind="sleep" draggable="true" title="Sleep / pause node — drag onto canvas">
+          <span class="pi-icon" style="color:#bf91f9">⏱</span> Sleep
+        </div>
 
         <div class="palette-divider"></div>
 

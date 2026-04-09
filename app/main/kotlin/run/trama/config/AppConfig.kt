@@ -10,6 +10,7 @@ data class AppConfig(
     val rateLimit: RateLimitConfig,
     val metrics: MetricsConfig,
     val callbackTimeoutScanner: CallbackTimeoutScannerConfig = CallbackTimeoutScannerConfig(),
+    val sleep: SleepConfig = SleepConfig(),
 )
 
 data class RedisConfig(
@@ -121,6 +122,11 @@ data class MaintenanceConfig(
     val partitionStartOffsetMonths: Int = 1,
     val retentionDays: Int = 15,
     val intervalMillis: Long = 3_600_000,
+)
+
+data class SleepConfig(
+    val maxChunkMillis: Long = 12 * 3_600_000L,
+    val jitterMillis: Long = 60_000L,
 )
 
 data class CallbackTimeoutScannerConfig(

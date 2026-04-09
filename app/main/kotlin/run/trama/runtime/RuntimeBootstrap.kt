@@ -54,6 +54,7 @@ class RuntimeBootstrap(
     private var processor: SagaExecutionProcessor? = null
     private var repository: SagaRepository? = null
     private var enqueuer: SagaEnqueuer? = null
+    private var store: run.trama.saga.SagaExecutionStore? = null
     private var callbackReceiver: CallbackReceiver? = null
     private var heartbeatJob: Job? = null
     private var refreshJob: Job? = null
@@ -82,6 +83,7 @@ class RuntimeBootstrap(
             }
             RuntimeStore.POSTGRES -> SagaRepositoryStore(repo)
         }
+        this.store = store
         val enq = RedisSagaEnqueuer(redis, keyspace)
         enqueuer = enq
         val renderer = MustacheTemplateRenderer()
@@ -130,6 +132,8 @@ class RuntimeBootstrap(
             httpClient = httpClient,
             metrics = runtimeMetrics,
             maxNodesPerExecution = config.runtime.maxStepsPerExecution,
+            sleepMaxChunkMillis = config.sleep.maxChunkMillis,
+            sleepJitterMillis = config.sleep.jitterMillis,
             callbackTokenService = callbackTokenService,
             callbackUrlFactory = callbackUrlFactory,
         )
@@ -185,6 +189,28 @@ class RuntimeBootstrap(
         val enq = enqueuer ?: error("Runtime not initialized")
         enq.enqueue(execution, 0)
     }
+
+    fun storeOrNull(): run.trama.saga.SagaExecutionStore? = store
+
+    suspend fun wakeExecution(executionId: java.util.UUID): WakeResult {
+        val s = store ?: return WakeResult.RuntimeDisabled
+        val repo = repository ?: return WakeResult.RuntimeDisabled
+        val status = repo.getExecutionStatus(executionId) ?: return WakeResult.NotFound
+        if (status.status != "SLEEPING") return WakeResult.NotSleeping
+        val entry = s.consumeSleeping(executionId) ?: return WakeResult.AlreadyWaking
+        val updatedExecution = entry.execution.copy(
+            state = run.trama.saga.ExecutionState.InProgress(
+                activeNodeId = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.nextNodeId,
+                completedNodes = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.completedNodes ?: emptyList(),
+                compensationStack = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.compensationStack ?: emptyList(),
+            ),
+        )
+        val enq = enqueuer ?: return WakeResult.RuntimeDisabled
+        enq.enqueue(updatedExecution, 0)
+        return WakeResult.Woken
+    }
+
+    enum class WakeResult { Woken, AlreadyWaking, NotSleeping, NotFound, RuntimeDisabled }
 
     suspend fun readiness(): ReadinessStatus {
         val runtimeMetrics = metrics

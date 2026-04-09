@@ -37,7 +37,7 @@ export function init(container) {
     const src = state.getNodes().get(srcId);
     if (!src) return;
 
-    if (src.kind === 'task') {
+    if (src.kind === 'task' || src.kind === 'sleep') {
       state.updateNode(srcId, { next: null });
     } else if (src.kind === 'switch') {
       if (caseKey === 'default') {
@@ -132,7 +132,7 @@ function startConnection(portEl, container) {
     const src = state.getNodes().get(srcId);
     if (!src) return;
 
-    if (src.kind === 'task') {
+    if (src.kind === 'task' || src.kind === 'sleep') {
       state.updateNode(srcId, { next: dstId });
     } else if (src.kind === 'switch') {
       state.updateNode(srcId, {

@@ -9,6 +9,7 @@ export function exportDefinition(st) {
   for (const [, node] of nodes) {
     if (node.kind === 'task') exportedNodes.push(exportTask(node));
     else if (node.kind === 'switch') exportedNodes.push(exportSwitch(node));
+    else if (node.kind === 'sleep') exportedNodes.push(exportSleep(node));
   }
 
   const def = {
@@ -98,6 +99,7 @@ export function importDefinition(input) {
   const nodes = def.nodes.map(n => {
     if (n.kind === 'task') return importTask(n);
     if (n.kind === 'switch') return importSwitch(n);
+    if (n.kind === 'sleep') return importSleep(n);
     return null;
   }).filter(Boolean);
 
@@ -145,6 +147,22 @@ function importSwitch(n) {
     cases: (n.cases || []).map(c => ({ name: c.name || '', when: c.when || null, target: c.target || null })),
     default: n.default || null,
   };
+}
+
+function importSleep(n) {
+  return {
+    kind: 'sleep',
+    id: n.id,
+    x: 0, y: 0,
+    durationMillis: n.durationMillis ?? 0,
+    next: n.next || null,
+  };
+}
+
+function exportSleep(node) {
+  const out = { kind: 'sleep', id: node.id, durationMillis: node.durationMillis };
+  if (node.next) out.next = node.next;
+  return out;
 }
 
 function importHttpCall(call) {
@@ -217,6 +235,7 @@ function assignPositions(nodes, entrypoint) {
 
 function nodeTargets(node) {
   if (node.kind === 'task') return node.next ? [node.next] : [];
+  if (node.kind === 'sleep') return node.next ? [node.next] : [];
   if (node.kind === 'switch')
     return [...node.cases.map(c => c.target), node.default].filter(Boolean);
   return [];

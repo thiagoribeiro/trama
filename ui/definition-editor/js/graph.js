@@ -6,6 +6,8 @@ const NODE_TASK_W = 190;
 const NODE_TASK_H = 64;
 const NODE_SWITCH_W = 160;
 const NODE_SWITCH_H = 84;
+const NODE_SLEEP_W = 190;
+const NODE_SLEEP_H = 64;
 const COL_W = 280;
 const ROW_H = 150;
 
@@ -127,7 +129,9 @@ export function render(st) {
 
 function computeTerminals(nodes) {
   const t = new Set();
-  for (const [, n] of nodes) if (n.kind === 'task' && !n.next) t.add(n.id);
+  for (const [, n] of nodes) {
+    if ((n.kind === 'task' || n.kind === 'sleep') && !n.next) t.add(n.id);
+  }
   return t;
 }
 
@@ -188,6 +192,7 @@ function renderNode(parent, node, selected, terminal, inCycle, issues) {
   g.style.cursor = 'pointer';
 
   if (node.kind === 'task') drawTask(g, node, selected, terminal, inCycle, issues);
+  else if (node.kind === 'sleep') drawSleep(g, node, selected, terminal, inCycle);
   else drawSwitch(g, node, selected, inCycle, issues);
 
   renderPorts(g, node);
@@ -241,6 +246,55 @@ function drawTask(g, node, selected, terminal, inCycle, issues) {
 
   if (hasIssues) renderIssueBadge(g, x + w - 8, y - 6, issues.length);
   if (inCycle)   renderCycleBadge(g, x + 4, y - 6);
+
+  if (terminal) {
+    g.appendChild(sa(svgNS('rect'), { x: x + w + 4, y: y + h / 2 - 8, width: 32, height: 14, rx: 3, fill: '#14532d' }));
+    const et = sa(svgNS('text'), { x: x + w + 20, y: y + h / 2 + 3, 'text-anchor': 'middle', fill: '#86efac', 'font-size': 9, 'font-family': 'monospace' });
+    et.textContent = 'END';
+    g.appendChild(et);
+  }
+}
+
+function fmtDuration(ms) {
+  if (ms >= 3_600_000) return `${(ms / 3_600_000).toFixed(1).replace(/\.0$/, '')}h`;
+  if (ms >= 60_000)    return `${Math.round(ms / 60_000)}m`;
+  return `${Math.round(ms / 1000)}s`;
+}
+
+function drawSleep(g, node, selected, terminal, inCycle) {
+  const { x, y } = node;
+  const w = NODE_SLEEP_W, h = NODE_SLEEP_H;
+  const stroke = inCycle ? '#ef4444' : selected ? '#b088ff' : '#5b21b6';
+  const fill   = inCycle ? '#2d0a0a' : selected ? '#2d1a50' : '#1a1040';
+
+  const rect = sa(svgNS('rect'), {
+    x, y, width: w, height: h, rx: 8, fill, stroke,
+    'stroke-width': (selected || inCycle) ? 2 : 1,
+  });
+  if (selected) rect.setAttribute('filter', 'url(#glow)');
+  g.appendChild(rect);
+
+  // SLEEP badge (top-right)
+  g.appendChild(sa(svgNS('rect'), { x: x + w - 58, y: y + 5, width: 54, height: 16, rx: 4, fill: '#4c1d95' }));
+  const bt = sa(svgNS('text'), { x: x + w - 31, y: y + 17, 'text-anchor': 'middle', fill: '#ddd6fe', 'font-size': 9, 'font-family': 'monospace' });
+  bt.textContent = 'SLEEP';
+  g.appendChild(bt);
+
+  // Node id
+  const idText = sa(svgNS('text'), {
+    x: x + 10, y: y + h / 2 + 5,
+    fill: selected ? '#e0d0ff' : '#c4aaff',
+    'font-size': 13, 'font-family': 'system-ui, sans-serif', 'font-weight': '600',
+  });
+  idText.textContent = trunc(node.id, 18);
+  g.appendChild(idText);
+
+  // Duration label (bottom-left)
+  const durText = sa(svgNS('text'), { x: x + 10, y: y + h - 8, fill: '#7c3aed', 'font-size': 9, 'font-family': 'monospace' });
+  durText.textContent = `⏱ ${fmtDuration(node.durationMillis ?? 0)}`;
+  g.appendChild(durText);
+
+  if (inCycle) renderCycleBadge(g, x + 4, y - 6);
 
   if (terminal) {
     g.appendChild(sa(svgNS('rect'), { x: x + w + 4, y: y + h / 2 - 8, width: 32, height: 14, rx: 3, fill: '#14532d' }));
@@ -325,7 +379,7 @@ function renderStartPill(parent, entryNode) {
 
 function renderEdges(parent, nodes, cycleSet) {
   for (const [, node] of nodes) {
-    if (node.kind === 'task' && node.next && nodes.has(node.next)) {
+    if ((node.kind === 'task' || node.kind === 'sleep') && node.next && nodes.has(node.next)) {
       const inCycle = cycleSet.has(node.id) && cycleSet.has(node.next);
       drawEdge(parent, outputPort(node), inputPort(nodes.get(node.next)), null, false, node.id, node.next, null, inCycle);
     } else if (node.kind === 'switch') {
@@ -386,8 +440,16 @@ function switchPort(node) {
   return { x: node.x + NODE_SWITCH_W, y: node.y + NODE_SWITCH_H / 2 };
 }
 
-function nw(node) { return node.kind === 'task' ? NODE_TASK_W : NODE_SWITCH_W; }
-function nh(node) { return node.kind === 'task' ? NODE_TASK_H : NODE_SWITCH_H; }
+function nw(node) {
+  if (node.kind === 'task')  return NODE_TASK_W;
+  if (node.kind === 'sleep') return NODE_SLEEP_W;
+  return NODE_SWITCH_W;
+}
+function nh(node) {
+  if (node.kind === 'task')  return NODE_TASK_H;
+  if (node.kind === 'sleep') return NODE_SLEEP_H;
+  return NODE_SWITCH_H;
+}
 
 // ── Zoom helpers ──────────────────────────────────────────────────────────────
 
@@ -530,6 +592,13 @@ function updateMinimap(st) {
       r.setAttribute('rx', 2); r.setAttribute('fill', '#1d2d52');
       r.setAttribute('stroke', '#2d4070'); r.setAttribute('stroke-width', 0.5);
       minimapSvg.appendChild(r);
+    } else if (n.kind === 'sleep') {
+      const r = document.createElementNS(NS, 'rect');
+      r.setAttribute('x', x); r.setAttribute('y', y);
+      r.setAttribute('width', w); r.setAttribute('height', h);
+      r.setAttribute('rx', 2); r.setAttribute('fill', '#1a1040');
+      r.setAttribute('stroke', '#5b21b6'); r.setAttribute('stroke-width', 0.5);
+      minimapSvg.appendChild(r);
     } else {
       const cx = x + w / 2, cy = y + h / 2;
       const poly = document.createElementNS(NS, 'polygon');
@@ -558,7 +627,7 @@ function updateMinimap(st) {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function nodeTargets(node) {
-  if (node.kind === 'task') return node.next ? [node.next] : [];
+  if (node.kind === 'task' || node.kind === 'sleep') return node.next ? [node.next] : [];
   if (node.kind === 'switch')
     return [...node.cases.map(c => c.target), node.default].filter(Boolean);
   return [];

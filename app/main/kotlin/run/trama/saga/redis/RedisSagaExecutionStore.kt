@@ -9,6 +9,7 @@ import run.trama.saga.InstantAsStringSerializer
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
+import run.trama.saga.SleepEntry
 import run.trama.saga.StepResult
 import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.WaitingInfo
@@ -325,6 +326,48 @@ class RedisSagaExecutionStore(
         }
     }
 
+    override suspend fun saveSleeping(execution: SagaExecution, wakeAt: Instant) {
+        val state = execution.state as? ExecutionState.Sleeping ?: return
+        val entry = RedisSleepEntry(
+            wakeAt = wakeAt,
+            executionJson = json.encodeToString(SagaExecution.serializer(), execution),
+        )
+        val key = sleepKey(execution.id).toByteArray()
+        val value = json.encodeToString(RedisSleepEntry.serializer(), entry).toByteArray()
+        // TTL: seconds until wakeAt + 2-hour buffer so the key outlives any re-enqueue chunks
+        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + 7200).coerceAtLeast(120)
+        redis.withCommands { commands ->
+            commands.set(key, value)
+            commands.expire(key, ttl)
+        }
+        // Update Postgres so the status API surfaces SLEEPING
+        repository.updateStatus(execution.id, "SLEEPING")
+    }
+
+    override suspend fun peekSleeping(executionId: UUID): SleepEntry? {
+        val key = sleepKey(executionId).toByteArray()
+        val raw = redis.withCommands { commands -> commands.get(key) } ?: return null
+        return parseSleepEntry(raw)
+    }
+
+    override suspend fun consumeSleeping(executionId: UUID): SleepEntry? {
+        val key = sleepKey(executionId).toByteArray()
+        val raw = atomicGetDel(key) ?: return null
+        return parseSleepEntry(raw)
+    }
+
+    override suspend fun updateStatus(executionId: UUID, status: String) =
+        repository.updateStatus(executionId, status)
+
+    private fun parseSleepEntry(raw: ByteArray): SleepEntry? =
+        runCatching {
+            val entry = json.decodeFromString(RedisSleepEntry.serializer(), raw.toString(Charsets.UTF_8))
+            val execution = json.decodeFromString(SagaExecution.serializer(), entry.executionJson)
+            SleepEntry(wakeAt = entry.wakeAt, execution = execution)
+        }.getOrNull()
+
+    private fun sleepKey(executionId: UUID): String = keyspace.sleepKey(executionId)
+
     private suspend fun deleteKeys(executionId: UUID) {
         val meta = metaKey(executionId).toByteArray()
         val steps = stepsKey(executionId).toByteArray()
@@ -390,5 +433,13 @@ data class RedisWaitingEntry(
     @Serializable(with = InstantAsStringSerializer::class)
     val expiresAt: Instant,
     /** Full [SagaExecution] JSON (with WaitingCallback state) for re-enqueueing on valid callback. */
+    val executionJson: String,
+)
+
+@Serializable
+data class RedisSleepEntry(
+    @Serializable(with = InstantAsStringSerializer::class)
+    val wakeAt: Instant,
+    /** Full [SagaExecution] JSON (with Sleeping state) for re-enqueueing on wake. */
     val executionJson: String,
 )

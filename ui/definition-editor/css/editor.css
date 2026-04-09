@@ -202,6 +202,7 @@ body {
 
 .props-badge--task   { background: #0c2a5e; color: var(--accent-hi); }
 .props-badge--switch { background: var(--purple-dim); color: #d8b4fe; }
+.props-badge--sleep  { background: #4c1d95; color: #ddd6fe; }
 
 .props-id {
   font-family: var(--font-mono);

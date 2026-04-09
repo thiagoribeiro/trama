@@ -380,6 +380,10 @@ private class FakeStore : SagaExecutionStore {
     override suspend fun saveWaiting(execution: SagaExecution, signature: String) {}
     override suspend fun consumeWaiting(executionId: UUID): WaitingInfo? = null
     override suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean = true
+    override suspend fun saveSleeping(execution: SagaExecution, wakeAt: java.time.Instant) {}
+    override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
+    override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
+    override suspend fun updateStatus(executionId: UUID, status: String) {}
 }
 
 private class CapturingStore : SagaExecutionStore {
@@ -401,4 +405,8 @@ private class CapturingStore : SagaExecutionStore {
     override suspend fun saveWaiting(execution: SagaExecution, signature: String) {}
     override suspend fun consumeWaiting(executionId: UUID): WaitingInfo? = waitingEntry.also { waitingEntry = null }
     override suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean = true
+    override suspend fun saveSleeping(execution: SagaExecution, wakeAt: java.time.Instant) {}
+    override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
+    override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
+    override suspend fun updateStatus(executionId: UUID, status: String) {}
 }

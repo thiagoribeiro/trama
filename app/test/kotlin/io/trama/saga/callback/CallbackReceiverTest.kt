@@ -316,6 +316,10 @@ class CallbackReceiverTest {
         }
         override suspend fun insertStepCalls(calls: List<StepCallEntry>) {}
         override suspend fun loadStepResults(sagaId: UUID): List<StepResult> = emptyList()
+        override suspend fun saveSleeping(execution: SagaExecution, wakeAt: java.time.Instant) {}
+        override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
+        override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
+        override suspend fun updateStatus(executionId: UUID, status: String) {}
     }
 
     private class FakeEnqueuer(private val captured: MutableList<SagaExecution> = mutableListOf()) : SagaEnqueuer {

@@ -56,6 +56,7 @@ function draw(node) {
   _panel.appendChild(header);
 
   if (node.kind === 'task') drawTask(node);
+  else if (node.kind === 'sleep') drawSleep(node);
   else drawSwitch(node);
 }
 
@@ -143,6 +144,39 @@ function drawTask(node) {
         v => state.updateNode(node.id, { compensation: { body: v } })));
     }
   });
+
+  _panel.appendChild(deleteBtn(node));
+}
+
+// ── Sleep form ────────────────────────────────────────────────────────────────
+
+function drawSleep(node) {
+  const isEntry = state.getState().entrypoint === node.id;
+  const entryBtn = d('button', 'btn btn--sm' + (isEntry ? ' btn--active' : ''));
+  entryBtn.textContent = isEntry ? '★ Entrypoint' : '☆ Set as Entrypoint';
+  entryBtn.onclick = () => state.setEntrypoint(node.id);
+  _panel.appendChild(entryBtn);
+
+  field(_panel, 'Duration (ms)', textInput(
+    String(node.durationMillis ?? 60000),
+    v => state.updateNode(node.id, { durationMillis: parseInt(v) || 60000 }),
+    'e.g. 60000'));
+
+  // Duration presets
+  const presets = d('div', 'tpl-hints');
+  [['30s', 30_000], ['1m', 60_000], ['5m', 300_000], ['1h', 3_600_000]].forEach(([label, ms]) => {
+    const btn = d('button', 'tpl-btn');
+    btn.textContent = label;
+    btn.onclick = e => {
+      e.preventDefault();
+      state.updateNode(node.id, { durationMillis: ms });
+    };
+    presets.appendChild(btn);
+  });
+  _panel.appendChild(presets);
+
+  field(_panel, 'Next node', nodeSelect(node.next, node.id, v =>
+    state.updateNode(node.id, { next: v })));
 
   _panel.appendChild(deleteBtn(node));
 }
