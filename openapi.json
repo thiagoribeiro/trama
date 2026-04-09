@@ -3,7 +3,7 @@
   "info": {
     "title": "Trama Saga Orchestrator API",
     "version": "0.1.0",
-    "description": "HTTP API for registering saga definitions, running sagas, checking status, and retrying failed executions."
+    "description": "HTTP API for registering saga definitions, running sagas, checking status, retrying failed executions, and waking sleeping executions."
   },
   "servers": [
     {
@@ -135,6 +135,67 @@
           },
           "409": {
             "description": "Saga definition not stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/sagas/{id}/wake": {
+      "post": {
+        "summary": "Wake a sleeping saga execution early",
+        "operationId": "wakeSaga",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Saga woken and re-enqueued"
+          },
+          "200": {
+            "description": "Saga already waking (sentinel already consumed)"
+          },
+          "400": {
+            "description": "Invalid saga id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Execution not found"
+          },
+          "409": {
+            "description": "Saga is not in SLEEPING state",
             "content": {
               "application/json": {
                 "schema": {
