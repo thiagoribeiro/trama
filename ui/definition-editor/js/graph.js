@@ -6,8 +6,8 @@ const NODE_TASK_W = 190;
 const NODE_TASK_H = 64;
 const NODE_SWITCH_W = 160;
 const NODE_SWITCH_H = 84;
-const NODE_SLEEP_W = 190;
-const NODE_SLEEP_H = 64;
+const NODE_SLEEP_W = 170;
+const NODE_SLEEP_H = 90;
 const COL_W = 280;
 const ROW_H = 150;
 
@@ -264,41 +264,48 @@ function fmtDuration(ms) {
 function drawSleep(g, node, selected, terminal, inCycle) {
   const { x, y } = node;
   const w = NODE_SLEEP_W, h = NODE_SLEEP_H;
+  const cx = x + w / 2, cy = y + h / 2;
+  // Bulge offset: top/bottom flat segment starts at this x distance from the tip
+  const bx = Math.round(w / 3);
+
   const stroke = inCycle ? '#ef4444' : selected ? '#b088ff' : '#5b21b6';
   const fill   = inCycle ? '#2d0a0a' : selected ? '#2d1a50' : '#1a1040';
 
-  const rect = sa(svgNS('rect'), {
-    x, y, width: w, height: h, rx: 8, fill, stroke,
+  // Horizontal hourglass: pointed left/right tips, flat top/bottom
+  // Points: left-tip → top-left → top-right → right-tip → bottom-right → bottom-left
+  const pts = `${x},${cy} ${x+bx},${y} ${x+w-bx},${y} ${x+w},${cy} ${x+w-bx},${y+h} ${x+bx},${y+h}`;
+  const shape = sa(svgNS('polygon'), {
+    points: pts, fill, stroke,
     'stroke-width': (selected || inCycle) ? 2 : 1,
   });
-  if (selected) rect.setAttribute('filter', 'url(#glow)');
-  g.appendChild(rect);
+  if (selected) shape.setAttribute('filter', 'url(#glow)');
+  g.appendChild(shape);
 
-  // SLEEP badge (top-right)
-  g.appendChild(sa(svgNS('rect'), { x: x + w - 58, y: y + 5, width: 54, height: 16, rx: 4, fill: '#4c1d95' }));
-  const bt = sa(svgNS('text'), { x: x + w - 31, y: y + 17, 'text-anchor': 'middle', fill: '#ddd6fe', 'font-size': 9, 'font-family': 'monospace' });
-  bt.textContent = 'SLEEP';
-  g.appendChild(bt);
-
-  // Node id
-  const idText = sa(svgNS('text'), {
-    x: x + 10, y: y + h / 2 + 5,
+  // Duration (large, center)
+  const durText = sa(svgNS('text'), {
+    x: cx, y: cy - 7,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
     fill: selected ? '#e0d0ff' : '#c4aaff',
-    'font-size': 13, 'font-family': 'system-ui, sans-serif', 'font-weight': '600',
+    'font-size': 15, 'font-family': 'system-ui, sans-serif', 'font-weight': '700',
   });
-  idText.textContent = trunc(node.id, 18);
-  g.appendChild(idText);
-
-  // Duration label (bottom-left)
-  const durText = sa(svgNS('text'), { x: x + 10, y: y + h - 8, fill: '#7c3aed', 'font-size': 9, 'font-family': 'monospace' });
   durText.textContent = `⏱ ${fmtDuration(node.durationMillis ?? 0)}`;
   g.appendChild(durText);
 
-  if (inCycle) renderCycleBadge(g, x + 4, y - 6);
+  // Node id (below duration)
+  const idText = sa(svgNS('text'), {
+    x: cx, y: cy + 11,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    fill: selected ? '#c5d8ff' : '#7c3aed',
+    'font-size': 10, 'font-family': 'monospace',
+  });
+  idText.textContent = trunc(node.id, 16);
+  g.appendChild(idText);
+
+  if (inCycle) renderCycleBadge(g, x + bx - 4, y - 6);
 
   if (terminal) {
-    g.appendChild(sa(svgNS('rect'), { x: x + w + 4, y: y + h / 2 - 8, width: 32, height: 14, rx: 3, fill: '#14532d' }));
-    const et = sa(svgNS('text'), { x: x + w + 20, y: y + h / 2 + 3, 'text-anchor': 'middle', fill: '#86efac', 'font-size': 9, 'font-family': 'monospace' });
+    g.appendChild(sa(svgNS('rect'), { x: x + w + 4, y: cy - 7, width: 32, height: 14, rx: 3, fill: '#14532d' }));
+    const et = sa(svgNS('text'), { x: x + w + 20, y: cy + 4, 'text-anchor': 'middle', fill: '#86efac', 'font-size': 9, 'font-family': 'monospace' });
     et.textContent = 'END';
     g.appendChild(et);
   }
@@ -593,12 +600,13 @@ function updateMinimap(st) {
       r.setAttribute('stroke', '#2d4070'); r.setAttribute('stroke-width', 0.5);
       minimapSvg.appendChild(r);
     } else if (n.kind === 'sleep') {
-      const r = document.createElementNS(NS, 'rect');
-      r.setAttribute('x', x); r.setAttribute('y', y);
-      r.setAttribute('width', w); r.setAttribute('height', h);
-      r.setAttribute('rx', 2); r.setAttribute('fill', '#1a1040');
-      r.setAttribute('stroke', '#5b21b6'); r.setAttribute('stroke-width', 0.5);
-      minimapSvg.appendChild(r);
+      const bx = w / 3;
+      const cx2 = x + w / 2, cy2 = y + h / 2;
+      const poly = document.createElementNS(NS, 'polygon');
+      poly.setAttribute('points', `${x},${cy2} ${x+bx},${y} ${x+w-bx},${y} ${x+w},${cy2} ${x+w-bx},${y+h} ${x+bx},${y+h}`);
+      poly.setAttribute('fill', '#1a1040'); poly.setAttribute('stroke', '#5b21b6');
+      poly.setAttribute('stroke-width', 0.5);
+      minimapSvg.appendChild(poly);
     } else {
       const cx = x + w / 2, cy = y + h / 2;
       const poly = document.createElementNS(NS, 'polygon');
