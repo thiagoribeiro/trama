@@ -35,6 +35,15 @@ data class StepResult(
 )
 
 /**
+ * Persisted state for a sleeping execution, used to reconstruct the execution on wake
+ * and as a sentinel to detect stale queue items.
+ */
+data class SleepEntry(
+    val wakeAt: Instant,
+    val execution: SagaExecution,
+)
+
+/**
  * Minimal info about a waiting execution, used during callback validation and timeout processing.
  */
 data class WaitingInfo(
@@ -90,6 +99,30 @@ interface SagaExecutionStore {
      * [ttlSeconds] controls how long the nonce is retained.
      */
     suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean
+
+    /**
+     * Persists the sleeping state so the wake endpoint can reconstruct the execution
+     * and stale queue items can detect they have been superseded.
+     * TTL is set to [wakeAt] + a buffer.
+     */
+    suspend fun saveSleeping(execution: SagaExecution, wakeAt: Instant)
+
+    /**
+     * Returns the [SleepEntry] for [executionId] without consuming it, or null if absent.
+     */
+    suspend fun peekSleeping(executionId: java.util.UUID): SleepEntry?
+
+    /**
+     * Atomically reads and deletes the sleep entry for [executionId].
+     * Returns null if no entry exists.
+     */
+    suspend fun consumeSleeping(executionId: java.util.UUID): SleepEntry?
+
+    /**
+     * Updates the status column in Postgres without finalising the execution.
+     * Used to surface SLEEPING status to the status API while the saga is in the queue.
+     */
+    suspend fun updateStatus(executionId: java.util.UUID, status: String)
 }
 
 class SagaRepositoryStore(
@@ -157,4 +190,17 @@ class SagaRepositoryStore(
 
     // Postgres path does not support distributed nonce dedup; always returns true (fresh).
     override suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean = true
+
+    override suspend fun saveSleeping(execution: SagaExecution, wakeAt: Instant) {
+        // Postgres-only path: update status so the API reflects SLEEPING.
+        // The execution stays in the queue payload; no separate Redis key here.
+        repository.updateStatus(execution.id, "SLEEPING")
+    }
+
+    override suspend fun peekSleeping(executionId: java.util.UUID): SleepEntry? = null
+
+    override suspend fun consumeSleeping(executionId: java.util.UUID): SleepEntry? = null
+
+    override suspend fun updateStatus(executionId: java.util.UUID, status: String) =
+        repository.updateStatus(executionId, status)
 }

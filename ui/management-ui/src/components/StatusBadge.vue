@@ -11,6 +11,7 @@ const cls = {
   FAILED: 'badge--red',
   IN_PROGRESS: 'badge--blue',
   WAITING_CALLBACK: 'badge--amber',
+  SLEEPING: 'badge--purple',
   CORRUPTED: 'badge--red',
 }[props.status] ?? 'badge--grey'
 </script>
@@ -28,5 +29,6 @@ const cls = {
 .badge--red    { background: #4a1515; color: #f85149; }
 .badge--blue   { background: #1a3a5c; color: #58a6ff; }
 .badge--amber  { background: #4a3000; color: #e3b341; }
+.badge--purple { background: #2d1f4a; color: #bf91f9; }
 .badge--grey   { background: #21262d; color: #8b949e; }
 </style>

@@ -40,6 +40,9 @@ class RedisShardKeyspace(
     fun waitingKey(executionId: UUID): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:waiting"
 
+    fun sleepKey(executionId: UUID): String =
+        "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:sleep"
+
     fun rateLimitCountKey(sagaName: String, keyPrefix: String): ByteArray =
         "$keyPrefix:{rl:$sagaName}:count".toByteArray(StandardCharsets.UTF_8)
 

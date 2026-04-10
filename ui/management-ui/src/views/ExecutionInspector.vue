@@ -19,10 +19,19 @@
       >
         {{ retrying ? 'Retrying…' : 'Retry' }}
       </button>
+      <button
+        v-if="execution?.status === 'SLEEPING'"
+        class="btn btn--primary"
+        @click="wake"
+        :disabled="waking"
+      >
+        {{ waking ? 'Waking…' : 'Wake' }}
+      </button>
     </header>
 
     <div v-if="error" class="alert alert--error">{{ error }}</div>
     <div v-if="retryMsg" class="alert alert--success">{{ retryMsg }}</div>
+    <div v-if="wakeMsg" class="alert alert--success">{{ wakeMsg }}</div>
 
     <div v-if="execution" class="meta">
       <span class="dim">ID:</span> <span class="mono">{{ execution.id }}</span>
@@ -87,6 +96,8 @@ const loading        = ref(true)
 const error          = ref(null)
 const retrying       = ref(false)
 const retryMsg       = ref(null)
+const waking         = ref(false)
+const wakeMsg        = ref(null)
 
 const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'CORRUPTED'])
 let _pollTimer = null
@@ -143,6 +154,21 @@ async function retry() {
     error.value = e.message
   } finally {
     retrying.value = false
+  }
+}
+
+async function wake() {
+  waking.value = true
+  wakeMsg.value = null
+  error.value = null
+  try {
+    await api.wakeExecution(route.params.id)
+    wakeMsg.value = 'Wake signal sent. Refreshing…'
+    setTimeout(load, 2000)
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    waking.value = false
   }
 }
 

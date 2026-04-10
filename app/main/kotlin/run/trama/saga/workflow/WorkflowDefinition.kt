@@ -38,6 +38,12 @@ data class SwitchNode(
     val defaultTarget: String,
 ) : WorkflowNode()
 
+data class SleepNode(
+    override val id: String,
+    val durationMillis: Long,
+    val next: String? = null,
+) : WorkflowNode()
+
 data class SwitchCase(
     val name: String?,
     /** Raw json-logic expression evaluated as boolean */

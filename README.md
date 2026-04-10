@@ -141,8 +141,7 @@ Trama is not for every case.
 
 Avoid it if:
 
-- you need long-running workflows (days or weeks)  
-- you need full event sourcing  
+- you need full event sourcing
 - you already run Temporal/Cadence successfully  
 
 ---
@@ -152,6 +151,7 @@ Avoid it if:
 - JSON-defined workflows (v1 linear, v2 node graph)
 - branching with JSON Logic (`switch` nodes)
 - async HTTP tasks with callback resumption
+- time-based pauses (`sleep` nodes) with early-wake via API
 - retries and compensation strategies
 - Redis-backed execution queue
 - Postgres persistence
@@ -228,6 +228,7 @@ Supports:
 
 - branching (`switch`)
 - async tasks
+- time-based pauses (`sleep`)
 - DAG-style execution
 
 ---

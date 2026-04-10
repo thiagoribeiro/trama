@@ -103,6 +103,21 @@ sealed class ExecutionState {
         @Serializable(with = InstantAsStringSerializer::class)
         val completedAt: Instant,
     ) : ExecutionState()
+
+    /**
+     * Execution is paused until [wakeAt]. Re-enqueued in chunks to avoid far-future queue entries.
+     * A `saga:sleep:{id}` Redis key acts as sentinel: if absent, a fresh execution was already
+     * enqueued by the wake endpoint and this queue item is stale.
+     */
+    @Serializable
+    @SerialName("sleeping")
+    data class Sleeping(
+        @Serializable(with = InstantAsStringSerializer::class)
+        val wakeAt: Instant,
+        val nextNodeId: String?,
+        val completedNodes: List<String>,
+        val compensationStack: List<String>,
+    ) : ExecutionState()
 }
 
 @Serializable

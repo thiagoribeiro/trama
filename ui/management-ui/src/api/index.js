@@ -63,4 +63,7 @@ export const api = {
   retryExecution(id) {
     return request('POST', `/executions/${id}/retry`)
   },
+  wakeExecution(id) {
+    return request('POST', `/executions/${id}/wake`)
+  },
 }

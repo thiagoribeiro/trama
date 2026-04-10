@@ -361,6 +361,27 @@ fun Application.module() {
             bootstrap.enqueueRetry(execution)
             call.respond(HttpStatusCode.Accepted, SagaRetryResponse(id.toString(), "REQUEUED"))
         }
+        post("/sagas/{id}/wake") {
+            val idParam = call.parameters["id"]
+            val id = runCatching { UUID.fromString(idParam) }.getOrNull()
+            if (id == null) {
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid saga id")))
+                return@post
+            }
+            when (bootstrap.wakeExecution(id)) {
+                run.trama.runtime.RuntimeBootstrap.WakeResult.Woken ->
+                    call.respond(HttpStatusCode.Accepted)
+                run.trama.runtime.RuntimeBootstrap.WakeResult.AlreadyWaking ->
+                    call.respond(HttpStatusCode.OK)
+                run.trama.runtime.RuntimeBootstrap.WakeResult.NotSleeping ->
+                    call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("saga is not sleeping")))
+                run.trama.runtime.RuntimeBootstrap.WakeResult.NotFound ->
+                    call.respond(HttpStatusCode.NotFound, ValidationErrorResponse(listOf("saga not found")))
+                run.trama.runtime.RuntimeBootstrap.WakeResult.RuntimeDisabled ->
+                    call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
+            }
+        }
+
         post("/sagas/run") {
             val rawBody = call.receive<JsonObject>()
             val definitionObj = rawBody["definition"] as? JsonObject

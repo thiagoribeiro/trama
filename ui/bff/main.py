@@ -122,6 +122,11 @@ async def execution_retry(request: Request, execution_id: str):
     return await _proxy(request, f"/sagas/{execution_id}/retry")
 
 
+@app.api_route("/api/executions/{execution_id}/wake", methods=["POST"])
+async def execution_wake(request: Request, execution_id: str):
+    return await _proxy(request, f"/sagas/{execution_id}/wake")
+
+
 @app.get("/api/executions/{execution_id}/detail")
 async def execution_detail(execution_id: str):
     """Aggregate: execution status + step results + step calls + definition in a single response."""

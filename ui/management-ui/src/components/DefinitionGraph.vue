@@ -15,6 +15,7 @@
         <span class="legend-dot legend-dot--ok"></span>completed
         <span class="legend-dot legend-dot--err"></span>failed
         <span class="legend-dot legend-dot--comp"></span>compensated
+        <span class="legend-dot legend-dot--sleep"></span>sleep
       </div>
     </template>
   </div>
@@ -94,10 +95,8 @@ function fitView() {
   const nodes = snapshot.value.nodes
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const n of nodes) {
-    const w = n.kind === 'task' ? 190 : 160
-    const h = n.kind === 'task' ?  64 :  84
     minX = Math.min(minX, n.x); minY = Math.min(minY, n.y)
-    maxX = Math.max(maxX, n.x + w); maxY = Math.max(maxY, n.y + h)
+    maxX = Math.max(maxX, n.x + nw(n)); maxY = Math.max(maxY, n.y + nh(n))
   }
   const rect = svgRef.value.getBoundingClientRect()
   const pad = 60
@@ -190,7 +189,9 @@ function renderGraph(st, statuses) {
 
 function computeTerminals(nodeMap) {
   const t = new Set()
-  for (const [, n] of nodeMap) if (n.kind === 'task' && !n.next) t.add(n.id)
+  for (const [, n] of nodeMap) {
+    if ((n.kind === 'task' || n.kind === 'sleep') && !n.next) t.add(n.id)
+  }
   return t
 }
 
@@ -213,6 +214,7 @@ function detectCycles(nodeMap) {
 
 function nodeTargets(node) {
   if (node.kind === 'task') return node.next ? [node.next] : []
+  if (node.kind === 'sleep') return node.next ? [node.next] : []
   if (node.kind === 'switch') return [...(node.cases || []).map(c => c.target), node.default].filter(Boolean)
   return []
 }
@@ -264,6 +266,39 @@ function renderNode(parent, node, terminal, inCycle, status) {
       badge.textContent = icon
       g.appendChild(badge)
     }
+  } else if (node.kind === 'sleep') {
+    const W = 190, H = 64
+    const stroke = inCycle ? '#ef4444' : sc ? sc.stroke : '#7c3aed'
+    const fill   = inCycle ? '#2d0a0a'  : sc ? sc.fill   : '#1a1040'
+    g.appendChild(sa(el('rect'), { x: node.x, y: node.y, width: W, height: H, rx: 8, fill, stroke, 'stroke-width': sc || inCycle ? 2 : 1 }))
+
+    // Sleep badge
+    g.appendChild(sa(el('rect'), { x: node.x + W - 54, y: node.y + 5, width: 50, height: 16, rx: 4, fill: '#3b0764' }))
+    const bt = sa(el('text'), { x: node.x + W - 29, y: node.y + 17, 'text-anchor': 'middle', fill: '#e9d5ff', 'font-size': 9, 'font-family': 'monospace' })
+    bt.textContent = 'SLEEP'
+    g.appendChild(bt)
+
+    const nameText = sa(el('text'), { x: node.x + 10, y: node.y + H / 2 - 4, fill: sc ? sc.stroke : '#c4b5fd', 'font-size': 13, 'font-family': 'system-ui, sans-serif', 'font-weight': '600' })
+    nameText.textContent = trunc(node.id, 18)
+    g.appendChild(nameText)
+
+    const durText = sa(el('text'), { x: node.x + 10, y: node.y + H - 8, fill: '#6d4aaa', 'font-size': 9, 'font-family': 'monospace' })
+    durText.textContent = fmtDuration(node.durationMillis)
+    g.appendChild(durText)
+
+    if (terminal) {
+      g.appendChild(sa(el('rect'), { x: node.x + W + 4, y: node.y + H / 2 - 8, width: 32, height: 14, rx: 3, fill: '#14532d' }))
+      const et = sa(el('text'), { x: node.x + W + 20, y: node.y + H / 2 + 3, 'text-anchor': 'middle', fill: '#86efac', 'font-size': 9, 'font-family': 'monospace' })
+      et.textContent = 'END'
+      g.appendChild(et)
+    }
+
+    if (status) {
+      const icon = status === 'success' ? '✓' : status === 'failed' ? '✗' : '↩'
+      const badge = sa(el('text'), { x: node.x + 8, y: node.y - 4, fill: stroke, 'font-size': 11, 'font-weight': 'bold' })
+      badge.textContent = icon
+      g.appendChild(badge)
+    }
   } else {
     const W = 160, H = 84, cx = node.x + W / 2, cy = node.y + H / 2
     const stroke = inCycle ? '#ef4444' : sc ? sc.stroke : '#6d3fd6'
@@ -277,9 +312,17 @@ function renderNode(parent, node, terminal, inCycle, status) {
   parent.appendChild(g)
 }
 
+function fmtDuration(ms) {
+  if (!ms) return '0ms'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m`
+  return `${(ms / 3600000).toFixed(ms % 3600000 === 0 ? 0 : 1)}h`
+}
+
 function renderEdges(parent, nodeMap, cycleSet) {
   for (const [, node] of nodeMap) {
-    if (node.kind === 'task' && node.next && nodeMap.has(node.next)) {
+    if ((node.kind === 'task' || node.kind === 'sleep') && node.next && nodeMap.has(node.next)) {
       const inCycle = cycleSet.has(node.id) && cycleSet.has(node.next)
       drawEdge(parent, outPort(node), inPort(nodeMap.get(node.next)), null, false, inCycle)
     } else if (node.kind === 'switch') {
@@ -329,8 +372,8 @@ function renderStartPill(parent, entryNode) {
 function inPort(node)       { return { x: node.x, y: node.y + nh(node) / 2 } }
 function outPort(node)      { return { x: node.x + nw(node), y: node.y + nh(node) / 2 } }
 function switchOutPort(node){ return { x: node.x + 160, y: node.y + 84 / 2 } }
-function nw(node) { return node.kind === 'task' ? 190 : 160 }
-function nh(node) { return node.kind === 'task' ?  64 :  84 }
+function nw(node) { return (node.kind === 'task' || node.kind === 'sleep') ? 190 : 160 }
+function nh(node) { return (node.kind === 'task' || node.kind === 'sleep') ?  64 :  84 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -431,7 +474,8 @@ onUnmounted(() => {
   border-radius: 50%;
   margin-left: 0.5rem;
 }
-.legend-dot--ok   { background: #3fb950; }
-.legend-dot--err  { background: #f85149; }
-.legend-dot--comp { background: #e3b341; }
+.legend-dot--ok    { background: #3fb950; }
+.legend-dot--err   { background: #f85149; }
+.legend-dot--comp  { background: #e3b341; }
+.legend-dot--sleep { background: #7c3aed; }
 </style>

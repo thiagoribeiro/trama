@@ -170,5 +170,6 @@ class Metrics(
             is ExecutionState.Failed -> state.phase?.name ?: "NA"
             is ExecutionState.Succeeded -> "NA"
             is ExecutionState.WaitingCallback -> "WAITING"
+            is ExecutionState.Sleeping -> "SLEEPING"
         }
 }

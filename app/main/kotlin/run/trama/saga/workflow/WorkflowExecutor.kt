@@ -49,6 +49,8 @@ class WorkflowExecutor(
     private val httpClient: HttpClientProvider,
     private val metrics: Metrics,
     private val maxNodesPerExecution: Int = 25,
+    private val sleepMaxChunkMillis: Long = 12 * 3_600_000L,
+    private val sleepJitterMillis: Long = 60_000L,
     callbackTokenService: CallbackTokenService? = null,
     callbackUrlFactory: CallbackUrlFactory? = null,
 ) : SagaExecutor {
@@ -90,6 +92,10 @@ class WorkflowExecutor(
                 is ExecutionState.WaitingCallback -> {
                     val workflow = resolveWorkflow(execution)
                     executeWaitingCallback(execution, workflow, state)
+                }
+                is ExecutionState.Sleeping -> {
+                    val workflow = resolveWorkflow(execution)
+                    executeSleeping(execution, workflow, state)
                 }
             }
         }
@@ -240,6 +246,31 @@ class WorkflowExecutor(
                             kv("usedDefault", evalResult.usedDefault),
                         )
                     }
+                }
+
+                is SleepNode -> {
+                    if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
+                    val wakeAt = Instant.now().plusMillis(node.durationMillis)
+                    val delay = minOf(node.durationMillis, sleepMaxChunkMillis + sleepJitterMillis)
+                    val updated = execution.copy(
+                        state = ExecutionState.Sleeping(
+                            wakeAt = wakeAt,
+                            nextNodeId = node.next,
+                            completedNodes = completedNodes.toList(),
+                            compensationStack = compensationStack.toList(),
+                        ),
+                    )
+                    store.saveSleeping(updated, wakeAt)
+                    enqueuer.enqueue(updated, delay)
+                    Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                        logger.info(
+                            "saga sleeping",
+                            kv("nodeId", node.id),
+                            kv("wakeAt", wakeAt.toString()),
+                            kv("delayMillis", delay),
+                        )
+                    }
+                    return ExecutionOutcome.Reenqueued
                 }
             }
 
@@ -513,6 +544,62 @@ class WorkflowExecutor(
             retryState = RetryState.Applying(state.attempt, 0),
             reason = reason,
         )
+    }
+
+    // ── Sleep execution ───────────────────────────────────────────────────────
+
+    private suspend fun executeSleeping(
+        execution: SagaExecution,
+        workflow: WorkflowDefinition,
+        state: ExecutionState.Sleeping,
+    ): ExecutionOutcome {
+        val now = Instant.now()
+        if (state.wakeAt.isAfter(now)) {
+            // Not yet time to wake — check whether the saga:sleep sentinel still exists.
+            // If it's gone, the wake endpoint already fired a fresh InProgress execution;
+            // this queue item is stale → ACK and discard.
+            val entry = store.peekSleeping(execution.id)
+            if (entry == null) {
+                Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                    logger.info("stale sleeping queue item discarded (already woken)", kv("sagaId", execution.id.toString()))
+                }
+                return ExecutionOutcome.Reenqueued
+            }
+            // Re-enqueue with the next chunk delay.
+            val remaining = state.wakeAt.toEpochMilli() - now.toEpochMilli()
+            val delay = minOf(remaining, sleepMaxChunkMillis + sleepJitterMillis)
+            enqueuer.enqueue(execution, delay)
+            Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                logger.info(
+                    "saga still sleeping, re-enqueued",
+                    kv("wakeAt", state.wakeAt.toString()),
+                    kv("delayMillis", delay),
+                )
+            }
+            return ExecutionOutcome.Reenqueued
+        }
+
+        // wakeAt has passed — advance to next node.
+        // Clean up the sentinel key (if still present; wake endpoint may have already removed it).
+        store.consumeSleeping(execution.id)
+        Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+            logger.info("saga waking up", kv("nextNodeId", state.nextNodeId))
+        }
+        return if (state.nextNodeId == null) {
+            // Sleep was the terminal node.
+            finishSuccess(execution, workflow, store.loadStepResults(execution.id))
+        } else {
+            val updated = execution.copy(
+                state = ExecutionState.InProgress(
+                    activeNodeId = state.nextNodeId,
+                    completedNodes = state.completedNodes,
+                    compensationStack = state.compensationStack,
+                ),
+            )
+            // Update Postgres back to IN_PROGRESS before re-entering executeForward
+            store.upsertStart(updated)
+            executeForward(updated, workflow, state.nextNodeId, state.completedNodes, state.compensationStack, RetryState.None)
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

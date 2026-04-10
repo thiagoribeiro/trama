@@ -115,7 +115,7 @@ function validateDefinition(st) {
   const indeg = new Map(ids.map(id => [id, 0]));
   const adj   = new Map(ids.map(id => [id, []]));
   for (const [, n] of nodes) {
-    const targets = n.kind === 'task' ? (n.next ? [n.next] : [])
+    const targets = (n.kind === 'task' || n.kind === 'sleep') ? (n.next ? [n.next] : [])
       : [...n.cases.map(c => c.target), n.default].filter(Boolean);
     for (const t of targets) {
       if (nodes.has(t)) { adj.get(n.id).push(t); indeg.set(t, indeg.get(t) + 1); }

@@ -80,6 +80,16 @@ object WorkflowDefinitionValidator {
                         errors.add("$prefix.default '${node.default}' does not reference an existing node")
                     }
                 }
+
+                is NodeDefinition.Sleep -> {
+                    if (node.durationMillis <= 0) {
+                        errors.add("$prefix.durationMillis must be positive")
+                    }
+                    val next = node.next
+                    if (next != null && next !in nodeIds) {
+                        errors.add("$prefix.next '$next' does not reference an existing node")
+                    }
+                }
             }
         }
 

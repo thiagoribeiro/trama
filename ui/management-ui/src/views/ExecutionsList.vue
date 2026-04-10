@@ -12,6 +12,7 @@
         <option value="">All statuses</option>
         <option>IN_PROGRESS</option>
         <option>WAITING_CALLBACK</option>
+        <option>SLEEPING</option>
         <option>SUCCEEDED</option>
         <option>FAILED</option>
         <option>CORRUPTED</option>

@@ -156,6 +156,18 @@ class SagaRepository(
         }
     }
 
+    suspend fun updateStatus(executionId: UUID, status: String) {
+        db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            dsl.update(SAGA_EXECUTION)
+                .set(SAGA_EXECUTION.STATUS, status)
+                .set(SAGA_EXECUTION.UPDATED_AT, Instant.now().toOffset())
+                .where(SAGA_EXECUTION.ID.eq(executionId))
+                .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
+                .execute()
+        }
+    }
+
     suspend fun insertStepResult(
         sagaId: UUID,
         startedAt: Instant,

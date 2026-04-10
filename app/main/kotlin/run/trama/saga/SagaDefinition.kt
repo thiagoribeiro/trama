@@ -132,6 +132,14 @@ sealed class NodeDefinition {
         val cases: List<SwitchCaseDef>,
         val default: String,
     ) : NodeDefinition()
+
+    @Serializable
+    @SerialName("sleep")
+    data class Sleep(
+        override val id: String,
+        val durationMillis: Long,
+        val next: String? = null,
+    ) : NodeDefinition()
 }
 
 @Serializable

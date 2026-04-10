@@ -12,6 +12,7 @@ import run.trama.saga.TaskMode
 import run.trama.saga.toAny
 import run.trama.saga.workflow.DefinitionNormalizer
 import run.trama.saga.workflow.JsonLogicEvaluator
+import run.trama.saga.workflow.SleepNode
 import run.trama.saga.workflow.SwitchNode
 import run.trama.saga.workflow.TaskNode
 
@@ -158,6 +159,10 @@ class DryRunSimulator {
                     val target  = matched?.target ?: node.defaultTarget
                     entries += TraceEntry.Switch(node.id, matched?.name, matched == null, target)
                     currentId = target
+                }
+                is SleepNode -> {
+                    // In a dry-run simulation, sleep nodes are skipped (no real wall-clock wait).
+                    currentId = node.next
                 }
             }
         }
