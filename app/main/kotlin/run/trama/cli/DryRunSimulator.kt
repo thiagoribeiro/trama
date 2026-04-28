@@ -88,7 +88,7 @@ sealed class TraceEntry {
     ) : TraceEntry()
 }
 
-enum class SimOutcome { SUCCEEDED, FAILED, MAX_NODES_EXCEEDED }
+enum class SimOutcome { SUCCEEDED, FAILED, MAX_NODES_EXCEEDED, CYCLE_DETECTED }
 
 data class SimulationResult(
     val entries: List<TraceEntry>,
@@ -118,11 +118,14 @@ class DryRunSimulator {
         val payload      = scenario.payload.toMap()   // Map<String, JsonElement>
         val entries      = mutableListOf<TraceEntry>()
         val stepResults  = mutableListOf<StepResult>()
+        val visited      = mutableSetOf<String>()
         var currentId: String? = workflow.entrypoint
         var stepIndex    = 0
 
         while (currentId != null) {
+            if (currentId in visited) return SimulationResult(entries, SimOutcome.CYCLE_DETECTED)
             if (stepIndex > 50) return SimulationResult(entries, SimOutcome.MAX_NODES_EXCEEDED)
+            visited += currentId
 
             val node = workflow.nodes[currentId]
                 ?: return SimulationResult(entries, SimOutcome.FAILED, currentId)

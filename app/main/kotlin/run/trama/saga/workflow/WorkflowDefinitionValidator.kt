@@ -100,6 +100,34 @@ object WorkflowDefinitionValidator {
             if (cb.url.value.isBlank()) errors.add("onFailureCallback.url must not be blank")
         }
 
+        if (hasCycle(definition) && definition.nodes.any { it is NodeDefinition.Task && it.compensation != null }) {
+            errors.add("compensation is not allowed in cyclic workflows")
+        }
+
         return errors
+    }
+
+    private fun hasCycle(definition: SagaDefinitionV2): Boolean {
+        val nodeMap = definition.nodes.associateBy { it.id }
+        val visited = mutableSetOf<String>()
+        val inStack = mutableSetOf<String>()
+
+        fun dfs(nodeId: String): Boolean {
+            if (nodeId in inStack) return true
+            if (nodeId in visited) return false
+            inStack += nodeId
+            visited += nodeId
+            val neighbors = when (val node = nodeMap[nodeId]) {
+                is NodeDefinition.Task -> listOfNotNull(node.next)
+                is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
+                is NodeDefinition.Sleep -> listOfNotNull(node.next)
+                null -> emptyList()
+            }
+            val cycle = neighbors.any { dfs(it) }
+            inStack -= nodeId
+            return cycle
+        }
+
+        return dfs(definition.entrypoint)
     }
 }

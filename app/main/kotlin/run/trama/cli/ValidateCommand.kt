@@ -135,7 +135,7 @@ fun main(args: Array<String>) {
     printTrace(result)
 
     println()
-    if (result.outcome == SimOutcome.SUCCEEDED) {
+    if (result.outcome == SimOutcome.SUCCEEDED || result.outcome == SimOutcome.CYCLE_DETECTED) {
         println("All checks passed.")
         exitProcess(0)
     } else {
@@ -193,6 +193,8 @@ private fun printTrace(result: SimulationResult) {
         }
         SimOutcome.MAX_NODES_EXCEEDED ->
             println("  ✗ MAX NODES EXCEEDED — possible cycle in the definition")
+        SimOutcome.CYCLE_DETECTED ->
+            println("  ~ CYCLE DETECTED — simulation terminated at first back-edge (valid cyclic workflow)")
     }
 }
 
