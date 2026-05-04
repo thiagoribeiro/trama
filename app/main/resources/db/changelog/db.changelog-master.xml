@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <changeSet id="001-create-saga-tables" author="codex">
+        <sqlFile
+            path="db/schema.sql"
+            relativeToChangelogFile="false"
+            splitStatements="true"
+            stripComments="true"/>
+    </changeSet>
+
+    <changeSet id="001b-init-partitions" author="codex" runAlways="true">
+        <sqlFile
+            path="db/schema_partitions.sql"
+            relativeToChangelogFile="false"
+            splitStatements="false"
+            stripComments="true"/>
+    </changeSet>
+
+    <changeSet id="002-add-waiting-state" author="codex">
+        <sql>
+            ALTER TABLE saga_execution
+                ADD COLUMN IF NOT EXISTS waiting_state JSONB;
+        </sql>
+    </changeSet>
+
+    <changeSet id="003-execution-name-index" author="trama">
+        <sql>
+            CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at
+                ON saga_execution (name, started_at DESC);
+        </sql>
+    </changeSet>
+
+    <changeSet id="004-step-result-observability" author="trama">
+        <sql splitStatements="true" stripComments="true">
+            ALTER TABLE saga_step_result
+                ADD COLUMN IF NOT EXISTS step_started_at timestamptz;
+
+            CREATE TABLE IF NOT EXISTS saga_step_call (
+                id              bigserial    NOT NULL,
+                saga_id         uuid         NOT NULL,
+                step_name       text         NOT NULL,
+                phase           text         NOT NULL,
+                attempt         integer      NOT NULL DEFAULT 0,
+                request_url     text,
+                request_body    jsonb,
+                status_code     integer,
+                response_body   jsonb,
+                error           text,
+                step_started_at timestamptz  NOT NULL,
+                created_at      timestamptz  NOT NULL,
+                started_at      timestamptz  NOT NULL,
+                PRIMARY KEY (id, started_at)
+            ) PARTITION BY RANGE (started_at);
+
+            CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_started_at
+                ON saga_step_call (saga_id, started_at);
+        </sql>
+    </changeSet>
+
+    <!-- Runs schema_partitions.sql again after saga_step_call is created by 004.
+         On a fresh DB, 001b skips saga_step_call partitions (table doesn't exist yet).
+         This ensures they exist after 004 creates the parent table. Idempotent. -->
+    <changeSet id="004b-step-call-partitions" author="trama" runAlways="true">
+        <sqlFile
+            path="db/schema_partitions.sql"
+            relativeToChangelogFile="false"
+            splitStatements="false"
+            stripComments="true"/>
+    </changeSet>
+
+    <changeSet id="005-step-call-query-index" author="trama">
+        <sql>
+            CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at
+                ON saga_step_call (saga_id, started_at, step_started_at ASC);
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

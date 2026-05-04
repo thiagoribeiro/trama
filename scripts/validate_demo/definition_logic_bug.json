@@ -1,0 +1,86 @@
+{
+  "name": "checkout-full-demo",
+  "version": "v1",
+  "failureHandling": { "type": "retry", "maxAttempts": 2, "delayMillis": 500 },
+  "entrypoint": "validate",
+  "nodes": [
+    {
+      "kind": "task",
+      "id": "validate",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/validate",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}", "amount": "{{payload.amount}}" }
+        }
+      },
+      "next": "choose-payment"
+    },
+    {
+      "kind": "switch",
+      "id": "choose-payment",
+      "cases": [
+        {
+          "name": "pix",
+          "when": { "==": [ { "var": "input.payment_method" }, "pix" ] },
+          "target": "pix-payment"
+        },
+        {
+          "name": "card",
+          "when": { "==": [ { "var": "input.payment_method" }, "card" ] },
+          "target": "card-payment"
+        }
+      ],
+      "default": "pix-payment"
+    },
+    {
+      "kind": "task",
+      "id": "pix-payment",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/pix-payment",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}", "method": "pix" }
+        }
+      },
+      "next": "notify"
+    },
+    {
+      "kind": "task",
+      "id": "card-payment",
+      "action": {
+        "mode": "async",
+        "request": {
+          "url": "http://localhost:5003/async-step/card-payment",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": {
+            "orderId":       "{{payload.orderId}}",
+            "callbackUrl":   "{{runtime.callback.url}}",
+            "callbackToken": "{{runtime.callback.token}}"
+          }
+        },
+        "acceptedStatusCodes": [ 202 ],
+        "callback": { "timeoutMillis": 60000 }
+      },
+      "next": "notify"
+    },
+    {
+      "kind": "task",
+      "id": "notify",
+      "action": {
+        "mode": "sync",
+        "request": {
+          "url": "http://localhost:5003/step/notify",
+          "verb": "POST",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "orderId": "{{payload.orderId}}" }
+        }
+      }
+    }
+  ]
+}

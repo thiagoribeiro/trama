@@ -1,0 +1,45 @@
+.gradle/
+.gradle-home/
+build/
+out/
+site/
+
+# IntelliJ / IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+scripts/saga_demo/.venv/
+
+# Gradle wrapper cache (jar committed intentionally for CI/Docker builds)
+# gradle/wrapper/gradle-wrapper.jar
+
+# Local env files
+.env
+.env.*
+
+# Testcontainers / runtime artifacts
+docker-data/
+tmp/
+
+
+dist/
+node_modules/

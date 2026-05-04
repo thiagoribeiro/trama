@@ -1,0 +1,6 @@
+.gradle
+.gradle-home
+build
+.git
+*.md
+ui/definition-editor.tar.bz

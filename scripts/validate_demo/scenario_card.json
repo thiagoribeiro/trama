@@ -1,0 +1,12 @@
+{
+  "payload": {
+    "orderId": "ord-demo-002",
+    "amount":  "149.00",
+    "paymentMethod": "card"
+  },
+  "steps": {
+    "validate":     { "status": 200, "body": { "valid": true } },
+    "card-payment": { "acceptedStatus": 202, "callbackBody": { "status": "approved", "authCode": "AUTH-9871" } },
+    "notify":       { "status": 200, "body": { "notified": true } }
+  }
+}
