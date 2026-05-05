@@ -13,7 +13,7 @@ Usage:
     python save_definition.py [--saga-api http://127.0.0.1:8080]
 
 After saving, the definition can be inspected at:
-    GET /sagas/definitions/<returned-id>
+    GET /workflows/definitions/<returned-id>
 """
 from __future__ import annotations
 
@@ -225,7 +225,7 @@ def main() -> int:
     print()
 
     resp = requests.post(
-        f"{args.saga_api}/sagas/definitions",
+        f"{args.saga_api}/workflows/definitions",
         json=DEFINITION,
         timeout=10,
     )
@@ -240,7 +240,7 @@ def main() -> int:
     print(f"  Name    : {data.get('name')} / {data.get('version')}")
     print()
     print("To inspect it:")
-    print(f"  curl {args.saga_api}/sagas/definitions/{data.get('id')}")
+    print(f"  curl {args.saga_api}/workflows/definitions/{data.get('id')}")
     print()
     print("To run the demo:")
     print(f"  python run_demo.py --saga-api {args.saga_api}")

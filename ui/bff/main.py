@@ -92,46 +92,46 @@ async def _proxy(request: Request, upstream_path: str) -> Response:
 
 @app.api_route("/api/definitions", methods=["GET", "POST"])
 async def definitions(request: Request):
-    return await _proxy(request, "/sagas/definitions")
+    return await _proxy(request, "/workflows/definitions")
 
 
 @app.api_route("/api/definitions/{rest:path}", methods=["GET", "PUT", "DELETE"])
 async def definitions_by_id(request: Request, rest: str):
-    return await _proxy(request, f"/sagas/definitions/{rest}")
+    return await _proxy(request, f"/workflows/definitions/{rest}")
 
 
 # ── Executions ────────────────────────────────────────────────────────────────
 
 @app.api_route("/api/executions", methods=["GET"])
 async def executions(request: Request):
-    return await _proxy(request, "/sagas")
+    return await _proxy(request, "/workflows")
 
 
 @app.api_route("/api/executions/{execution_id}/steps/calls", methods=["GET"])
 async def execution_step_calls(request: Request, execution_id: str):
-    return await _proxy(request, f"/sagas/{execution_id}/steps/calls")
+    return await _proxy(request, f"/workflows/{execution_id}/steps/calls")
 
 
 @app.api_route("/api/executions/{execution_id}/steps", methods=["GET"])
 async def execution_steps(request: Request, execution_id: str):
-    return await _proxy(request, f"/sagas/{execution_id}/steps")
+    return await _proxy(request, f"/workflows/{execution_id}/steps")
 
 
 @app.api_route("/api/executions/{execution_id}/retry", methods=["POST"])
 async def execution_retry(request: Request, execution_id: str):
-    return await _proxy(request, f"/sagas/{execution_id}/retry")
+    return await _proxy(request, f"/workflows/{execution_id}/retry")
 
 
 @app.api_route("/api/executions/{execution_id}/wake", methods=["POST"])
 async def execution_wake(request: Request, execution_id: str):
-    return await _proxy(request, f"/sagas/{execution_id}/wake")
+    return await _proxy(request, f"/workflows/{execution_id}/wake")
 
 
 @app.get("/api/executions/{execution_id}/detail")
 async def execution_detail(execution_id: str):
     """Aggregate: execution status + step results + step calls + definition in a single response."""
     try:
-        status_resp = await client().get(f"/sagas/{execution_id}")
+        status_resp = await client().get(f"/workflows/{execution_id}")
     except httpx.ConnectError:
         raise HTTPException(status_code=503, detail="orchestrator unavailable")
 
@@ -144,11 +144,11 @@ async def execution_detail(execution_id: str):
 
     try:
         gather_calls = [
-            client().get(f"/sagas/{execution_id}/steps"),
-            client().get(f"/sagas/{execution_id}/steps/calls"),
+            client().get(f"/workflows/{execution_id}/steps"),
+            client().get(f"/workflows/{execution_id}/steps/calls"),
         ]
         if name and version:
-            gather_calls.append(client().get(f"/sagas/definitions/{name}/{version}"))
+            gather_calls.append(client().get(f"/workflows/definitions/{name}/{version}"))
         results = await asyncio.gather(*gather_calls)
     except httpx.ConnectError:
         raise HTTPException(status_code=503, detail="orchestrator unavailable")
@@ -167,14 +167,14 @@ async def execution_detail(execution_id: str):
 
 @app.api_route("/api/executions/{execution_id}", methods=["GET"])
 async def execution_by_id(request: Request, execution_id: str):
-    return await _proxy(request, f"/sagas/{execution_id}")
+    return await _proxy(request, f"/workflows/{execution_id}")
 
 
 # ── Definitions run ───────────────────────────────────────────────────────────
 
 @app.api_route("/api/definitions/{name}/{version}/run", methods=["POST"])
 async def run_definition(request: Request, name: str, version: str):
-    return await _proxy(request, f"/sagas/definitions/{name}/{version}/run")
+    return await _proxy(request, f"/workflows/definitions/{name}/{version}/run")
 
 
 # ── Static files (Vue SPA + definition-editor) ────────────────────────────────

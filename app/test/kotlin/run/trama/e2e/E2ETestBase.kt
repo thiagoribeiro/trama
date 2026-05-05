@@ -137,13 +137,13 @@ fun WireMockServer.extractBodyField(stepPath: String, fieldName: String): String
 private val terminalStatuses = setOf("SUCCEEDED", "FAILED", "CORRUPTED")
 
 /**
- * Polls [GET /sagas/{id}] until the saga reaches a terminal status or [timeoutMs] elapses.
+ * Polls [GET /workflows/{id}] until the saga reaches a terminal status or [timeoutMs] elapses.
  * Returns the final JSON body.
  */
 suspend fun awaitSagaTerminal(client: HttpClient, sagaId: String, timeoutMs: Long = 30_000): JsonObject {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {
-        val resp = client.get("/sagas/$sagaId")
+        val resp = client.get("/workflows/$sagaId")
         if (resp.status.value != 204) {
             val body = testJson.parseToJsonElement(resp.bodyAsText()).jsonObject
             val status = body["status"]?.jsonPrimitive?.content
@@ -155,7 +155,7 @@ suspend fun awaitSagaTerminal(client: HttpClient, sagaId: String, timeoutMs: Lon
 }
 
 /**
- * Polls [GET /sagas/{id}] until the saga reaches [expectedStatus] or [timeoutMs] elapses.
+ * Polls [GET /workflows/{id}] until the saga reaches [expectedStatus] or [timeoutMs] elapses.
  */
 suspend fun awaitSagaStatus(
     client: HttpClient,
@@ -165,7 +165,7 @@ suspend fun awaitSagaStatus(
 ): JsonObject {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {
-        val resp = client.get("/sagas/$sagaId")
+        val resp = client.get("/workflows/$sagaId")
         if (resp.status.value != 204) {
             val body = testJson.parseToJsonElement(resp.bodyAsText()).jsonObject
             if (body["status"]?.jsonPrimitive?.content == expectedStatus) return body

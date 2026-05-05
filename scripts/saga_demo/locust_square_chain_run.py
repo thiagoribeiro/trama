@@ -20,11 +20,11 @@ class SquareChainRunUser(HttpUser):
                 "initial_value": initial_value,
             }
         }
-        path = f"/sagas/definitions/{SAGA_NAME}/{SAGA_VERSION}/run"
+        path = f"/workflows/definitions/{SAGA_NAME}/{SAGA_VERSION}/run"
         with self.client.post(
             path,
             json=payload,
-            name="/sagas/definitions/{name}/{version}/run",
+            name="/workflows/definitions/{name}/{version}/run",
             catch_response=True,
         ) as response:
             if response.status_code not in (200, 201, 202):

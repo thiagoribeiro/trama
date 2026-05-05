@@ -104,7 +104,7 @@ def wait_for_status(api: SagaApi, saga_id: str, timeout_s: int = 30) -> Dict[str
     deadline = time.time() + timeout_s
     last = {}
     while time.time() < deadline:
-        resp = api.get(f"/sagas/{saga_id}")
+        resp = api.get(f"/workflows/{saga_id}")
         if resp.status_code == 204:
             time.sleep(0.25)
             continue
@@ -139,7 +139,7 @@ def main() -> int:
     }
 
     """
-    resp = api.post("/sagas/definitions", create_payload)
+    resp = api.post("/workflows/definitions", create_payload)
     if resp.status_code not in (200, 201, 202):
         print(f"failed to create definition: {resp.status_code} {resp.text}")
         return 1
@@ -152,7 +152,7 @@ def main() -> int:
             "fail_phase": scenario.fail_phase or "",
         }
     }
-    resp = api.post(f"/sagas/definitions/{definition['name']}/{definition['version']}/run", run_payload)
+    resp = api.post(f"/workflows/definitions/{definition['name']}/{definition['version']}/run", run_payload)
     resp.raise_for_status()
     saga_id = resp.json()["id"]
 

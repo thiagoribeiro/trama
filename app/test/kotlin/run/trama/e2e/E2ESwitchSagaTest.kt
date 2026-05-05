@@ -115,7 +115,7 @@ class E2ESwitchSagaTest {
         val def = switchDefinition(name).toMutableMap()
         @Suppress("UNCHECKED_CAST")
         (def as MutableMap<String, Any?>)["payload"] = mapOf("paymentMethod" to paymentMethod, "orderId" to "ord-test")
-        val resp = client.post("/sagas/run") {
+        val resp = client.post("/workflows/run") {
             contentType(ContentType.Application.Json)
             setBody(def.toJsonElement().toString())
         }
@@ -219,7 +219,7 @@ class E2ESwitchSagaTest {
                 ),
                 "payload" to emptyMap<String, String>(),
             )
-            val resp = client.post("/sagas/run") {
+            val resp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(invalidDef.toJsonElement().toString())
             }

@@ -200,7 +200,7 @@ flowchart LR
 ### Run a workflow
 
 ```bash
-curl -X POST http://localhost:8080/sagas/run \
+curl -X POST http://localhost:8080/workflows/run \
   -H 'Content-Type: application/json' \
   -d '{
     "definition": { ... },
@@ -211,7 +211,7 @@ curl -X POST http://localhost:8080/sagas/run \
 ### Check status
 
 ```bash
-curl http://localhost:8080/sagas/<execution-id>
+curl http://localhost:8080/workflows/<execution-id>
 ```
 
 ---

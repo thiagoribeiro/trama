@@ -140,7 +140,7 @@ class E2ESyncSagaTest {
         val defName = uniqueName("v1-linear")
 
         e2eTest {
-            val resp = client.post("/sagas/run") {
+            val resp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(v1Definition(defName, listOf("reserve", "charge")).toJsonElement().toString())
             }
@@ -163,7 +163,7 @@ class E2ESyncSagaTest {
         val defName = uniqueName("v2-linear")
 
         e2eTest {
-            val resp = client.post("/sagas/run") {
+            val resp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(v2Definition(defName, listOf("reserve", "charge")).toJsonElement().toString())
             }
@@ -216,7 +216,7 @@ class E2ESyncSagaTest {
         )
 
         e2eTest {
-            val resp = client.post("/sagas/run") {
+            val resp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(v1Definition(defName, listOf("reserve", "charge")).toJsonElement().toString())
             }
@@ -248,7 +248,7 @@ class E2ESyncSagaTest {
         wm.stubCallbackEndpoint()
 
         e2eTest {
-            val resp = client.post("/sagas/run") {
+            val resp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(
                     mapOf(
@@ -301,7 +301,7 @@ class E2ESyncSagaTest {
         wm.stubCallbackEndpoint()
 
         e2eTest {
-            val resp = client.post("/sagas/run") {
+            val resp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(
                     mapOf(

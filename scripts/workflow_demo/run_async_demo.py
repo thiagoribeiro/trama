@@ -14,7 +14,7 @@ The definition:
 
 The orchestrator injects {{runtime.callback.url}} and
 {{runtime.callback.token}} into the authorize request body. The mock
-service reads those and calls back via POST /sagas/{id}/node/{node}/callback
+service reads those and calls back via POST /workflows/{id}/node/{node}/callback
 with the X-Callback-Token header.
 
 Requirements:
@@ -158,7 +158,7 @@ def wait_for_terminal(api: SagaApi, saga_id: str, timeout_s: int = 60) -> dict:
     last: dict = {}
     prev_status = None
     while time.time() < deadline:
-        resp = api.get(f"/sagas/{saga_id}")
+        resp = api.get(f"/workflows/{saga_id}")
         if resp.status_code == 204:
             time.sleep(0.5)
             continue
@@ -216,7 +216,7 @@ def main() -> int:
     print()
 
     print("Starting saga …")
-    resp = api.post("/sagas/run", {
+    resp = api.post("/workflows/run", {
         "definition": definition,
         "payload": {
             "orderId": args.order_id,

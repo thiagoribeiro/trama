@@ -86,7 +86,7 @@ class E2EDefinitionApiTest {
         val defName = uniqueName("def-crud")
 
         e2eTest(wmPort = wm.port()) {
-            val resp = client.post("/sagas/definitions") {
+            val resp = client.post("/workflows/definitions") {
                 contentType(ContentType.Application.Json)
                 setBody(v1DefinitionBody(defName).toJsonElement().toString())
             }
@@ -98,7 +98,7 @@ class E2EDefinitionApiTest {
             assertEquals("v1", created["version"]?.jsonPrimitive?.content)
 
             // Retrieve by id
-            val getResp = client.get("/sagas/definitions/$defId")
+            val getResp = client.get("/workflows/definitions/$defId")
             assertEquals(200, getResp.status.value, getResp.bodyAsText())
             val fetched = testJson.parseToJsonElement(getResp.bodyAsText()).jsonObject
             assertEquals(defId, fetched["id"]?.jsonPrimitive?.content)
@@ -116,13 +116,13 @@ class E2EDefinitionApiTest {
         e2eTest(wmPort = wm.port()) {
             val body = v1DefinitionBody(defName).toJsonElement().toString()
 
-            val first = client.post("/sagas/definitions") {
+            val first = client.post("/workflows/definitions") {
                 contentType(ContentType.Application.Json)
                 setBody(body)
             }
             assertEquals(200, first.status.value, first.bodyAsText())
 
-            val second = client.post("/sagas/definitions") {
+            val second = client.post("/workflows/definitions") {
                 contentType(ContentType.Application.Json)
                 setBody(body)
             }
@@ -140,14 +140,14 @@ class E2EDefinitionApiTest {
 
         e2eTest(wmPort = wm.port()) {
             // Store the definition
-            val storeResp = client.post("/sagas/definitions") {
+            val storeResp = client.post("/workflows/definitions") {
                 contentType(ContentType.Application.Json)
                 setBody(v1DefinitionBody(defName, defVersion).toJsonElement().toString())
             }
             assertEquals(200, storeResp.status.value, storeResp.bodyAsText())
 
             // Run it by name/version with a payload
-            val runResp = client.post("/sagas/definitions/$defName/$defVersion/run") {
+            val runResp = client.post("/workflows/definitions/$defName/$defVersion/run") {
                 contentType(ContentType.Application.Json)
                 setBody("""{"payload":{"orderId":"stored-run-001"}}""")
             }
@@ -169,7 +169,7 @@ class E2EDefinitionApiTest {
 
         e2eTest(wmPort = wm.port()) {
             // Run an inline saga and poll its status
-            val runResp = client.post("/sagas/run") {
+            val runResp = client.post("/workflows/run") {
                 contentType(ContentType.Application.Json)
                 setBody(
                     mapOf(

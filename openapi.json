@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Trama Saga Orchestrator API",
+    "title": "Trama Workflow Orchestrator API",
     "version": "0.1.0",
-    "description": "HTTP API for registering saga definitions, running sagas, checking status, retrying failed executions, and waking sleeping executions."
+    "description": "HTTP API for registering workflow definitions, running workflows, checking status, retrying failed executions, and waking sleeping executions."
   },
   "servers": [
     {
@@ -49,7 +49,7 @@
         }
       }
     },
-    "/sagas/{id}": {
+    "/workflows/{id}": {
       "get": {
         "summary": "Get saga execution status",
         "operationId": "getSagaStatus",
@@ -94,7 +94,7 @@
         }
       }
     },
-    "/sagas/{id}/retry": {
+    "/workflows/{id}/retry": {
       "post": {
         "summary": "Retry a failed saga execution",
         "operationId": "retrySaga",
@@ -159,7 +159,7 @@
         }
       }
     },
-    "/sagas/{id}/wake": {
+    "/workflows/{id}/wake": {
       "post": {
         "summary": "Wake a sleeping saga execution early",
         "operationId": "wakeSaga",
@@ -220,7 +220,7 @@
         }
       }
     },
-    "/sagas/run": {
+    "/workflows/run": {
       "post": {
         "summary": "Run an inline saga definition",
         "operationId": "runSagaInline",
@@ -271,7 +271,7 @@
         }
       }
     },
-    "/sagas/definitions": {
+    "/workflows/definitions": {
       "post": {
         "summary": "Create a stored saga definition",
         "operationId": "createSagaDefinition",
@@ -364,7 +364,7 @@
         }
       }
     },
-    "/sagas/definitions/{id}": {
+    "/workflows/definitions/{id}": {
       "get": {
         "summary": "Get stored saga definition by id",
         "operationId": "getSagaDefinitionById",
@@ -533,7 +533,7 @@
         }
       }
     },
-    "/sagas/definitions/{name}/{version}/run": {
+    "/workflows/definitions/{name}/{version}/run": {
       "post": {
         "summary": "Run a stored saga definition by name and version",
         "operationId": "runStoredSaga",

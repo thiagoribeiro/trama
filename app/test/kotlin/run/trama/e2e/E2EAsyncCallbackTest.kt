@@ -144,7 +144,7 @@ class E2EAsyncCallbackTest {
         defName: String,
         timeoutMillis: Long = 30_000,
     ): String {
-        val resp = client.post("/sagas/run") {
+        val resp = client.post("/workflows/run") {
             contentType(ContentType.Application.Json)
             setBody(asyncDefinition(defName, timeoutMillis).toJsonElement().toString())
         }
@@ -182,7 +182,7 @@ class E2EAsyncCallbackTest {
             val callbackToken = wm.extractBodyField("/async-step/authorize", "callbackToken")
 
             // Fire the callback directly via the test client
-            val callbackResp = client.post("/sagas/$sagaId/node/authorize/callback") {
+            val callbackResp = client.post("/workflows/$sagaId/node/authorize/callback") {
                 header("X-Callback-Token", callbackToken)
                 contentType(ContentType.Application.Json)
                 setBody("""{"status":"approved","amount":"100.00"}""")
@@ -208,7 +208,7 @@ class E2EAsyncCallbackTest {
             val sagaId = startAsyncSaga(client, defName)
             awaitSagaStatus(client, sagaId, "WAITING_CALLBACK", timeoutMs = 15_000)
 
-            val callbackResp = client.post("/sagas/$sagaId/node/authorize/callback") {
+            val callbackResp = client.post("/workflows/$sagaId/node/authorize/callback") {
                 header("X-Callback-Token", "garbage-token-that-is-definitely-wrong")
                 contentType(ContentType.Application.Json)
                 setBody("""{"status":"approved"}""")
@@ -231,7 +231,7 @@ class E2EAsyncCallbackTest {
             val callbackToken = wm.extractBodyField("/async-step/authorize", "callbackToken")
 
             // First callback — should succeed
-            val first = client.post("/sagas/$sagaId/node/authorize/callback") {
+            val first = client.post("/workflows/$sagaId/node/authorize/callback") {
                 header("X-Callback-Token", callbackToken)
                 contentType(ContentType.Application.Json)
                 setBody("""{"status":"approved"}""")
@@ -239,7 +239,7 @@ class E2EAsyncCallbackTest {
             assertTrue(first.status.value in 200..202, "First callback should succeed, got ${first.status.value}")
 
             // Second callback with same token — nonce replay
-            val second = client.post("/sagas/$sagaId/node/authorize/callback") {
+            val second = client.post("/workflows/$sagaId/node/authorize/callback") {
                 header("X-Callback-Token", callbackToken)
                 contentType(ContentType.Application.Json)
                 setBody("""{"status":"approved"}""")

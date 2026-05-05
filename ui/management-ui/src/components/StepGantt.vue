@@ -122,9 +122,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 const props = defineProps({
   /** execution.startedAt ISO string — the zero point */
   startedAt: { type: String, default: null },
-  /** steps array from GET /sagas/{id}/steps */
+  /** steps array from GET /workflows/{id}/steps */
   steps: { type: Array, default: () => [] },
-  /** calls array from GET /sagas/{id}/steps/calls */
+  /** calls array from GET /workflows/{id}/steps/calls */
   calls: { type: Array, default: () => [] },
 })
 

@@ -124,7 +124,7 @@ def wait_for_terminal(api: SagaApi, saga_id: str, timeout_s: int = 30) -> dict:
     deadline = time.time() + timeout_s
     last: dict = {}
     while time.time() < deadline:
-        resp = api.get(f"/sagas/{saga_id}")
+        resp = api.get(f"/workflows/{saga_id}")
         if resp.status_code == 204:
             time.sleep(0.2)
             continue
@@ -137,7 +137,7 @@ def wait_for_terminal(api: SagaApi, saga_id: str, timeout_s: int = 30) -> dict:
 
 
 def register_definition(api: SagaApi, definition: dict) -> None:
-    resp = api.post("/sagas/definitions", definition)
+    resp = api.post("/workflows/definitions", definition)
     if resp.status_code not in (200, 201, 409):
         raise RuntimeError(f"failed to register definition: {resp.status_code} {resp.text}")
 
@@ -169,7 +169,7 @@ def run_scenario(api: SagaApi, definition: dict, name: str, scenario: dict) -> b
     print(f"Expected branch: {scenario['expected_branch']}")
     print("─" * 60)
 
-    resp = api.post("/sagas/run", {
+    resp = api.post("/workflows/run", {
         "definition": definition,
         "payload": {
             "orderId": scenario["orderId"],

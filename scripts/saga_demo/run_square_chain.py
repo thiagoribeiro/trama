@@ -127,7 +127,7 @@ def wait_for_status(api: SagaApi, saga_id: str, timeout_s: int = 30) -> Dict[str
     last: Dict[str, Any] = {}
 
     while time.time() < deadline:
-        resp = api.get(f"/sagas/{saga_id}")
+        resp = api.get(f"/workflows/{saga_id}")
         if resp.status_code == 204:
             time.sleep(0.25)
             continue
@@ -154,7 +154,7 @@ def run_saga(args: argparse.Namespace) -> int:
 
     print(json.dumps(definition))
 
-    create_resp = api.post("/sagas/definitions", definition)
+    create_resp = api.post("/workflows/definitions", definition)
     if create_resp.status_code not in (200, 201, 202):
         print(f"failed to create definition: {create_resp.status_code} {create_resp.text}")
         return 1
@@ -164,7 +164,7 @@ def run_saga(args: argparse.Namespace) -> int:
             "initial_value": args.initial_value,
         }
     }
-    run_resp = api.post(f"/sagas/definitions/{args.name}/{args.version}/run", run_payload)
+    run_resp = api.post(f"/workflows/definitions/{args.name}/{args.version}/run", run_payload)
     if run_resp.status_code not in (200, 201, 202):
         print(f"failed to run definition: {run_resp.status_code} {run_resp.text}")
         return 1

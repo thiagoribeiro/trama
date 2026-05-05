@@ -197,7 +197,7 @@ fun Application.module() {
                 )
             }
         }
-        get("/sagas") {
+        get("/workflows") {
             val repo = repository
             if (repo == null) {
                 call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
@@ -221,11 +221,11 @@ fun Application.module() {
             }
             call.respond(list)
         }
-        get("/sagas/{id}/steps") {
+        get("/workflows/{id}/steps") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid saga id")))
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid workflow id")))
                 return@get
             }
             val repo = repository
@@ -255,11 +255,11 @@ fun Application.module() {
             }
             call.respond(steps)
         }
-        get("/sagas/{id}/steps/calls") {
+        get("/workflows/{id}/steps/calls") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid saga id")))
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid workflow id")))
                 return@get
             }
             val repo = repository
@@ -285,11 +285,11 @@ fun Application.module() {
             }
             call.respond(calls)
         }
-        get("/sagas/{id}") {
+        get("/workflows/{id}") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid saga id")))
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid workflow id")))
                 return@get
             }
             val status = repository?.getExecutionStatus(id)
@@ -311,11 +311,11 @@ fun Application.module() {
                 )
             )
         }
-        post("/sagas/{id}/retry") {
+        post("/workflows/{id}/retry") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid saga id")))
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid workflow id")))
                 return@post
             }
             val repo = repository
@@ -330,14 +330,14 @@ fun Application.module() {
             }
             val definitionJson = retryData.definitionJson
             if (definitionJson.isNullOrBlank()) {
-                call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("saga definition not stored")))
+                call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("workflow definition not stored")))
                 return@post
             }
             val isV2Definition = runCatching {
                 json.parseToJsonElement(definitionJson).jsonObject.containsKey("nodes")
             }.getOrDefault(false)
             if (isV2Definition) {
-                call.respond(HttpStatusCode.UnprocessableEntity, ValidationErrorResponse(listOf("retry of v2 saga definitions is not yet supported")))
+                call.respond(HttpStatusCode.UnprocessableEntity, ValidationErrorResponse(listOf("retry of v2 workflow definitions is not yet supported")))
                 return@post
             }
             val definition = json.decodeFromString(SagaDefinition.serializer(), definitionJson)
@@ -361,11 +361,11 @@ fun Application.module() {
             bootstrap.enqueueRetry(execution)
             call.respond(HttpStatusCode.Accepted, SagaRetryResponse(id.toString(), "REQUEUED"))
         }
-        post("/sagas/{id}/wake") {
+        post("/workflows/{id}/wake") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid saga id")))
+                call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid workflow id")))
                 return@post
             }
             when (bootstrap.wakeExecution(id)) {
@@ -374,15 +374,15 @@ fun Application.module() {
                 run.trama.runtime.RuntimeBootstrap.WakeResult.AlreadyWaking ->
                     call.respond(HttpStatusCode.OK)
                 run.trama.runtime.RuntimeBootstrap.WakeResult.NotSleeping ->
-                    call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("saga is not sleeping")))
+                    call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("execution is not sleeping")))
                 run.trama.runtime.RuntimeBootstrap.WakeResult.NotFound ->
-                    call.respond(HttpStatusCode.NotFound, ValidationErrorResponse(listOf("saga not found")))
+                    call.respond(HttpStatusCode.NotFound, ValidationErrorResponse(listOf("execution not found")))
                 run.trama.runtime.RuntimeBootstrap.WakeResult.RuntimeDisabled ->
                     call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
             }
         }
 
-        post("/sagas/run") {
+        post("/workflows/run") {
             val rawBody = call.receive<JsonObject>()
             val definitionObj = rawBody["definition"] as? JsonObject
             if (definitionObj != null && definitionObj.containsKey("nodes")) {
@@ -453,7 +453,7 @@ fun Application.module() {
                 call.respond(SagaCreateResponse(execution.id.toString()))
             }
         }
-        post("/sagas/definitions") {
+        post("/workflows/definitions") {
             val body = call.receive<JsonObject>()
             val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
             if (errors.isNotEmpty()) {
@@ -483,7 +483,7 @@ fun Application.module() {
                 )
             )
         }
-        get("/sagas/definitions") {
+        get("/workflows/definitions") {
             val repo = repository
             if (repo == null) {
                 call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
@@ -503,7 +503,7 @@ fun Application.module() {
             }
             call.respond(list)
         }
-        get("/sagas/definitions/{id}") {
+        get("/workflows/definitions/{id}") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
@@ -531,7 +531,7 @@ fun Application.module() {
                 )
             )
         }
-        put("/sagas/definitions/{id}") {
+        put("/workflows/definitions/{id}") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
@@ -566,7 +566,7 @@ fun Application.module() {
                 )
             )
         }
-        delete("/sagas/definitions/{id}") {
+        delete("/workflows/definitions/{id}") {
             val idParam = call.parameters["id"]
             val id = runCatching { UUID.fromString(idParam) }.getOrNull()
             if (id == null) {
@@ -585,7 +585,7 @@ fun Application.module() {
             }
             call.respond(HttpStatusCode.NoContent)
         }
-        get("/sagas/definitions/{name}/{version}") {
+        get("/workflows/definitions/{name}/{version}") {
             val name = call.parameters["name"]?.trim().orEmpty()
             val version = call.parameters["version"]?.trim().orEmpty()
             if (name.isBlank() || version.isBlank()) {
@@ -613,7 +613,7 @@ fun Application.module() {
                 )
             )
         }
-        post("/sagas/definitions/{name}/{version}/run") {
+        post("/workflows/definitions/{name}/{version}/run") {
             val name = call.parameters["name"]?.trim().orEmpty()
             val version = call.parameters["version"]?.trim().orEmpty()
             if (name.isBlank() || version.isBlank()) {
@@ -635,7 +635,7 @@ fun Application.module() {
                 json.parseToJsonElement(rec.definitionJson).jsonObject.containsKey("nodes")
             }.getOrDefault(false)
             if (isV2StoredDef) {
-                call.respond(HttpStatusCode.UnprocessableEntity, ValidationErrorResponse(listOf("running stored v2 saga definitions is not yet supported")))
+                call.respond(HttpStatusCode.UnprocessableEntity, ValidationErrorResponse(listOf("running stored v2 workflow definitions is not yet supported")))
                 return@post
             }
             val definition = json.decodeFromString(SagaDefinition.serializer(), rec.definitionJson)
@@ -658,7 +658,7 @@ fun Application.module() {
             call.respond(SagaCreateResponse(execution.id.toString()))
         }
 
-        post("/sagas/{executionId}/node/{nodeId}/callback") {
+        post("/workflows/{executionId}/node/{nodeId}/callback") {
             val executionIdParam = call.parameters["executionId"]
             val nodeId = call.parameters["nodeId"]?.trim().orEmpty()
             val executionId = runCatching { UUID.fromString(executionIdParam) }.getOrNull()

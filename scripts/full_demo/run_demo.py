@@ -64,12 +64,12 @@ TERMINAL_STATUSES = {"SUCCEEDED", "FAILED", "CORRUPTED"}
 
 
 def wait_for_terminal(api: SagaApi, saga_id: str, timeout_s: int = 90) -> dict:
-    """Poll GET /sagas/{id} and print each status transition until terminal."""
+    """Poll GET /workflows/{id} and print each status transition until terminal."""
     deadline   = time.time() + timeout_s
     prev_status = None
 
     while time.time() < deadline:
-        resp = api.get(f"/sagas/{saga_id}")
+        resp = api.get(f"/workflows/{saga_id}")
         if resp.status_code == 204:
             time.sleep(0.5)
             continue
@@ -156,7 +156,7 @@ def main() -> int:
 
     # ── Start saga ────────────────────────────────────────────────────────────
     print("Starting saga …")
-    resp = api.post("/sagas/run", {
+    resp = api.post("/workflows/run", {
         "definition": DEFINITION,
         "payload": {
             "orderId":       args.order_id,
