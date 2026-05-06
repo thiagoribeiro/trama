@@ -30,6 +30,8 @@ import run.trama.telemetry.Tracing
 import org.slf4j.LoggerFactory
 import net.logstash.logback.argument.StructuredArguments.kv
 import java.time.Instant
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -57,6 +59,10 @@ class WorkflowExecutor(
     private val logger = LoggerFactory.getLogger(WorkflowExecutor::class.java)
     private val tracer = Tracing.tracer("workflow-executor")
     private val taskHandler = TaskNodeHandler(renderer, httpClient, metrics, callbackTokenService, callbackUrlFactory)
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private fun parseBodyOrNull(raw: String?): JsonElement? =
+        raw?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
 
     override suspend fun execute(execution: SagaExecution): ExecutionOutcome {
         return Tracing.withSpan(
@@ -127,8 +133,9 @@ class WorkflowExecutor(
         var retry = initialRetry
         val pendingCalls = mutableListOf<StepCallEntry>()
         var processed = 0
-        // Load once per execution slice — avoids an extra Redis/DB round-trip per node
-        val stepResults = store.loadStepResults(execution.id)
+        // Load once per execution slice; updated in-memory as each node completes so
+        // subsequent nodes can reference prior results via {{nodes.X.response.body}}.
+        val stepResults = store.loadStepResults(execution.id).toMutableList()
 
         while (true) {
             val node = workflow.nodes[activeNodeId]
@@ -178,6 +185,7 @@ class WorkflowExecutor(
                         is NodeResult.Advanced -> {
                             retry = RetryState.None
                             completedNodes.add(node.id)
+                            stepResults.add(StepResult(stepIdx, node.id, parseBodyOrNull(httpResult.responseBody), null))
                             if (node.compensation != null) {
                                 compensationStack.add(0, node.id)
                             }
@@ -230,6 +238,7 @@ class WorkflowExecutor(
                         responseBody = traceJson,
                         stepStartedAt = switchStartedAt,
                     )
+                    stepResults.add(StepResult(stepIdx, node.id, parseBodyOrNull(traceJson), null))
                     retry = RetryState.None
                     activeNodeId = evalResult.targetNodeId
                     metrics.recordSwitchEvaluated(

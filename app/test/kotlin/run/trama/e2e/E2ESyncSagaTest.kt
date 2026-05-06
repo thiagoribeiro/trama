@@ -5,6 +5,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.aResponse
 import com.github.tomakehurst.wiremock.client.WireMock.post
 import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlMatching
+import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import io.ktor.client.request.post
@@ -12,6 +13,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
@@ -330,6 +332,100 @@ class E2ESyncSagaTest {
             val step2Idx = downCalls.indexOfFirst { it.contains("step2") }
             val step1Idx = downCalls.indexOfFirst { it.contains("step1") }
             assertTrue(step2Idx < step1Idx, "step2 should be compensated before step1 (got step2=$step2Idx, step1=$step1Idx)")
+        }
+    }
+
+    // ── Test: node B can access node A's response body without a sleep in between ──
+
+    @Test
+    fun `v2 node B sees node A response body via template without sleep`() {
+        if (!DockerClientFactory.instance().isDockerAvailable) return
+        val defName = uniqueName("v2-prev-result")
+
+        wm.resetAll()
+        wm.stubFor(
+            post(urlPathEqualTo("/step/nodeA"))
+                .willReturn(
+                    aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""{"data":"hello-from-a"}""")
+                )
+        )
+        wm.stubFor(
+            post(urlPathEqualTo("/step/nodeB"))
+                .willReturn(
+                    aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""{"status":"ok"}""")
+                )
+        )
+
+        val definition = mapOf(
+            "definition" to mapOf(
+                "name" to defName,
+                "version" to "v1",
+                "failureHandling" to mapOf("type" to "retry", "maxAttempts" to 1, "delayMillis" to 50),
+                "entrypoint" to "nodeA",
+                "nodes" to listOf(
+                    mapOf(
+                        "kind" to "task",
+                        "id" to "nodeA",
+                        "action" to mapOf(
+                            "mode" to "sync",
+                            "request" to mapOf(
+                                "url" to svc("/step/nodeA"),
+                                "verb" to "POST",
+                                "headers" to mapOf("Content-Type" to "application/json"),
+                                "body" to mapOf("step" to "nodeA"),
+                            ),
+                        ),
+                        "next" to "nodeB",
+                    ),
+                    mapOf(
+                        "kind" to "task",
+                        "id" to "nodeB",
+                        "action" to mapOf(
+                            "mode" to "sync",
+                            "request" to mapOf(
+                                "url" to svc("/step/nodeB"),
+                                "verb" to "POST",
+                                "headers" to mapOf("Content-Type" to "application/json"),
+                                "body" to mapOf(
+                                    "fromA" to "{{nodes.nodeA.response.body.data}}",
+                                    "fromPrev" to "{{prev.body.data}}",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            "payload" to emptyMap<String, Any?>(),
+        )
+
+        e2eTest {
+            val resp = client.post("/workflows/run") {
+                contentType(ContentType.Application.Json)
+                setBody(definition.toJsonElement().toString())
+            }
+            assertEquals(200, resp.status.value, resp.bodyAsText())
+            val sagaId = testJson.parseToJsonElement(resp.bodyAsText()).jsonObject["id"]!!.jsonPrimitive.content
+
+            val final = awaitSagaTerminal(client, sagaId)
+            assertEquals("SUCCEEDED", final["status"]?.jsonPrimitive?.content)
+
+            val nodeBRequests = wm.findAll(postRequestedFor(urlPathEqualTo("/step/nodeB")))
+            assertTrue(nodeBRequests.isNotEmpty(), "nodeB was never called")
+            val nodeBBody = testJson.parseToJsonElement(nodeBRequests.first().bodyAsString).jsonObject
+            assertEquals(
+                "hello-from-a",
+                nodeBBody["fromA"]?.jsonPrimitive?.content,
+                "nodeB should see nodeA response via {{nodes.nodeA.response.body.data}}"
+            )
+            assertEquals(
+                "hello-from-a",
+                nodeBBody["fromPrev"]?.jsonPrimitive?.content,
+                "nodeB should see nodeA response via {{prev.body.data}}"
+            )
         }
     }
 }
