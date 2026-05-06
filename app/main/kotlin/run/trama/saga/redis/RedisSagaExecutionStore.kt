@@ -206,24 +206,15 @@ class RedisSagaExecutionStore(
         if (steps.isEmpty()) return emptyList()
 
         val latestByIndex = linkedMapOf<Int, StepResult>()
-        val sorted = steps.sortedByDescending { it.createdAt }
+        val sorted = steps.sortedWith(compareBy({ it.stepIndex }, { it.createdAt }))
         for (step in sorted) {
             val index = step.stepIndex
             val body = toJsonElement(step.responseBody)
-            val current = latestByIndex[index]
-            if (current == null) {
-                latestByIndex[index] = StepResult(
-                    index = index,
-                    name = step.stepName,
-                    upBody = if (step.phase == ExecutionPhase.UP.name) body else null,
-                    downBody = if (step.phase == ExecutionPhase.DOWN.name) body else null,
-                )
-                continue
-            }
-            if (step.phase == ExecutionPhase.UP.name && current.upBody == null) {
-                latestByIndex[index] = current.copy(upBody = body)
-            } else if (step.phase == ExecutionPhase.DOWN.name && current.downBody == null) {
-                latestByIndex[index] = current.copy(downBody = body)
+            val current = latestByIndex[index] ?: StepResult(index = index, name = step.stepName, upBody = null, downBody = null)
+            latestByIndex[index] = when (step.phase) {
+                ExecutionPhase.UP.name   -> current.copy(upBody = body)
+                ExecutionPhase.DOWN.name -> current.copy(downBody = body)
+                else -> current
             }
         }
         return latestByIndex.values.toList()

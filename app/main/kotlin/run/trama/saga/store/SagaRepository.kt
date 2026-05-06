@@ -224,7 +224,7 @@ class SagaRepository(
                 .from(SAGA_STEP_RESULT)
                 .where(SAGA_STEP_RESULT.SAGA_ID.eq(sagaId))
                 .and(SAGA_STEP_RESULT.STARTED_AT.ge(cutoff()))
-                .orderBy(SAGA_STEP_RESULT.STEP_INDEX.asc(), SAGA_STEP_RESULT.CREATED_AT.desc())
+                .orderBy(SAGA_STEP_RESULT.STEP_INDEX.asc(), SAGA_STEP_RESULT.CREATED_AT.asc())
                 .fetch()
 
             val latestByIndex = linkedMapOf<Int, StepResult>()
@@ -233,20 +233,11 @@ class SagaRepository(
                 val name = record.get(SAGA_STEP_RESULT.STEP_NAME) ?: ""
                 val phase = record.get(SAGA_STEP_RESULT.PHASE) ?: ExecutionPhase.UP.name
                 val body = record.get(SAGA_STEP_RESULT.RESPONSE_BODY)?.data()?.let { parseJson(it) }
-                val current = latestByIndex[index]
-                if (current == null) {
-                    latestByIndex[index] = StepResult(
-                        index = index,
-                        name = name,
-                        upBody = if (phase == ExecutionPhase.UP.name) body else null,
-                        downBody = if (phase == ExecutionPhase.DOWN.name) body else null,
-                    )
-                    continue
-                }
-                if (phase == ExecutionPhase.UP.name && current.upBody == null) {
-                    latestByIndex[index] = current.copy(upBody = body)
-                } else if (phase == ExecutionPhase.DOWN.name && current.downBody == null) {
-                    latestByIndex[index] = current.copy(downBody = body)
+                val current = latestByIndex[index] ?: StepResult(index = index, name = name, upBody = null, downBody = null)
+                latestByIndex[index] = when (phase) {
+                    ExecutionPhase.UP.name   -> current.copy(upBody = body)
+                    ExecutionPhase.DOWN.name -> current.copy(downBody = body)
+                    else -> current
                 }
             }
             latestByIndex.values.toList()
