@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val ktorVersion = "3.4.2"
 val kotlinxSerializationVersion = "1.9.0"
-val msgpackVersion = "0.6.0"
+val msgpackVersion = "0.6.1"
 val jooqVersion = "3.21.1"
 
 plugins {
