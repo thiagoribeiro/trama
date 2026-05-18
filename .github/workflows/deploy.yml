@@ -1,0 +1,33 @@
+name: Deploy Trama to r2d2
+
+on:
+  push:
+    branches: [r2d2]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type YES to confirm (15-25 min build on arm64)"
+        required: true
+
+jobs:
+  deploy:
+    if: github.event.inputs.confirm == 'YES'
+    runs-on: [self-hosted, r2d2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t trama:latest .
+
+      - name: Deploy
+        run: |
+          cd /opt/edge
+          docker compose -f compose.edge.yml up -d --no-deps trama
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 18); do
+            curl -sf http://localhost:9081/readyz && exit 0
+            sleep 10
+          done
+          exit 1

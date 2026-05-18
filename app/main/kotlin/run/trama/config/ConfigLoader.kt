@@ -38,6 +38,10 @@ object ConfigLoader {
             ?: System.getenv("RUNTIME_CALLBACK_HMACSECRET")
         val callbackHmacKid = System.getProperty("runtime.callback.hmacKid")
             ?: System.getenv("RUNTIME_CALLBACK_HMACKID")
+        val emptyPollDelayMillis = System.getProperty("runtime.emptyPollDelayMillis")
+            ?: System.getenv("RUNTIME_EMPTYPOLLDELAYMILLIS")
+        val virtualShardCount = System.getProperty("redis.sharding.virtualShardCount")
+            ?: System.getenv("REDIS_SHARDING_VIRTUALSHARDCOUNT")
 
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
@@ -75,6 +79,12 @@ object ConfigLoader {
                     )
                 )
             )
+        }
+        emptyPollDelayMillis?.toLongOrNull()?.let {
+            config = config.copy(runtime = config.runtime.copy(emptyPollDelayMillis = it))
+        }
+        virtualShardCount?.toIntOrNull()?.let {
+            config = config.copy(redis = config.redis.copy(sharding = config.redis.sharding.copy(virtualShardCount = it)))
         }
         return config
     }
