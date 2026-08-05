@@ -11,10 +11,10 @@
   "dependencies": {
     "json-logic-js": "^2.0.5",
     "vue": "^3.5.0",
-    "vue-router": "^4.4.0"
+    "vue-router": "^5.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.0",
-    "vite": "^6.0.0"
+    "@vitejs/plugin-vue": "^6.0.0",
+    "vite": "^8.2.0"
   }
 }

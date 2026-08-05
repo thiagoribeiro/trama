@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // Allow Vue components to import editor JS/CSS via relative paths
-      '@editor': resolve(__dirname, '../definition-editor'),
+      '@editor': resolve(import.meta.dirname, '../definition-editor'),
     },
   },
   server: {
