@@ -1,13 +1,13 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val ktorVersion = "3.4.2"
+val ktorVersion = "3.5.2"
 val kotlinxSerializationVersion = "1.9.0"
-val msgpackVersion = "0.6.0"
-val jooqVersion = "3.21.1"
+val msgpackVersion = "0.6.1"
+val jooqVersion = "3.21.7"
 
 plugins {
-    kotlin("jvm") version "2.3.10"
-    kotlin("plugin.serialization") version "2.3.10"
+    kotlin("jvm") version "2.4.10"
+    kotlin("plugin.serialization") version "2.4.10"
     application
     id("nu.studer.jooq") version "9.0"
 }
@@ -39,42 +39,42 @@ dependencies {
     implementation("io.ktor:ktor-server-metrics-micrometer:$ktorVersion")
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
-    implementation("io.lettuce:lettuce-core:6.3.2.RELEASE")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.9.0")
-    implementation("org.apache.commons:commons-pool2:2.12.0")
+    implementation("io.lettuce:lettuce-core:6.8.2.RELEASE")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.11.0")
+    implementation("org.apache.commons:commons-pool2:2.13.1")
     implementation("com.ensarsarajcic.kotlinx:serialization-msgpack:$msgpackVersion")
-    implementation("com.github.spullara.mustache.java:compiler:0.9.10")
-    implementation("io.micrometer:micrometer-registry-prometheus:1.13.7")
-    implementation("io.micrometer:micrometer-core:1.13.7")
+    implementation("com.github.spullara.mustache.java:compiler:0.9.14")
+    implementation("io.micrometer:micrometer-registry-prometheus:1.17.0")
+    implementation("io.micrometer:micrometer-core:1.17.0")
     implementation("org.jooq:jooq:$jooqVersion")
-    implementation("org.postgresql:postgresql:42.7.3")
+    implementation("org.postgresql:postgresql:42.7.13")
     implementation("com.zaxxer:HikariCP:5.1.0")
-    implementation("org.liquibase:liquibase-core:4.29.2")
+    implementation("org.liquibase:liquibase-core:4.33.0")
     implementation("com.sksamuel.hoplite:hoplite-core:2.9.0")
     implementation("com.sksamuel.hoplite:hoplite-yaml:2.9.0")
-    implementation("io.opentelemetry:opentelemetry-api:1.43.0")
-    implementation("io.opentelemetry:opentelemetry-sdk:1.43.0")
-    implementation("io.opentelemetry:opentelemetry-sdk-trace:1.43.0")
-    implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.43.0")
-    implementation("io.opentelemetry:opentelemetry-semconv:1.28.0-alpha")
+    implementation("io.opentelemetry:opentelemetry-api:1.64.0")
+    implementation("io.opentelemetry:opentelemetry-sdk:1.64.0")
+    implementation("io.opentelemetry:opentelemetry-sdk-trace:1.64.0")
+    implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.64.0")
+    implementation("io.opentelemetry:opentelemetry-semconv:1.30.1-alpha")
     implementation("net.logstash.logback:logstash-logback-encoder:7.4")
-    implementation("io.github.jamsesso:json-logic-java:1.0.7")
+    implementation("io.github.jamsesso:json-logic-java:1.1.0")
 
     jooqGenerator("org.jooq:jooq-meta:$jooqVersion")
     jooqGenerator("org.jooq:jooq-codegen:$jooqVersion")
-    jooqGenerator("org.postgresql:postgresql:42.7.3")
+    jooqGenerator("org.postgresql:postgresql:42.7.13")
 
-    runtimeOnly("ch.qos.logback:logback-classic:1.5.16")
+    runtimeOnly("ch.qos.logback:logback-classic:1.5.38")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
-    testImplementation("org.testcontainers:junit-jupiter:1.21.0")
-    testImplementation("org.testcontainers:postgresql:1.21.0")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.4")
+    testImplementation("org.testcontainers:postgresql:1.21.4")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
-    testImplementation("io.mockk:mockk:1.13.12")
-    testImplementation("org.wiremock:wiremock-standalone:3.9.1")
+    testImplementation("io.mockk:mockk:1.14.11")
+    testImplementation("org.wiremock:wiremock-standalone:3.13.2")
 }
 
 jooq {
@@ -151,7 +151,7 @@ tasks.named<JavaCompile>("compileJava") {
 
 tasks.test {
     useJUnitPlatform()
-    environment("DOCKER_HOST", "unix:///var/run/docker.sock")
+    environment("DOCKER_HOST", System.getenv("DOCKER_HOST") ?: "unix:///var/run/docker.sock")
     environment("TESTCONTAINERS_RYUK_DISABLED", "true")
     systemProperty("api.version", "1.44")
 }
