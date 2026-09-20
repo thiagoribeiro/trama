@@ -171,7 +171,7 @@ class RuntimeBootstrap(
         val joinScanner = JoinCompletionScanner(
             repository = repo,
             resumer = executor,
-            config = config.callbackTimeoutScanner,
+            config = config.joinCompletionScanner,
         )
 
         heartbeatJob = scope.launch { membershipRegistry.runHeartbeatLoop() }

@@ -43,14 +43,11 @@ class RedisShardKeyspace(
     fun sleepKey(executionId: UUID): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:sleep"
 
-    fun joinKey(executionId: UUID): String =
-        "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:join"
-
     /** Holds the expected branch count for a join barrier — set once by registerJoinBarrier. */
     fun joinExpectedKey(executionId: UUID, splitNodeId: String): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:join:$splitNodeId:expected"
 
-    /** Atomically INCRed once per arriving branch — the fast path for the join barrier count. */
+    /** SET of arrived child ids for a join barrier (SADD'd once per arriving branch) — the fast path for markChildArrived. */
     fun joinArrivedKey(executionId: UUID, splitNodeId: String): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:join:$splitNodeId:arrived"
 

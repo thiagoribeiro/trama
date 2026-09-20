@@ -3,7 +3,7 @@ package run.trama.runtime
 import kotlinx.coroutines.delay
 import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.LoggerFactory
-import run.trama.config.CallbackTimeoutScannerConfig
+import run.trama.config.JoinCompletionScannerConfig
 import java.util.UUID
 
 /**
@@ -11,9 +11,6 @@ import java.util.UUID
  * (arrived_count >= expected_count) but are still sitting in WAITING_JOIN — i.e. the eager
  * resume in [run.trama.saga.workflow.WorkflowExecutor.finalizeAndNotifyParent] ran the
  * increment but crashed (or lost its Redis fast path) before actually resuming the parent.
- *
- * Reuses [CallbackTimeoutScannerConfig] rather than introducing a parallel config section —
- * this scanner has the exact same shape (enabled/interval/batchSize); `bufferSeconds` is unused.
  */
 interface JoinBarrierRepository {
     suspend fun findStalledJoinBarriers(limit: Int = 100): List<UUID>
@@ -27,7 +24,7 @@ interface JoinResumer {
 class JoinCompletionScanner(
     private val repository: JoinBarrierRepository,
     private val resumer: JoinResumer,
-    private val config: CallbackTimeoutScannerConfig,
+    private val config: JoinCompletionScannerConfig,
 ) {
     private val logger = LoggerFactory.getLogger(JoinCompletionScanner::class.java)
 

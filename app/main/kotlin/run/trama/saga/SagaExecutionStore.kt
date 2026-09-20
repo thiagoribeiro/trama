@@ -50,10 +50,16 @@ data class JoinBranchLink(
     val childStartedAt: Instant,
 )
 
-/** Result of atomically incrementing a join barrier's arrival counter. */
+/**
+ * Result of marking a child's arrival on its parent's join barrier.
+ * [newlyMarked] is false when this exact child id was already recorded as arrived (a redelivery
+ * of an already-finalized branch) — callers must only act as "the winner" when newlyMarked is
+ * true AND [arrived] == [expected]; otherwise the arrival was a no-op replay.
+ */
 data class JoinArrival(
     val arrived: Int,
     val expected: Int,
+    val newlyMarked: Boolean,
 )
 
 /** Minimal terminal-status summary for a (already finalized) child execution. */
@@ -151,6 +157,14 @@ interface SagaExecutionStore {
      * Registers the join barrier for a split: how many branches are expected and which
      * child execution belongs to which branch. Must be called once, before any of the
      * spawned children can possibly finish.
+     *
+     * Returns the [JoinBranchLink.branchId]s that were newly registered by *this* call, as
+     * opposed to ones a prior (crashed/redelivered) attempt at the same split step already
+     * registered. The split node handler must enqueue only these: a redelivered split step
+     * reconstructs the exact same branch set (deterministic ids), so a branch that is not
+     * newly registered here was already enqueued by the earlier attempt — enqueuing it again
+     * would cause its entire subtree of work to run a second time independently, not just
+     * repeat a single call the way an ordinary node redelivery does.
      */
     suspend fun registerJoinBarrier(
         parentId: java.util.UUID,
@@ -158,18 +172,21 @@ interface SagaExecutionStore {
         splitNodeId: String,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
-    )
+    ): Set<String>
 
     /**
-     * Atomically increments the arrival counter for the ([parentId], [splitNodeId]) barrier.
-     * Returns the counts *after* incrementing, or null if no barrier is registered (bug/race).
-     * The single caller for which [JoinArrival.arrived] == [JoinArrival.expected] is responsible
-     * for resuming the parent.
+     * Idempotently marks [childId] as arrived on the ([parentId], [splitNodeId]) barrier and
+     * returns the counts *after* this call, or null if no barrier is registered (bug/race).
+     * Calling this again with a [childId] that was already marked arrived (e.g. a redelivered
+     * branch re-finalizing) is a safe no-op: the counter is not incremented twice, and
+     * [JoinArrival.newlyMarked] comes back false. Only proceed as "the winner" when
+     * [JoinArrival.newlyMarked] is true AND [JoinArrival.arrived] == [JoinArrival.expected].
      */
-    suspend fun incrementJoinArrival(
+    suspend fun markChildArrived(
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
+        childId: java.util.UUID,
     ): JoinArrival?
 
     /** Returns the branch → child links registered by [registerJoinBarrier]. */
@@ -193,6 +210,9 @@ interface SagaExecutionStore {
 
     /** Minimal terminal-status lookup for a (possibly already-finalized) child execution. */
     suspend fun getChildStatus(executionId: java.util.UUID): ChildExecutionStatus?
+
+    /** Batched form of [getChildStatus] — one round trip regardless of how many ids are passed. */
+    suspend fun getChildStatuses(executionIds: List<java.util.UUID>): Map<java.util.UUID, ChildExecutionStatus>
 }
 
 class SagaRepositoryStore(
@@ -282,11 +302,12 @@ class SagaRepositoryStore(
         branches: List<JoinBranchLink>,
     ) = repository.registerJoinBarrier(parentId, parentStartedAt, splitNodeId, joinNodeId, branches)
 
-    override suspend fun incrementJoinArrival(
+    override suspend fun markChildArrived(
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-    ): JoinArrival? = repository.incrementJoinArrival(parentId, parentStartedAt, splitNodeId)
+        childId: java.util.UUID,
+    ): JoinArrival? = repository.markChildArrived(parentId, parentStartedAt, splitNodeId, childId)
 
     override suspend fun getJoinBranches(
         parentId: java.util.UUID,
@@ -309,4 +330,7 @@ class SagaRepositoryStore(
 
     override suspend fun getChildStatus(executionId: java.util.UUID): ChildExecutionStatus? =
         repository.getChildStatus(executionId)
+
+    override suspend fun getChildStatuses(executionIds: List<java.util.UUID>): Map<java.util.UUID, ChildExecutionStatus> =
+        repository.getChildStatuses(executionIds)
 }

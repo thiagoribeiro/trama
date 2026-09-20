@@ -66,14 +66,42 @@ class RedisSplitJoinStoreTest {
             store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", "fan-in", branches)
 
             val results = branches.map { branch ->
-                async { store.incrementJoinArrival(parent.id, parent.startedAt, "fan-out") }
+                async { store.markChildArrived(parent.id, parent.startedAt, "fan-out", branch.childId) }
             }.awaitAll()
 
-            assertTrue(results.all { it != null }, "every increment must see a registered barrier")
+            assertTrue(results.all { it != null }, "every arrival must see a registered barrier")
+            assertTrue(results.all { it!!.newlyMarked }, "every distinct child's first arrival must be newly marked")
             val satisfiedCount = results.count { it!!.arrived == it.expected }
             assertEquals(1, satisfiedCount, "exactly one concurrent arrival must observe arrived == expected, got: $results")
             assertTrue(results.all { it!!.expected == 5 })
             assertEquals((1..5).toSet(), results.map { it!!.arrived }.toSet(), "arrived counts must be 1..5 with no duplicates/gaps")
+        }
+    }
+
+    @Test
+    fun `redelivering the same child's arrival is a no-op, not a double count`() = runBlocking {
+        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+        withStores { store ->
+            val parent = testExecution()
+            val branches = (1..2).map { i -> JoinBranchLink("branch-$i", UUID.randomUUID(), Instant.now()) }
+            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", "fan-in", branches)
+
+            val first = store.markChildArrived(parent.id, parent.startedAt, "fan-out", branches[0].childId)
+            assertNotNull(first)
+            assertTrue(first.newlyMarked)
+            assertEquals(1, first.arrived)
+
+            // Simulates a redelivered branch execute() re-finalizing the SAME child id.
+            val redelivered = store.markChildArrived(parent.id, parent.startedAt, "fan-out", branches[0].childId)
+            assertNotNull(redelivered)
+            assertTrue(!redelivered.newlyMarked, "a second arrival for the same child must not be newly marked")
+            assertEquals(1, redelivered.arrived, "the counter must not have moved from the redelivered call")
+
+            val second = store.markChildArrived(parent.id, parent.startedAt, "fan-out", branches[1].childId)
+            assertNotNull(second)
+            assertTrue(second.newlyMarked)
+            assertEquals(2, second.arrived)
+            assertEquals(2, second.expected)
         }
     }
 
@@ -95,7 +123,7 @@ class RedisSplitJoinStoreTest {
     }
 
     @Test
-    fun `waiting join round-trips through the redis fast path`() = runBlocking {
+    fun `waiting join round-trips exactly once`() = runBlocking {
         if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
         withStores { store ->
             val parent = testExecution()
@@ -109,6 +137,24 @@ class RedisSplitJoinStoreTest {
             // Consuming again must be a no-op (already delivered) — this is exactly the
             // property finalizeAndNotifyParent relies on to guarantee a single resume.
             assertNull(store.consumeWaitingJoin(parent.id))
+        }
+    }
+
+    @Test
+    fun `concurrent consume attempts on the same waiting join never both win`() = runBlocking {
+        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+        withStores { store ->
+            val parent = testExecution()
+            store.saveWaitingJoin(parent)
+
+            // Simulates the winning branch's finalizeAndNotifyParent racing against
+            // JoinCompletionScanner's backstop scan, both trying to consume the same parent at
+            // the same time. consumeWaitingJoin must be backed by a single atomic decision
+            // (Postgres's row-locked UPDATE ... RETURNING), not two independent per-store
+            // decisions that could each return non-null to a different caller.
+            val results = (1..5).map { async { store.consumeWaitingJoin(parent.id) } }.awaitAll()
+
+            assertEquals(1, results.count { it != null }, "exactly one concurrent consumer must win, got: $results")
         }
     }
 

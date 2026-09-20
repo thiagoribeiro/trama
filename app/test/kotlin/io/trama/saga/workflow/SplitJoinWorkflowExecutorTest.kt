@@ -216,13 +216,208 @@ class SplitJoinWorkflowExecutorTest {
         assertIs<ExecutionState.InProgress>(resumedState)
         assertEquals("after-join", resumedState.activeNodeId)
     }
+
+    // ── Regression tests for the code-review fixes ──────────────────────────────
+
+    @Test
+    fun `split redelivery reconstructs deterministic children instead of a fresh random batch`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = newExecutor(store, enqueuer)
+        val def = splitJoinDefinition("determinism-test")
+        val parent = executionOf(def, "fan-out")
+
+        executor.execute(parent)
+        val firstBatch = enqueuer.enqueued.toList()
+
+        // Simulates redelivery: the parent's queue message snapshot predates the split ever
+        // running, so a crash/requeue re-executes the SAME SplitNode step from the SAME parent.
+        // The split step (re-)computes its children and records them in its own step-result
+        // trace on every attempt, regardless of whether they end up (re-)enqueued — this is the
+        // observable proof of determinism independent of the enqueue-dedup behavior covered by
+        // the "redelivering the split step itself..." test below.
+        executor.execute(parent)
+
+        val splitTraces = store.stepResults.getValue(parent.id).filter { it.stepName == "fan-out" }
+        assertEquals(2, splitTraces.size, "both attempts must still record their own split trace")
+        val firstComputed = Json.parseToJsonElement(requireNotNull(splitTraces[0].responseBody)).jsonArray
+        val secondComputed = Json.parseToJsonElement(requireNotNull(splitTraces[1].responseBody)).jsonArray
+        val firstByBranch = firstComputed.associate { it.jsonObject["branchId"]!!.jsonPrimitive.content to it.jsonObject["executionId"]!!.jsonPrimitive.content }
+        val secondByBranch = secondComputed.associate { it.jsonObject["branchId"]!!.jsonPrimitive.content to it.jsonObject["executionId"]!!.jsonPrimitive.content }
+        assertEquals(firstByBranch, secondByBranch, "retrying the split step must recompute the same child ids per branch, not new random ones")
+
+        val branchIds = firstBatch.map { (it.state as ExecutionState.InProgress).activeNodeId }.toSet()
+        assertEquals(setOf("branch-a", "branch-b"), branchIds, "the first attempt must still enqueue both branches")
+    }
+
+    @Test
+    fun `redelivering the split step itself does not re-enqueue already-registered branches`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = newExecutor(store, enqueuer)
+        val def = splitJoinDefinition("split-redelivery-enqueue-test")
+        val parent = executionOf(def, "fan-out")
+
+        executor.execute(parent)
+        assertEquals(2, enqueuer.enqueued.size, "the first attempt must enqueue both branches")
+        enqueuer.enqueued.clear()
+
+        // Simulates the worker crashing right after the first attempt finished registering and
+        // enqueuing both branches, so the parent's own split-step queue message never got acked
+        // and is redelivered. Both branches may already be running or even fully finished by
+        // now (they could be simple, fast branches) — re-enqueuing them here would restart their
+        // entire subtree of work a second time, not just repeat a single call.
+        executor.execute(parent)
+
+        assertTrue(
+            enqueuer.enqueued.isEmpty(),
+            "a redelivered split step must not re-enqueue branches an earlier attempt already registered, got: ${enqueuer.enqueued.size}",
+        )
+    }
+
+    @Test
+    fun `redelivering a branch before its sibling arrives does not inflate the arrival count`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = newExecutor(store, enqueuer)
+        val def = splitJoinDefinition("redelivery-before-sibling-test")
+        val parent = executionOf(def, "fan-out")
+
+        executor.execute(parent)
+        val children = enqueuer.enqueued.toList()
+        enqueuer.enqueued.clear()
+        val branchA = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-a" }
+        val branchB = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-b" }
+
+        executor.execute(branchA)
+        // Simulate a redelivery of branch A's own (already finalized) queue message, BEFORE
+        // branch B ever runs. With a blind counter this would wrongly count as a 2nd arrival
+        // and could satisfy the barrier (arrived == expected == 2) before B ever finished.
+        executor.execute(branchA)
+
+        assertTrue(enqueuer.enqueued.isEmpty(), "the parent must not resume before branch B has actually arrived")
+        assertNotNull(store.waitingJoins[parent.id], "parent must still be parked, waiting on branch B")
+
+        executor.execute(branchB)
+        assertEquals(1, enqueuer.enqueued.size, "the parent must resume exactly once, once branch B genuinely arrives")
+    }
+
+    @Test
+    fun `a failure inside resumeAfterJoin restores the WaitingJoin pointer instead of losing it`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = newExecutor(store, enqueuer)
+        val def = splitJoinDefinition("resume-failure-test")
+        val parent = executionOf(def, "fan-out")
+
+        executor.execute(parent)
+        val children = enqueuer.enqueued.toList()
+        enqueuer.enqueued.clear()
+        val branchA = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-a" }
+        val branchB = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-b" }
+
+        executor.execute(branchA)
+        store.throwOnGetChildStatuses = true
+        executor.execute(branchB) // last arrival -> attempts the resume, which now fails
+
+        assertTrue(enqueuer.enqueued.isEmpty(), "the parent must not have been resumed given the injected failure")
+        assertNotNull(
+            store.waitingJoins[parent.id],
+            "the WaitingJoin pointer must be restored after the failed resume attempt, not lost forever",
+        )
+
+        // Recovery: once the transient failure clears (e.g. JoinCompletionScanner retrying
+        // later), the parent can still be resumed from the restored pointer.
+        store.throwOnGetChildStatuses = false
+        val resumed = executor.resumeJoinIfSatisfied(parent.id)
+        assertTrue(resumed)
+        assertEquals(1, enqueuer.enqueued.size)
+    }
+
+    @Test
+    fun `a failure during the commit phase does not resurrect the WaitingJoin pointer`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = newExecutor(store, enqueuer)
+        val def = splitJoinDefinition("commit-failure-test")
+        val parent = executionOf(def, "fan-out")
+
+        executor.execute(parent)
+        val children = enqueuer.enqueued.toList()
+        enqueuer.enqueued.clear()
+        val branchA = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-a" }
+        val branchB = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-b" }
+
+        executor.execute(branchA)
+        // Prepare succeeds (the join's own step result is written, branch statuses read) — the
+        // failure only happens in the commit phase (re-enqueueing the resumed parent), which
+        // must NOT be treated as retryable: the join itself already succeeded by this point.
+        enqueuer.throwOnEnqueue = true
+        try {
+            executor.execute(branchB)
+        } catch (_: Exception) {
+            // Expected: a commit-phase failure propagates instead of being swallowed and retried.
+        }
+
+        assertNull(
+            store.waitingJoins[parent.id],
+            "a commit-phase failure must not resurrect the WaitingJoin pointer for an already-decided join",
+        )
+        val joinStep = store.stepResults.getValue(parent.id).singleOrNull { it.stepName == "fan-in" }
+        assertNotNull(joinStep, "the join's own step result must still have been written during prepare")
+        Unit
+    }
+
+    @Test
+    fun `a join whose joinNodeId no longer resolves is finalized as CORRUPTED instead of retried forever`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = newExecutor(store, enqueuer)
+        val def = splitJoinDefinition("structural-bug-test")
+        val parent = executionOf(def, "fan-out")
+
+        executor.execute(parent)
+        val children = enqueuer.enqueued.toList()
+        enqueuer.enqueued.clear()
+        val branchA = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-a" }
+        val branchB = children.single { (it.state as ExecutionState.InProgress).activeNodeId == "branch-b" }
+
+        executor.execute(branchA)
+
+        // Simulate a corrupted/stale WaitingJoin pointer whose joinNodeId no longer resolves to a
+        // JoinNode in the workflow — a permanent structural problem, unlike the transient failures
+        // covered by the two tests above, so it must never be treated as retryable.
+        val parked = store.waitingJoins.getValue(parent.id)
+        val corruptedState = (parked.state as ExecutionState.WaitingJoin).copy(joinNodeId = "does-not-exist")
+        store.waitingJoins[parent.id] = parked.copy(state = corruptedState)
+
+        executor.execute(branchB) // last arrival -> attempts the resume, which hits the bad joinNodeId
+
+        assertTrue(enqueuer.enqueued.isEmpty(), "a structurally broken join must not be re-enqueued")
+        assertNull(
+            store.waitingJoins[parent.id],
+            "a permanent structural bug must not resurrect the WaitingJoin pointer for endless retry",
+        )
+        val (status, failureDescription) = store.finalStatuses.getValue(parent.id)
+        assertEquals("CORRUPTED", status)
+        assertTrue(
+            failureDescription?.contains("does-not-exist") == true,
+            "failure description should name the missing join node, got: $failureDescription",
+        )
+
+        // Confirms there is no infinite-retry loop left behind: the backstop scanner calling
+        // resumeJoinIfSatisfied again finds nothing left to resume.
+        assertTrue(!executor.resumeJoinIfSatisfied(parent.id))
+    }
 }
 
 private class FakeHttpClientProvider(override val client: HttpClient) : HttpClientProvider
 
 private class FakeEnqueuer : SagaEnqueuer {
     val enqueued = mutableListOf<SagaExecution>()
+    var throwOnEnqueue = false
     override suspend fun enqueue(execution: SagaExecution, delayMillis: Long) {
+        if (throwOnEnqueue) error("simulated failure during the join's commit phase")
         enqueued.add(execution)
     }
 }
@@ -232,7 +427,11 @@ private class FakeSplitJoinStore : SagaExecutionStore {
     val finalStatuses = mutableMapOf<UUID, Pair<String, String?>>()
     val stepResults = mutableMapOf<UUID, MutableList<RecordedStep>>()
     val waitingJoins = mutableMapOf<UUID, SagaExecution>()
-    private val barriers = mutableMapOf<String, JoinArrival>()
+    /** Test hook: makes [getChildStatuses] throw once, to simulate a failure mid-resumeAfterJoin. */
+    var throwOnGetChildStatuses = false
+    private data class BarrierState(val expected: Int, var arrived: Int = 0)
+    private val barriers = mutableMapOf<String, BarrierState>()
+    private val arrivedChildIds = mutableMapOf<String, MutableSet<UUID>>()
     private val branchLinks = mutableMapOf<String, List<JoinBranchLink>>()
 
     data class RecordedStep(val stepName: String, val phase: ExecutionPhase, val responseBody: String?)
@@ -274,18 +473,27 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         splitNodeId: String,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
-    ) {
+    ): Set<String> {
+        // Mirrors the real ON CONFLICT DO NOTHING semantics: a redelivered split step calling
+        // this again for the same (parentId, splitNodeId) must not reset already-registered
+        // state (arrival progress included), and must report back only the branches that are
+        // genuinely new so the caller knows which ones it still needs to enqueue.
         val key = barrierKey(parentId, splitNodeId)
-        barriers[key] = JoinArrival(arrived = 0, expected = branches.size)
-        branchLinks[key] = branches
+        barriers.getOrPut(key) { BarrierState(expected = branches.size) }
+        arrivedChildIds.getOrPut(key) { mutableSetOf() }
+        val existingBranchIds = branchLinks[key]?.map { it.branchId }?.toSet() ?: emptySet()
+        val newBranches = branches.filter { it.branchId !in existingBranchIds }
+        branchLinks[key] = (branchLinks[key] ?: emptyList()) + newBranches
+        return newBranches.map { it.branchId }.toSet()
     }
 
-    override suspend fun incrementJoinArrival(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): JoinArrival? {
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? {
         val key = barrierKey(parentId, splitNodeId)
-        val current = barriers[key] ?: return null
-        val updated = current.copy(arrived = current.arrived + 1)
-        barriers[key] = updated
-        return updated
+        val barrier = barriers[key] ?: return null
+        val arrivedSet = arrivedChildIds.getOrPut(key) { mutableSetOf() }
+        val newlyMarked = arrivedSet.add(childId)
+        if (newlyMarked) barrier.arrived++
+        return JoinArrival(arrived = barrier.arrived, expected = barrier.expected, newlyMarked = newlyMarked)
     }
 
     override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<JoinBranchLink> =
@@ -301,5 +509,10 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         val (status, failureDescription) = finalStatuses[executionId] ?: return null
         val lastBody = stepResults[executionId]?.lastOrNull()?.responseBody
         return ChildExecutionStatus(status = status, failureDescription = failureDescription, lastResultJson = lastBody)
+    }
+
+    override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, ChildExecutionStatus> {
+        if (throwOnGetChildStatuses) error("simulated failure inside resumeAfterJoin")
+        return executionIds.mapNotNull { id -> getChildStatus(id)?.let { id to it } }.toMap()
     }
 }
