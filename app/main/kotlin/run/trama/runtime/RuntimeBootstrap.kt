@@ -63,6 +63,7 @@ class RuntimeBootstrap(
     private val workerJobs = mutableListOf<Job>()
     private var maintenanceJob: Job? = null
     private var callbackScannerJob: Job? = null
+    private var joinScannerJob: Job? = null
 
     fun start() {
         val metricsRegistry = if (config.metrics.enabled) meterRegistry else SimpleMeterRegistry()
@@ -167,6 +168,11 @@ class RuntimeBootstrap(
             metrics = runtimeMetrics,
             config = config.callbackTimeoutScanner,
         )
+        val joinScanner = JoinCompletionScanner(
+            repository = repo,
+            resumer = executor,
+            config = config.callbackTimeoutScanner,
+        )
 
         heartbeatJob = scope.launch { membershipRegistry.runHeartbeatLoop() }
         refreshJob = scope.launch { membershipRegistry.runRefreshLoop() }
@@ -179,6 +185,7 @@ class RuntimeBootstrap(
         repeat(config.runtime.workerCount) { workerJobs += scope.launch { processor.runWorker() } }
         maintenanceJob = scope.launch { maintenance.runLoop() }
         callbackScannerJob = scope.launch { callbackScanner.runLoop() }
+        joinScannerJob = scope.launch { joinScanner.runLoop() }
     }
 
     fun repositoryOrNull(): SagaRepository? = repository
@@ -238,7 +245,7 @@ class RuntimeBootstrap(
             processor?.stopPolling()
             runCatching { membership?.unregister() }
 
-            listOfNotNull(heartbeatJob, refreshJob, requeueJob, maintenanceJob, callbackScannerJob).forEach { it.cancel() }
+            listOfNotNull(heartbeatJob, refreshJob, requeueJob, maintenanceJob, callbackScannerJob, joinScannerJob).forEach { it.cancel() }
             producerJob?.join()
             workerJobs.joinAll()
             runtimeJob.cancelAndJoin()

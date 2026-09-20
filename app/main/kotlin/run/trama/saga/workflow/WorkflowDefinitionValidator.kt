@@ -14,6 +14,7 @@ object WorkflowDefinitionValidator {
         if (definition.nodes.isEmpty()) errors.add("nodes must not be empty")
 
         val nodeIds = definition.nodes.map { it.id }.toSet()
+        val nodeMap = definition.nodes.associateBy { it.id }
 
         // Duplicate ids
         if (nodeIds.size != definition.nodes.size) {
@@ -90,6 +91,65 @@ object WorkflowDefinitionValidator {
                         errors.add("$prefix.next '$next' does not reference an existing node")
                     }
                 }
+
+                is NodeDefinition.Split -> {
+                    if (node.branches.size < 2) {
+                        errors.add("$prefix.branches must contain at least 2 entries")
+                    }
+                    node.branches.forEachIndexed { branchIndex, branchId ->
+                        if (branchId.isBlank()) {
+                            errors.add("$prefix.branches[$branchIndex] must not be blank")
+                        } else if (branchId !in nodeIds) {
+                            errors.add("$prefix.branches contains unknown node '$branchId'")
+                        }
+                    }
+                    if (node.join.isBlank()) {
+                        errors.add("$prefix.join must not be blank")
+                    } else if (node.join !in nodeIds) {
+                        errors.add("$prefix.join '${node.join}' does not reference an existing node")
+                    } else if (nodeMap[node.join] !is NodeDefinition.Join) {
+                        errors.add("$prefix.join '${node.join}' must reference a join node")
+                    }
+                }
+
+                is NodeDefinition.Join -> {
+                    val next = node.next
+                    if (next != null && next !in nodeIds) {
+                        errors.add("$prefix.next '$next' does not reference an existing node")
+                    }
+                }
+            }
+        }
+
+        // Each join must be owned by exactly one split.
+        definition.nodes.filterIsInstance<NodeDefinition.Split>()
+            .groupBy { it.join }
+            .filter { (_, owners) -> owners.size > 1 }
+            .forEach { (joinId, owners) ->
+                errors.add(
+                    "join '$joinId' must be owned by exactly one split node, " +
+                        "but is referenced by splits: ${owners.joinToString { it.id }}",
+                )
+            }
+
+        // Only the owning split may route into a join node; every other edge that
+        // targets a join id is a "leak" into the barrier from outside its split.
+        val joinIds = definition.nodes.filterIsInstance<NodeDefinition.Join>().map { it.id }.toSet()
+        if (joinIds.isNotEmpty()) {
+            definition.nodes.forEach { node ->
+                val outgoing: List<String> = when (node) {
+                    is NodeDefinition.Task -> listOfNotNull(node.next)
+                    is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
+                    is NodeDefinition.Sleep -> listOfNotNull(node.next)
+                    is NodeDefinition.Split -> node.branches
+                    is NodeDefinition.Join -> listOfNotNull(node.next)
+                }
+                for (target in outgoing) {
+                    val isOwnJoinEdge = node is NodeDefinition.Split && node.join == target
+                    if (target in joinIds && !isOwnJoinEdge) {
+                        errors.add("node '${node.id}' must not reference join '$target' directly; only its owning split may")
+                    }
+                }
             }
         }
 
@@ -121,6 +181,8 @@ object WorkflowDefinitionValidator {
                 is NodeDefinition.Task -> listOfNotNull(node.next)
                 is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
                 is NodeDefinition.Sleep -> listOfNotNull(node.next)
+                is NodeDefinition.Split -> node.branches + node.join
+                is NodeDefinition.Join -> listOfNotNull(node.next)
                 null -> emptyList()
             }
             val cycle = neighbors.any { dfs(it) }

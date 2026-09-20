@@ -28,6 +28,18 @@ data class SagaExecution(
     val currentStepIndex: Int,
     val state: ExecutionState,
     val payload: Map<String, PayloadValue> = emptyMap(),
+    /**
+     * Set only on branch (child) executions spawned by a split node. The branch's start
+     * node is carried directly in [ExecutionState.InProgress.activeNodeId] (set at spawn
+     * time), not here — [WorkflowDefinition][run.trama.saga.workflow.WorkflowDefinition].entrypoint
+     * is only consulted when an execution is first created (see `Application.kt`), never on resume.
+     */
+    val parentExecutionId: @Serializable(with = UuidAsStringSerializer::class) UUID? = null,
+    val parentStartedAt: @Serializable(with = InstantAsStringSerializer::class) Instant? = null,
+    val parentSplitNodeId: String? = null,
+    val parentJoinNodeId: String? = null,
+    /** This branch's stable identifier — equal to its entry node id in the split's `branches` list. */
+    val branchId: String? = null,
 )
 
 @Serializable
@@ -118,6 +130,21 @@ sealed class ExecutionState {
         val completedNodes: List<String>,
         val compensationStack: List<String>,
     ) : ExecutionState()
+
+    /**
+     * Execution reached a split node: [expectedBranches] child executions were spawned and
+     * this execution is parked until all of them reach a terminal state. Resumed by whichever
+     * child's completion satisfies the join barrier (see [run.trama.saga.workflow.WorkflowExecutor]).
+     */
+    @Serializable
+    @SerialName("waiting_join")
+    data class WaitingJoin(
+        val splitNodeId: String,
+        val joinNodeId: String,
+        val expectedBranches: Int,
+        val completedNodes: List<String>,
+        val compensationStack: List<String>,
+    ) : ExecutionState()
 }
 
 @Serializable
@@ -127,6 +154,10 @@ enum class ExecutionPhase {
     SWITCH,
     /** Inbound async callback receipt (success or failure condition matched). */
     CALLBACK,
+    /** A split node spawning its branch executions. */
+    SPLIT,
+    /** A join node's barrier firing, aggregating branch outcomes. */
+    JOIN,
 }
 
 @Serializable

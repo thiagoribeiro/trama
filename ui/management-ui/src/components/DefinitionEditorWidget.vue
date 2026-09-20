@@ -17,6 +17,10 @@
             <strong>Payment Split</strong>
             <span>validate → switch (pix / card) → notify</span>
           </div>
+          <div class="templates-menu-item" data-template="split-join">
+            <strong>Split / Join</strong>
+            <span>fan-out into 2 branches → join → notify</span>
+          </div>
           <div class="templates-menu-item" data-template="async-callback">
             <strong>Async + Callback</strong>
             <span>async trigger with success/failure conditions</span>
@@ -50,6 +54,12 @@
         </div>
         <div class="palette-item" data-kind="sleep" draggable="true" title="Sleep / pause node — drag onto canvas">
           <span class="pi-icon" style="color:#bf91f9">⏱</span> Sleep
+        </div>
+        <div class="palette-item" data-kind="split" draggable="true" title="Fan-out into parallel branches — drag onto canvas">
+          <span class="pi-icon" style="color:#5eead4">⑃</span> Split
+        </div>
+        <div class="palette-item" data-kind="join" draggable="true" title="Barrier that waits for a split's branches — drag onto canvas">
+          <span class="pi-icon" style="color:#93c5fd">⑂</span> Join
         </div>
 
         <div class="palette-divider"></div>

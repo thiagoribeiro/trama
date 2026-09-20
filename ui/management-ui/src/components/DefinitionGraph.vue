@@ -16,6 +16,7 @@
         <span class="legend-dot legend-dot--err"></span>failed
         <span class="legend-dot legend-dot--comp"></span>compensated
         <span class="legend-dot legend-dot--sleep"></span>sleep
+        <span class="legend-dot legend-dot--split"></span>split/join (click for branches)
       </div>
     </template>
   </div>
@@ -31,6 +32,8 @@ const props = defineProps({
   /** Step results array — used to colour nodes */
   steps: { type: Array, default: () => [] },
 })
+
+const emit = defineEmits(['branches-click'])
 
 // ── Parse ──────────────────────────────────────────────────────────────────────
 
@@ -63,10 +66,33 @@ const nodeStatuses = computed(() => {
       }
     } else if (step.phase === 'DOWN' && step.success) {
       if (cur !== 'failed') map.set(step.stepName, 'compensated')
+    } else if (step.phase === 'SPLIT') {
+      map.set(step.stepName, 'success')
+    } else if (step.phase === 'JOIN') {
+      const body = parseBody(step.responseBody)
+      map.set(step.stepName, body?.allSucceeded === false ? 'compensated' : 'success')
     }
   }
   return map
 })
+
+/** branchId → {executionId, status} for each SPLIT/JOIN node, parsed from its step's responseBody. */
+const nodeBranches = computed(() => {
+  const map = new Map()
+  for (const step of props.steps) {
+    if (step.phase !== 'SPLIT' && step.phase !== 'JOIN') continue
+    const body = parseBody(step.responseBody)
+    const list = Array.isArray(body) ? body : body?.branches
+    if (Array.isArray(list)) map.set(step.stepName, list)
+  }
+  return map
+})
+
+function parseBody(raw) {
+  if (raw == null) return null
+  if (typeof raw === 'object') return raw
+  try { return JSON.parse(raw) } catch { return null }
+}
 
 // ── SVG refs + viewport ───────────────────────────────────────────────────────
 
@@ -154,7 +180,7 @@ function buildDefs(svg) {
   svg.appendChild(defs)
 }
 
-function renderGraph(st, statuses) {
+function renderGraph(st, statuses, branches) {
   const svg = svgRef.value
   if (!svg) return
 
@@ -183,14 +209,14 @@ function renderGraph(st, statuses) {
   // Nodes
   const terminals = computeTerminals(nodeMap)
   for (const [, node] of nodeMap) {
-    renderNode(rootGroup, node, terminals.has(node.id), cycleSet.has(node.id), statuses.get(node.id))
+    renderNode(rootGroup, node, terminals.has(node.id), cycleSet.has(node.id), statuses.get(node.id), branches.get(node.id))
   }
 }
 
 function computeTerminals(nodeMap) {
   const t = new Set()
   for (const [, n] of nodeMap) {
-    if ((n.kind === 'task' || n.kind === 'sleep') && !n.next) t.add(n.id)
+    if ((n.kind === 'task' || n.kind === 'sleep' || n.kind === 'join') && !n.next) t.add(n.id)
   }
   return t
 }
@@ -215,7 +241,9 @@ function detectCycles(nodeMap) {
 function nodeTargets(node) {
   if (node.kind === 'task') return node.next ? [node.next] : []
   if (node.kind === 'sleep') return node.next ? [node.next] : []
+  if (node.kind === 'join') return node.next ? [node.next] : []
   if (node.kind === 'switch') return [...(node.cases || []).map(c => c.target), node.default].filter(Boolean)
+  if (node.kind === 'split') return [...(node.branches || []), node.join].filter(Boolean)
   return []
 }
 
@@ -226,9 +254,57 @@ function statusColors(status, kind) {
   return null
 }
 
-function renderNode(parent, node, terminal, inCycle, status) {
+function renderNode(parent, node, terminal, inCycle, status, branches) {
   const g = el('g')
   const sc = statusColors(status, node.kind)
+
+  if (node.kind === 'split' || node.kind === 'join') {
+    const W = node.kind === 'split' ? 170 : 170, H = 70
+    const paletteStroke = node.kind === 'split' ? '#0e7490' : '#1d4ed8'
+    const paletteFill   = node.kind === 'split' ? '#062b2e' : '#0f1a3d'
+    const stroke = inCycle ? '#ef4444' : sc ? sc.stroke : paletteStroke
+    const fill   = inCycle ? '#2d0a0a' : sc ? sc.fill   : paletteFill
+    g.appendChild(sa(el('rect'), { x: node.x, y: node.y, width: W, height: H, rx: 8, fill, stroke, 'stroke-width': sc || inCycle ? 2 : 1 }))
+
+    const badgeFill = node.kind === 'split' ? '#155e63' : '#1e3a8a'
+    const badgeText = node.kind === 'split' ? 'SPLIT' : 'JOIN'
+    g.appendChild(sa(el('rect'), { x: node.x + W - 54, y: node.y + 5, width: 50, height: 16, rx: 4, fill: badgeFill }))
+    const bt = sa(el('text'), { x: node.x + W - 29, y: node.y + 17, 'text-anchor': 'middle', fill: '#e0f7fa', 'font-size': 9, 'font-family': 'monospace' })
+    bt.textContent = badgeText
+    g.appendChild(bt)
+
+    const nameText = sa(el('text'), { x: node.x + 10, y: node.y + H / 2 - (node.kind === 'split' ? 2 : -5), fill: sc ? sc.stroke : '#7dd3d8', 'font-size': 13, 'font-family': 'system-ui, sans-serif', 'font-weight': '600' })
+    nameText.textContent = trunc(node.id, 16)
+    g.appendChild(nameText)
+
+    if (node.kind === 'split') {
+      const info = sa(el('text'), { x: node.x + 10, y: node.y + H - 10, fill: '#3a8a90', 'font-size': 9, 'font-family': 'monospace' })
+      info.textContent = branches ? `${branches.length} branch(es)` : `${(node.branches || []).length} branch(es)`
+      g.appendChild(info)
+    }
+
+    if (branches && branches.length) {
+      g.style.cursor = 'pointer'
+      g.addEventListener('click', () => emit('branches-click', { nodeId: node.id, kind: node.kind, branches }))
+    }
+
+    if (status) {
+      const icon = status === 'success' ? '✓' : status === 'failed' ? '✗' : '½'
+      const badge = sa(el('text'), { x: node.x + 8, y: node.y - 4, fill: stroke, 'font-size': 11, 'font-weight': 'bold' })
+      badge.textContent = icon
+      g.appendChild(badge)
+    }
+
+    if (terminal) {
+      g.appendChild(sa(el('rect'), { x: node.x + W + 4, y: node.y + H / 2 - 8, width: 32, height: 14, rx: 3, fill: '#14532d' }))
+      const et = sa(el('text'), { x: node.x + W + 20, y: node.y + H / 2 + 3, 'text-anchor': 'middle', fill: '#86efac', 'font-size': 9, 'font-family': 'monospace' })
+      et.textContent = 'END'
+      g.appendChild(et)
+    }
+
+    parent.appendChild(g)
+    return
+  }
 
   if (node.kind === 'task') {
     const W = 190, H = 64
@@ -322,7 +398,7 @@ function fmtDuration(ms) {
 
 function renderEdges(parent, nodeMap, cycleSet) {
   for (const [, node] of nodeMap) {
-    if ((node.kind === 'task' || node.kind === 'sleep') && node.next && nodeMap.has(node.next)) {
+    if ((node.kind === 'task' || node.kind === 'sleep' || node.kind === 'join') && node.next && nodeMap.has(node.next)) {
       const inCycle = cycleSet.has(node.id) && cycleSet.has(node.next)
       drawEdge(parent, outPort(node), inPort(nodeMap.get(node.next)), null, false, inCycle)
     } else if (node.kind === 'switch') {
@@ -335,6 +411,19 @@ function renderEdges(parent, nodeMap, cycleSet) {
       if (node.default && nodeMap.has(node.default)) {
         const inCycle = cycleSet.has(node.id) && cycleSet.has(node.default)
         drawEdge(parent, switchOutPort(node), inPort(nodeMap.get(node.default)), 'default', true, inCycle)
+      }
+    } else if (node.kind === 'split') {
+      for (const branchId of (node.branches || [])) {
+        if (branchId && nodeMap.has(branchId)) {
+          const inCycle = cycleSet.has(node.id) && cycleSet.has(branchId)
+          drawEdge(parent, outPort(node), inPort(nodeMap.get(branchId)), null, false, inCycle)
+        }
+      }
+      if (node.join && nodeMap.has(node.join)) {
+        const jp = { x: node.x + 85, y: node.y + 70 }
+        const dst = inPort(nodeMap.get(node.join))
+        const d = `M ${jp.x} ${jp.y} C ${jp.x} ${jp.y + 40} ${dst.x - 40} ${dst.y} ${dst.x} ${dst.y}`
+        parent.appendChild(sa(el('path'), { d, stroke: '#a855f7', 'stroke-width': 1.5, fill: 'none', 'stroke-dasharray': '3,3', 'marker-end': 'url(#dg-arrow)', 'pointer-events': 'none', opacity: 0.7 }))
       }
     }
   }
@@ -372,18 +461,26 @@ function renderStartPill(parent, entryNode) {
 function inPort(node)       { return { x: node.x, y: node.y + nh(node) / 2 } }
 function outPort(node)      { return { x: node.x + nw(node), y: node.y + nh(node) / 2 } }
 function switchOutPort(node){ return { x: node.x + 160, y: node.y + 84 / 2 } }
-function nw(node) { return (node.kind === 'task' || node.kind === 'sleep') ? 190 : 160 }
-function nh(node) { return (node.kind === 'task' || node.kind === 'sleep') ?  64 :  84 }
+function nw(node) {
+  if (node.kind === 'task' || node.kind === 'sleep') return 190
+  if (node.kind === 'split' || node.kind === 'join') return 170
+  return 160
+}
+function nh(node) {
+  if (node.kind === 'task' || node.kind === 'sleep') return 64
+  if (node.kind === 'split' || node.kind === 'join') return 70
+  return 84
+}
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 function drawIfReady() {
   if (!snapshot.value || !svgRef.value) return
-  renderGraph(snapshot.value, nodeStatuses.value)
+  renderGraph(snapshot.value, nodeStatuses.value, nodeBranches.value)
   nextTick(fitView)
 }
 
-watch([snapshot, nodeStatuses], () => {
+watch([snapshot, nodeStatuses, nodeBranches], () => {
   nextTick(drawIfReady)
 }, { deep: false })
 
@@ -478,4 +575,5 @@ onUnmounted(() => {
 .legend-dot--err   { background: #f85149; }
 .legend-dot--comp  { background: #e3b341; }
 .legend-dot--sleep { background: #7c3aed; }
+.legend-dot--split { background: #0e7490; }
 </style>

@@ -43,6 +43,27 @@ data class SleepEntry(
     val execution: SagaExecution,
 )
 
+/** One branch's linkage to its spawned child execution, recorded when a split fires. */
+data class JoinBranchLink(
+    val branchId: String,
+    val childId: UUID,
+    val childStartedAt: Instant,
+)
+
+/** Result of atomically incrementing a join barrier's arrival counter. */
+data class JoinArrival(
+    val arrived: Int,
+    val expected: Int,
+)
+
+/** Minimal terminal-status summary for a (already finalized) child execution. */
+data class ChildExecutionStatus(
+    val status: String,
+    val failureDescription: String?,
+    /** Raw JSON of the child's last recorded step result, if any. */
+    val lastResultJson: String?,
+)
+
 /**
  * Minimal info about a waiting execution, used during callback validation and timeout processing.
  */
@@ -123,6 +144,55 @@ interface SagaExecutionStore {
      * Used to surface SLEEPING status to the status API while the saga is in the queue.
      */
     suspend fun updateStatus(executionId: java.util.UUID, status: String)
+
+    // ── Split / join ───────────────────────────────────────────────────────────
+
+    /**
+     * Registers the join barrier for a split: how many branches are expected and which
+     * child execution belongs to which branch. Must be called once, before any of the
+     * spawned children can possibly finish.
+     */
+    suspend fun registerJoinBarrier(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        joinNodeId: String,
+        branches: List<JoinBranchLink>,
+    )
+
+    /**
+     * Atomically increments the arrival counter for the ([parentId], [splitNodeId]) barrier.
+     * Returns the counts *after* incrementing, or null if no barrier is registered (bug/race).
+     * The single caller for which [JoinArrival.arrived] == [JoinArrival.expected] is responsible
+     * for resuming the parent.
+     */
+    suspend fun incrementJoinArrival(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): JoinArrival?
+
+    /** Returns the branch → child links registered by [registerJoinBarrier]. */
+    suspend fun getJoinBranches(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): List<JoinBranchLink>
+
+    /**
+     * Persists [execution] (state = [ExecutionState.WaitingJoin]) so [consumeWaitingJoin] can
+     * retrieve it once the join barrier is satisfied.
+     */
+    suspend fun saveWaitingJoin(execution: SagaExecution)
+
+    /**
+     * Atomically loads and deletes the join-waiting entry for [executionId].
+     * Returns null if none exists (already consumed, or never stored).
+     */
+    suspend fun consumeWaitingJoin(executionId: java.util.UUID): SagaExecution?
+
+    /** Minimal terminal-status lookup for a (possibly already-finalized) child execution. */
+    suspend fun getChildStatus(executionId: java.util.UUID): ChildExecutionStatus?
 }
 
 class SagaRepositoryStore(
@@ -203,4 +273,40 @@ class SagaRepositoryStore(
 
     override suspend fun updateStatus(executionId: java.util.UUID, status: String) =
         repository.updateStatus(executionId, status)
+
+    override suspend fun registerJoinBarrier(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        joinNodeId: String,
+        branches: List<JoinBranchLink>,
+    ) = repository.registerJoinBarrier(parentId, parentStartedAt, splitNodeId, joinNodeId, branches)
+
+    override suspend fun incrementJoinArrival(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): JoinArrival? = repository.incrementJoinArrival(parentId, parentStartedAt, splitNodeId)
+
+    override suspend fun getJoinBranches(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): List<JoinBranchLink> = repository.getJoinBranches(parentId, parentStartedAt, splitNodeId)
+
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {
+        val state = execution.state as? ExecutionState.WaitingJoin ?: return
+        repository.saveWaitingJoinState(
+            executionId = execution.id,
+            splitNodeId = state.splitNodeId,
+            joinNodeId = state.joinNodeId,
+            executionJson = Json.encodeToString(SagaExecution.serializer(), execution),
+        )
+    }
+
+    override suspend fun consumeWaitingJoin(executionId: java.util.UUID): SagaExecution? =
+        repository.consumeWaitingJoinState(executionId)
+
+    override suspend fun getChildStatus(executionId: java.util.UUID): ChildExecutionStatus? =
+        repository.getChildStatus(executionId)
 }

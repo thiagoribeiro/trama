@@ -81,4 +81,37 @@
         </sql>
     </changeSet>
 
+    <!-- Split/join support. Deliberately plain (non-partitioned) control tables, accessed via
+         raw JDBC rather than jOOQ — see SagaRepository's split/join methods. Row volume is
+         one saga_join_barrier row + N saga_join_branch rows per split node execution, not
+         per HTTP call, so partitioning is not needed at this scale. -->
+    <changeSet id="006-split-join-barrier" author="trama">
+        <sql splitStatements="true" stripComments="true">
+            CREATE TABLE IF NOT EXISTS saga_join_barrier (
+                parent_id         uuid         NOT NULL,
+                parent_started_at timestamptz  NOT NULL,
+                split_node_id     text         NOT NULL,
+                join_node_id      text         NOT NULL,
+                expected_count    integer      NOT NULL,
+                arrived_count     integer      NOT NULL DEFAULT 0,
+                created_at        timestamptz  NOT NULL,
+                PRIMARY KEY (parent_id, parent_started_at, split_node_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS saga_join_branch (
+                id                 bigserial   NOT NULL PRIMARY KEY,
+                parent_id          uuid        NOT NULL,
+                parent_started_at  timestamptz NOT NULL,
+                split_node_id      text        NOT NULL,
+                branch_id          text        NOT NULL,
+                child_id           uuid        NOT NULL,
+                child_started_at   timestamptz NOT NULL,
+                created_at         timestamptz NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_saga_join_branch_parent
+                ON saga_join_branch (parent_id, parent_started_at, split_node_id);
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

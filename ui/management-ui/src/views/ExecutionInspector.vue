@@ -52,7 +52,20 @@
       <!-- Definition Graph -->
       <section v-if="definitionGraph" class="graph-section">
         <h2>Definition Graph</h2>
-        <DefinitionGraph :definition="definitionGraph" :steps="steps" />
+        <DefinitionGraph :definition="definitionGraph" :steps="steps" @branches-click="onBranchesClick" />
+        <div v-if="selectedBranches" class="branches-panel">
+          <div class="branches-panel__header">
+            <strong class="mono">{{ selectedBranches.nodeId }}</strong>
+            <span class="dim">({{ selectedBranches.kind === 'split' ? 'spawned' : 'joined' }} branches)</span>
+            <button class="btn btn--icon" @click="selectedBranches = null">×</button>
+          </div>
+          <ul class="branches-panel__list">
+            <li v-for="b in selectedBranches.branches" :key="b.executionId">
+              <RouterLink :to="`/executions/${b.executionId}`" class="mono">{{ b.branchId }}</RouterLink>
+              <StatusBadge v-if="b.status" :status="b.status" />
+            </li>
+          </ul>
+        </div>
       </section>
       <section v-else-if="!loading" class="graph-section">
         <h2>Definition Graph</h2>
@@ -98,6 +111,11 @@ const retrying       = ref(false)
 const retryMsg       = ref(null)
 const waking         = ref(false)
 const wakeMsg        = ref(null)
+const selectedBranches = ref(null)
+
+function onBranchesClick(payload) {
+  selectedBranches.value = payload
+}
 
 const TERMINAL = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'CORRUPTED'])
 let _pollTimer = null
@@ -214,6 +232,34 @@ h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: #8b949e; 
 
 .graph-section { display: flex; flex-direction: column; }
 .graph-section .def-graph { height: 360px; }
+
+.branches-panel {
+  margin-top: 0.75rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.85rem;
+}
+.branches-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.branches-panel__header .btn { margin-left: auto; }
+.branches-panel__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.branches-panel__list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.branches-panel__list a { color: #58a6ff; }
 
 .timeline-section { flex: 1; }
 </style>

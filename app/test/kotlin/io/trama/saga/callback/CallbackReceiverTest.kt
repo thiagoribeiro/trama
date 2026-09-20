@@ -320,6 +320,12 @@ class CallbackReceiverTest {
         override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
         override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
         override suspend fun updateStatus(executionId: UUID, status: String) {}
+        override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>) {}
+        override suspend fun incrementJoinArrival(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String): run.trama.saga.JoinArrival? = null
+        override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
+        override suspend fun saveWaitingJoin(execution: run.trama.saga.SagaExecution) {}
+        override suspend fun consumeWaitingJoin(executionId: UUID): run.trama.saga.SagaExecution? = null
+        override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
     }
 
     private class FakeEnqueuer(private val captured: MutableList<SagaExecution> = mutableListOf()) : SagaEnqueuer {

@@ -171,5 +171,6 @@ class Metrics(
             is ExecutionState.Succeeded -> "NA"
             is ExecutionState.WaitingCallback -> "WAITING"
             is ExecutionState.Sleeping -> "SLEEPING"
+            is ExecutionState.WaitingJoin -> "WAITING"
         }
 }

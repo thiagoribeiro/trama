@@ -384,6 +384,12 @@ private class FakeStore : SagaExecutionStore {
     override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun updateStatus(executionId: UUID, status: String) {}
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>) {}
+    override suspend fun incrementJoinArrival(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): run.trama.saga.JoinArrival? = null
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {}
+    override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
+    override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
 }
 
 private class CapturingStore : SagaExecutionStore {
@@ -409,4 +415,10 @@ private class CapturingStore : SagaExecutionStore {
     override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun updateStatus(executionId: UUID, status: String) {}
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>) {}
+    override suspend fun incrementJoinArrival(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): run.trama.saga.JoinArrival? = null
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {}
+    override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
+    override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
 }
