@@ -303,6 +303,56 @@ class DefinitionNormalizerTest {
         assert(errors.any { "callback" in it && "required" in it }) { "Expected callback error, got: $errors" }
     }
 
+    // ── v2 split/join normalization ─────────────────────────────────────────────
+
+    @Test
+    fun `v2 split node maps to SplitNode IR`() {
+        val def = SagaDefinitionV2(
+            name = "fan-out-flow",
+            version = "1",
+            failureHandling = FailureHandling.Retry(1, 0),
+            entrypoint = "fan-out",
+            nodes = listOf(
+                NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a", "branch-b"), join = "fan-in"),
+                NodeDefinition.Task("branch-a", NodeActionDef(TaskMode.SYNC, httpCall("http://a"))),
+                NodeDefinition.Task("branch-b", NodeActionDef(TaskMode.SYNC, httpCall("http://b"))),
+                NodeDefinition.Join(id = "fan-in", next = "after"),
+                NodeDefinition.Task("after", NodeActionDef(TaskMode.SYNC, httpCall("http://after"))),
+            ),
+        )
+
+        val workflow = DefinitionNormalizer.normalize(def)
+
+        val split = workflow.nodes["fan-out"]
+        assertIs<SplitNode>(split)
+        assertEquals(listOf("branch-a", "branch-b"), split.branches)
+        assertEquals("fan-in", split.join)
+
+        val join = workflow.nodes["fan-in"]
+        assertIs<JoinNode>(join)
+        assertEquals("after", join.next)
+    }
+
+    @Test
+    fun `v2 join node without next is terminal`() {
+        val def = SagaDefinitionV2(
+            name = "terminal-join",
+            version = "1",
+            failureHandling = FailureHandling.Retry(1, 0),
+            entrypoint = "fan-out",
+            nodes = listOf(
+                NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a", "branch-b"), join = "fan-in"),
+                NodeDefinition.Task("branch-a", NodeActionDef(TaskMode.SYNC, httpCall("http://a"))),
+                NodeDefinition.Task("branch-b", NodeActionDef(TaskMode.SYNC, httpCall("http://b"))),
+                NodeDefinition.Join(id = "fan-in"),
+            ),
+        )
+
+        val workflow = DefinitionNormalizer.normalize(def)
+        val join = workflow.nodes["fan-in"] as JoinNode
+        assertNull(join.next)
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private fun httpCall(url: String): HttpCall =

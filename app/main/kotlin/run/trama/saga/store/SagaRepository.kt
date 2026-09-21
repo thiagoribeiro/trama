@@ -1,11 +1,15 @@
 package run.trama.saga.store
 
+import run.trama.saga.ChildExecutionStatus
 import run.trama.saga.ExecutionPhase
+import run.trama.saga.JoinArrival
+import run.trama.saga.JoinBranchLink
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
 import run.trama.saga.StepCallEntry
 import run.trama.saga.WaitingInfo
 import run.trama.runtime.CallbackTimeoutRepository
+import run.trama.runtime.JoinBarrierRepository
 import run.trama.jooq.Tables.SAGA_DEFINITION
 import run.trama.jooq.Tables.SAGA_EXECUTION
 import run.trama.jooq.Tables.SAGA_STEP_CALL
@@ -31,7 +35,7 @@ private fun OffsetDateTime?.toInstant(): Instant = this?.toInstant() ?: Instant.
 class SagaRepository(
     private val db: DatabaseClient,
     definitionCacheMaxSize: Int = 1000,
-) : CallbackTimeoutRepository {
+) : CallbackTimeoutRepository, JoinBarrierRepository {
     private val definitionCache: MutableMap<UUID, SagaDefinitionRecord> =
         java.util.Collections.synchronizedMap(
             object : java.util.LinkedHashMap<UUID, SagaDefinitionRecord>(
@@ -334,14 +338,24 @@ class SagaRepository(
 
     override suspend fun consumeWaitingState(executionId: UUID): WaitingInfo? {
         return db.withConnection { connection ->
-            // Atomically clear and return waiting_state in one round-trip.
+            // Atomically clear and return waiting_state in one round-trip. RETURNING evaluates
+            // against the row's POST-update state, so a bare `SET waiting_state = NULL ...
+            // RETURNING waiting_state` would always return NULL — the CTE below locks and
+            // captures the value BEFORE the UPDATE's SET clause overwrites it. The FOR UPDATE
+            // lock inside the CTE still makes this a single atomic statement: a second concurrent
+            // caller blocks on the row lock, then (once the first commits) sees waiting_state
+            // already NULL and legitimately matches zero rows.
             val sql = """
-                UPDATE saga_execution
+                WITH captured AS (
+                    SELECT id, waiting_state FROM saga_execution
+                    WHERE id = ? AND started_at >= ? AND waiting_state IS NOT NULL
+                    FOR UPDATE
+                )
+                UPDATE saga_execution se
                 SET waiting_state = NULL, updated_at = now()
-                WHERE id = ?
-                  AND started_at >= ?
-                  AND waiting_state IS NOT NULL
-                RETURNING waiting_state
+                FROM captured c
+                WHERE se.id = c.id
+                RETURNING c.waiting_state
             """.trimIndent()
             val rs = connection.prepareStatement(sql).also { ps ->
                 ps.setObject(1, executionId)
@@ -386,6 +400,284 @@ class SagaRepository(
                 ids += UUID.fromString(rs.getString("id"))
             }
             ids
+        }
+    }
+
+    // ── Split / join ───────────────────────────────────────────────────────────
+    // saga_join_barrier / saga_join_branch are plain (non-partitioned, non-jOOQ) control
+    // tables accessed via raw JDBC — deliberately kept out of jOOQ codegen so this feature
+    // needs no schema regeneration; see db.changelog-master.xml changeset 006.
+
+    /**
+     * Returns the [JoinBranchLink.branchId]s newly registered by *this* call (i.e. rows that did
+     * not already exist), via `INSERT ... ON CONFLICT DO NOTHING RETURNING` — the same idempotent
+     * pattern as [markChildArrived]. A redelivered split step reconstructs the exact same
+     * deterministic branch set, so a branch missing from the returned set here was already
+     * registered (and, by construction, already enqueued) by an earlier attempt; the caller must
+     * not enqueue it again. One round trip per branch rather than a single batch, since a batch
+     * INSERT cannot report per-row RETURNING results — an acceptable cost given branches only
+     * spawn once per split, not on every barrier arrival.
+     */
+    suspend fun registerJoinBarrier(
+        parentId: UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        joinNodeId: String,
+        branches: List<JoinBranchLink>,
+    ): Set<String> {
+        return db.withConnection { connection ->
+            val now = java.sql.Timestamp.from(Instant.now())
+            connection.prepareStatement(
+                """
+                INSERT INTO saga_join_barrier
+                    (parent_id, parent_started_at, split_node_id, join_node_id, expected_count, arrived_count, created_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?)
+                ON CONFLICT (parent_id, parent_started_at, split_node_id) DO NOTHING
+                """.trimIndent()
+            ).use { ps ->
+                ps.setObject(1, parentId)
+                ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
+                ps.setString(3, splitNodeId)
+                ps.setString(4, joinNodeId)
+                ps.setInt(5, branches.size)
+                ps.setTimestamp(6, now)
+                ps.executeUpdate()
+            }
+            if (branches.isEmpty()) return@withConnection emptySet()
+            val newlyRegistered = mutableSetOf<String>()
+            connection.prepareStatement(
+                """
+                INSERT INTO saga_join_branch
+                    (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (parent_id, parent_started_at, split_node_id, branch_id) DO NOTHING
+                RETURNING branch_id
+                """.trimIndent()
+            ).use { ps ->
+                for (branch in branches) {
+                    ps.setObject(1, parentId)
+                    ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
+                    ps.setString(3, splitNodeId)
+                    ps.setString(4, branch.branchId)
+                    ps.setObject(5, branch.childId)
+                    ps.setTimestamp(6, java.sql.Timestamp.from(branch.childStartedAt))
+                    ps.setTimestamp(7, now)
+                    val rs = ps.executeQuery()
+                    if (rs.next()) newlyRegistered += rs.getString("branch_id")
+                }
+            }
+            newlyRegistered
+        }
+    }
+
+    /**
+     * Idempotent per [childId]: the `arrived_at IS NULL` guard means a redelivered branch that
+     * already marked its own arrival contributes 0 to the barrier's counter on any later call —
+     * `newly_marked` tells the caller whether *this* call was the one that actually transitioned
+     * the row, so only a genuine first-arrival can ever be treated as the barrier's winner.
+     * Single round trip, no lock: the two UPDATEs are each atomic per-row, chained by one CTE.
+     */
+    suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? {
+        return db.withConnection { connection ->
+            val sql = """
+                WITH marked AS (
+                    UPDATE saga_join_branch
+                    SET arrived_at = now()
+                    WHERE parent_id = ? AND parent_started_at = ? AND split_node_id = ?
+                      AND child_id = ? AND arrived_at IS NULL
+                    RETURNING 1
+                ),
+                bumped AS (
+                    UPDATE saga_join_barrier b
+                    SET arrived_count = b.arrived_count + (SELECT count(*) FROM marked)
+                    WHERE b.parent_id = ? AND b.parent_started_at = ? AND b.split_node_id = ?
+                    RETURNING b.arrived_count, b.expected_count
+                )
+                SELECT bumped.arrived_count, bumped.expected_count, (SELECT count(*) FROM marked) > 0 AS newly_marked
+                FROM bumped
+            """.trimIndent()
+            val rs = connection.prepareStatement(sql).also { ps ->
+                ps.setObject(1, parentId)
+                ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
+                ps.setString(3, splitNodeId)
+                ps.setObject(4, childId)
+                ps.setObject(5, parentId)
+                ps.setTimestamp(6, java.sql.Timestamp.from(parentStartedAt))
+                ps.setString(7, splitNodeId)
+            }.executeQuery()
+            if (!rs.next()) return@withConnection null
+            JoinArrival(
+                arrived = rs.getInt("arrived_count"),
+                expected = rs.getInt("expected_count"),
+                newlyMarked = rs.getBoolean("newly_marked"),
+            )
+        }
+    }
+
+    suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<JoinBranchLink> {
+        return db.withConnection { connection ->
+            val sql = """
+                SELECT branch_id, child_id, child_started_at FROM saga_join_branch
+                WHERE parent_id = ? AND parent_started_at = ? AND split_node_id = ?
+                ORDER BY id ASC
+            """.trimIndent()
+            val rs = connection.prepareStatement(sql).also { ps ->
+                ps.setObject(1, parentId)
+                ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
+                ps.setString(3, splitNodeId)
+            }.executeQuery()
+            val links = mutableListOf<JoinBranchLink>()
+            while (rs.next()) {
+                links += JoinBranchLink(
+                    branchId = rs.getString("branch_id"),
+                    childId = UUID.fromString(rs.getString("child_id")),
+                    childStartedAt = rs.getTimestamp("child_started_at").toInstant(),
+                )
+            }
+            links
+        }
+    }
+
+    suspend fun saveWaitingJoinState(
+        executionId: UUID,
+        splitNodeId: String,
+        joinNodeId: String,
+        executionJson: String,
+    ) {
+        val state = WaitingJoinStateJson(splitNodeId = splitNodeId, joinNodeId = joinNodeId, executionJson = executionJson)
+        val waitingJson = JSONB.valueOf(json.encodeToString(WaitingJoinStateJson.serializer(), state))
+        db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            dsl.update(SAGA_EXECUTION)
+                .set(SAGA_EXECUTION.WAITING_STATE, waitingJson)
+                .set(SAGA_EXECUTION.STATUS, "WAITING_JOIN")
+                .set(SAGA_EXECUTION.UPDATED_AT, Instant.now().toOffset())
+                .where(SAGA_EXECUTION.ID.eq(executionId))
+                .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
+                .execute()
+        }
+    }
+
+    suspend fun consumeWaitingJoinState(executionId: UUID): SagaExecution? {
+        return db.withConnection { connection ->
+            // Also flips status away from WAITING_JOIN here (not just waiting_state to NULL) so
+            // findStalledJoinBarriers can no longer re-match this row in the window before the
+            // re-enqueued parent is actually dequeued and upsertStart runs.
+            //
+            // RETURNING evaluates against the row's POST-update state, so a bare
+            // `SET waiting_state = NULL ... RETURNING waiting_state` always returns NULL —
+            // confirmed live against r2d2 (2026-09-21): the row's status correctly flipped to
+            // IN_PROGRESS but this method still returned null every time, silently breaking every
+            // split/join resume. The CTE below locks and captures the value BEFORE the UPDATE's
+            // SET clause overwrites it; the FOR UPDATE lock inside the CTE keeps this one atomic
+            // statement, so only a single concurrent caller can ever see a non-null result (a
+            // second caller blocks on the row lock, then sees waiting_state already NULL once the
+            // first commits, and legitimately matches zero rows — same guarantee as before).
+            val sql = """
+                WITH captured AS (
+                    SELECT id, waiting_state FROM saga_execution
+                    WHERE id = ? AND started_at >= ? AND waiting_state IS NOT NULL
+                    FOR UPDATE
+                )
+                UPDATE saga_execution se
+                SET waiting_state = NULL, status = 'IN_PROGRESS', updated_at = now()
+                FROM captured c
+                WHERE se.id = c.id
+                RETURNING c.waiting_state
+            """.trimIndent()
+            val rs = connection.prepareStatement(sql).also { ps ->
+                ps.setObject(1, executionId)
+                ps.setObject(2, java.sql.Timestamp.from(cutoff().toInstant()))
+            }.executeQuery()
+            if (!rs.next()) return@withConnection null
+            val rawJson = rs.getString("waiting_state") ?: return@withConnection null
+            runCatching {
+                val state = json.decodeFromString(WaitingJoinStateJson.serializer(), rawJson)
+                json.decodeFromString(SagaExecution.serializer(), state.executionJson)
+            }.getOrNull()
+        }
+    }
+
+    override suspend fun findStalledJoinBarriers(limit: Int): List<UUID> {
+        return db.withConnection { connection ->
+            val sql = """
+                SELECT b.parent_id FROM saga_join_barrier b
+                JOIN saga_execution e ON e.id = b.parent_id AND e.started_at = b.parent_started_at
+                WHERE b.arrived_count >= b.expected_count AND e.status = 'WAITING_JOIN'
+                LIMIT ?
+            """.trimIndent()
+            val rs = connection.prepareStatement(sql).also { ps -> ps.setInt(1, limit) }.executeQuery()
+            val ids = mutableListOf<UUID>()
+            while (rs.next()) {
+                ids += UUID.fromString(rs.getString("parent_id"))
+            }
+            ids
+        }
+    }
+
+    suspend fun getChildStatus(executionId: UUID): ChildExecutionStatus? {
+        val status = getExecutionStatus(executionId) ?: return null
+        val lastResult = db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            dsl.select(SAGA_STEP_RESULT.RESPONSE_BODY)
+                .from(SAGA_STEP_RESULT)
+                .where(SAGA_STEP_RESULT.SAGA_ID.eq(executionId))
+                .and(SAGA_STEP_RESULT.STARTED_AT.ge(cutoff()))
+                .orderBy(SAGA_STEP_RESULT.CREATED_AT.desc())
+                .limit(1)
+                .fetchOne()
+                ?.get(SAGA_STEP_RESULT.RESPONSE_BODY)?.data()
+        }
+        return ChildExecutionStatus(
+            status = status.status,
+            failureDescription = status.failureDescription,
+            lastResultJson = lastResult,
+        )
+    }
+
+    /**
+     * Batched form of [getChildStatus]: two queries total regardless of how many [executionIds]
+     * are passed (one for status/failure, one for each child's last step result via
+     * DISTINCT ON), instead of 2*N round trips from calling [getChildStatus] in a loop.
+     */
+    suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, ChildExecutionStatus> {
+        if (executionIds.isEmpty()) return emptyMap()
+        return db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            val statusById = dsl.select(
+                SAGA_EXECUTION.ID,
+                SAGA_EXECUTION.STATUS,
+                SAGA_EXECUTION.FAILURE_DESCRIPTION,
+            )
+                .from(SAGA_EXECUTION)
+                .where(SAGA_EXECUTION.ID.`in`(executionIds))
+                .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
+                .fetch()
+                .associate { r -> r.get(SAGA_EXECUTION.ID)!! to (r.get(SAGA_EXECUTION.STATUS) to r.get(SAGA_EXECUTION.FAILURE_DESCRIPTION)) }
+
+            val lastResultById = mutableMapOf<UUID, String?>()
+            val sql = """
+                SELECT DISTINCT ON (saga_id) saga_id, response_body
+                FROM saga_step_result
+                WHERE saga_id = ANY(?) AND started_at >= ?
+                ORDER BY saga_id, created_at DESC
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setArray(1, connection.createArrayOf("uuid", executionIds.toTypedArray()))
+                ps.setTimestamp(2, java.sql.Timestamp.from(cutoff().toInstant()))
+                val rs = ps.executeQuery()
+                while (rs.next()) {
+                    lastResultById[UUID.fromString(rs.getString("saga_id"))] = rs.getString("response_body")
+                }
+            }
+
+            statusById.mapValues { (id, pair) ->
+                ChildExecutionStatus(
+                    status = pair.first ?: "UNKNOWN",
+                    failureDescription = pair.second,
+                    lastResultJson = lastResultById[id],
+                )
+            }
         }
     }
 
@@ -1017,6 +1309,13 @@ class SagaRepository(
         val signature: String,
         @Serializable(with = InstantAsStringSerializer::class)
         val expiresAt: Instant,
+        val executionJson: String,
+    )
+
+    @Serializable
+    private data class WaitingJoinStateJson(
+        val splitNodeId: String,
+        val joinNodeId: String,
         val executionJson: String,
     )
 }

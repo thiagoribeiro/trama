@@ -43,6 +43,33 @@ data class SleepEntry(
     val execution: SagaExecution,
 )
 
+/** One branch's linkage to its spawned child execution, recorded when a split fires. */
+data class JoinBranchLink(
+    val branchId: String,
+    val childId: UUID,
+    val childStartedAt: Instant,
+)
+
+/**
+ * Result of marking a child's arrival on its parent's join barrier.
+ * [newlyMarked] is false when this exact child id was already recorded as arrived (a redelivery
+ * of an already-finalized branch) — callers must only act as "the winner" when newlyMarked is
+ * true AND [arrived] == [expected]; otherwise the arrival was a no-op replay.
+ */
+data class JoinArrival(
+    val arrived: Int,
+    val expected: Int,
+    val newlyMarked: Boolean,
+)
+
+/** Minimal terminal-status summary for a (already finalized) child execution. */
+data class ChildExecutionStatus(
+    val status: String,
+    val failureDescription: String?,
+    /** Raw JSON of the child's last recorded step result, if any. */
+    val lastResultJson: String?,
+)
+
 /**
  * Minimal info about a waiting execution, used during callback validation and timeout processing.
  */
@@ -123,6 +150,69 @@ interface SagaExecutionStore {
      * Used to surface SLEEPING status to the status API while the saga is in the queue.
      */
     suspend fun updateStatus(executionId: java.util.UUID, status: String)
+
+    // ── Split / join ───────────────────────────────────────────────────────────
+
+    /**
+     * Registers the join barrier for a split: how many branches are expected and which
+     * child execution belongs to which branch. Must be called once, before any of the
+     * spawned children can possibly finish.
+     *
+     * Returns the [JoinBranchLink.branchId]s that were newly registered by *this* call, as
+     * opposed to ones a prior (crashed/redelivered) attempt at the same split step already
+     * registered. The split node handler must enqueue only these: a redelivered split step
+     * reconstructs the exact same branch set (deterministic ids), so a branch that is not
+     * newly registered here was already enqueued by the earlier attempt — enqueuing it again
+     * would cause its entire subtree of work to run a second time independently, not just
+     * repeat a single call the way an ordinary node redelivery does.
+     */
+    suspend fun registerJoinBarrier(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        joinNodeId: String,
+        branches: List<JoinBranchLink>,
+    ): Set<String>
+
+    /**
+     * Idempotently marks [childId] as arrived on the ([parentId], [splitNodeId]) barrier and
+     * returns the counts *after* this call, or null if no barrier is registered (bug/race).
+     * Calling this again with a [childId] that was already marked arrived (e.g. a redelivered
+     * branch re-finalizing) is a safe no-op: the counter is not incremented twice, and
+     * [JoinArrival.newlyMarked] comes back false. Only proceed as "the winner" when
+     * [JoinArrival.newlyMarked] is true AND [JoinArrival.arrived] == [JoinArrival.expected].
+     */
+    suspend fun markChildArrived(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        childId: java.util.UUID,
+    ): JoinArrival?
+
+    /** Returns the branch → child links registered by [registerJoinBarrier]. */
+    suspend fun getJoinBranches(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): List<JoinBranchLink>
+
+    /**
+     * Persists [execution] (state = [ExecutionState.WaitingJoin]) so [consumeWaitingJoin] can
+     * retrieve it once the join barrier is satisfied.
+     */
+    suspend fun saveWaitingJoin(execution: SagaExecution)
+
+    /**
+     * Atomically loads and deletes the join-waiting entry for [executionId].
+     * Returns null if none exists (already consumed, or never stored).
+     */
+    suspend fun consumeWaitingJoin(executionId: java.util.UUID): SagaExecution?
+
+    /** Minimal terminal-status lookup for a (possibly already-finalized) child execution. */
+    suspend fun getChildStatus(executionId: java.util.UUID): ChildExecutionStatus?
+
+    /** Batched form of [getChildStatus] — one round trip regardless of how many ids are passed. */
+    suspend fun getChildStatuses(executionIds: List<java.util.UUID>): Map<java.util.UUID, ChildExecutionStatus>
 }
 
 class SagaRepositoryStore(
@@ -203,4 +293,44 @@ class SagaRepositoryStore(
 
     override suspend fun updateStatus(executionId: java.util.UUID, status: String) =
         repository.updateStatus(executionId, status)
+
+    override suspend fun registerJoinBarrier(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        joinNodeId: String,
+        branches: List<JoinBranchLink>,
+    ) = repository.registerJoinBarrier(parentId, parentStartedAt, splitNodeId, joinNodeId, branches)
+
+    override suspend fun markChildArrived(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        childId: java.util.UUID,
+    ): JoinArrival? = repository.markChildArrived(parentId, parentStartedAt, splitNodeId, childId)
+
+    override suspend fun getJoinBranches(
+        parentId: java.util.UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): List<JoinBranchLink> = repository.getJoinBranches(parentId, parentStartedAt, splitNodeId)
+
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {
+        val state = execution.state as? ExecutionState.WaitingJoin ?: return
+        repository.saveWaitingJoinState(
+            executionId = execution.id,
+            splitNodeId = state.splitNodeId,
+            joinNodeId = state.joinNodeId,
+            executionJson = Json.encodeToString(SagaExecution.serializer(), execution),
+        )
+    }
+
+    override suspend fun consumeWaitingJoin(executionId: java.util.UUID): SagaExecution? =
+        repository.consumeWaitingJoinState(executionId)
+
+    override suspend fun getChildStatus(executionId: java.util.UUID): ChildExecutionStatus? =
+        repository.getChildStatus(executionId)
+
+    override suspend fun getChildStatuses(executionIds: List<java.util.UUID>): Map<java.util.UUID, ChildExecutionStatus> =
+        repository.getChildStatuses(executionIds)
 }

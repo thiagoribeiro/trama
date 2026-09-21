@@ -50,6 +50,10 @@ export function addNode(kind, x, y) {
     node = { kind: 'switch', id, x, y, cases: [], default: null };
   } else if (kind === 'sleep') {
     node = { kind: 'sleep', id, x, y, durationMillis: 60000, next: null };
+  } else if (kind === 'split') {
+    node = { kind: 'split', id, x, y, branches: [], join: null };
+  } else if (kind === 'join') {
+    node = { kind: 'join', id, x, y, next: null };
   }
   _state.nodes.set(id, node);
   if (!_state.entrypoint) _state.entrypoint = id;
@@ -69,10 +73,14 @@ export function renameNode(oldId, newId) {
     [..._state.nodes.entries()].map(([k, v]) => [k === oldId ? newId : k, v])
   );
   for (const [, n] of _state.nodes) {
-    if ((n.kind === 'task' || n.kind === 'sleep') && n.next === oldId) n.next = newId;
+    if ((n.kind === 'task' || n.kind === 'sleep' || n.kind === 'join') && n.next === oldId) n.next = newId;
     if (n.kind === 'switch') {
       n.cases = n.cases.map(c => ({ ...c, target: c.target === oldId ? newId : c.target }));
       if (n.default === oldId) n.default = newId;
+    }
+    if (n.kind === 'split') {
+      n.branches = n.branches.map(b => b === oldId ? newId : b);
+      if (n.join === oldId) n.join = newId;
     }
   }
   if (_state.entrypoint === oldId) _state.entrypoint = newId;
@@ -91,10 +99,14 @@ export function updateNode(id, patch) {
 export function deleteNode(id) {
   _state.nodes.delete(id);
   for (const [, node] of _state.nodes) {
-    if ((node.kind === 'task' || node.kind === 'sleep') && node.next === id) node.next = null;
+    if ((node.kind === 'task' || node.kind === 'sleep' || node.kind === 'join') && node.next === id) node.next = null;
     if (node.kind === 'switch') {
       node.cases = node.cases.filter(c => c.target !== id);
       if (node.default === id) node.default = null;
+    }
+    if (node.kind === 'split') {
+      node.branches = node.branches.filter(b => b !== id);
+      if (node.join === id) node.join = null;
     }
   }
   if (_state.entrypoint === id) {

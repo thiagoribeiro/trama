@@ -739,7 +739,11 @@
         ],
         "properties": {
           "definition": {
-            "$ref": "#/components/schemas/SagaDefinition"
+            "oneOf": [
+              { "$ref": "#/components/schemas/SagaDefinition" },
+              { "$ref": "#/components/schemas/SagaDefinitionV2" }
+            ],
+            "description": "v1 (steps-based) or v2 (node-graph) definition, auto-detected by the presence of `nodes`."
           },
           "payload": {
             "type": "object",
@@ -763,36 +767,11 @@
         }
       },
       "SagaDefinitionCreateRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "version",
-          "failureHandling",
-          "steps"
+        "oneOf": [
+          { "$ref": "#/components/schemas/SagaDefinition" },
+          { "$ref": "#/components/schemas/SagaDefinitionV2" }
         ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "version": {
-            "type": "string"
-          },
-          "failureHandling": {
-            "$ref": "#/components/schemas/FailureHandling"
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SagaStep"
-            }
-          },
-          "onSuccessCallback": {
-            "$ref": "#/components/schemas/HttpCallNullable"
-          },
-          "onFailureCallback": {
-            "$ref": "#/components/schemas/HttpCallNullable"
-          }
-        }
+        "description": "v1 (steps-based) or v2 (node-graph) definition, auto-detected by the presence of `nodes`."
       },
       "SagaDefinitionResponse": {
         "type": "object",
@@ -816,7 +795,10 @@
             "type": "string"
           },
           "definition": {
-            "$ref": "#/components/schemas/SagaDefinition"
+            "oneOf": [
+              { "$ref": "#/components/schemas/SagaDefinition" },
+              { "$ref": "#/components/schemas/SagaDefinitionV2" }
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -876,6 +858,279 @@
           },
           "down": {
             "$ref": "#/components/schemas/HttpCall"
+          }
+        }
+      },
+      "SagaDefinitionV2": {
+        "description": "Node-graph definition format. Branching, async callbacks, sleeps, and parallel split/join are expressed as a graph of nodes instead of a linear step list.",
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "failureHandling",
+          "entrypoint",
+          "nodes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "failureHandling": {
+            "$ref": "#/components/schemas/FailureHandling"
+          },
+          "entrypoint": {
+            "type": "string",
+            "description": "Id of the node execution starts at."
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeDefinition"
+            }
+          },
+          "onSuccessCallback": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          },
+          "onFailureCallback": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          }
+        }
+      },
+      "NodeDefinition": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/TaskNodeDefinition" },
+          { "$ref": "#/components/schemas/SwitchNodeDefinition" },
+          { "$ref": "#/components/schemas/SleepNodeDefinition" },
+          { "$ref": "#/components/schemas/SplitNodeDefinition" },
+          { "$ref": "#/components/schemas/JoinNodeDefinition" }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "task": "#/components/schemas/TaskNodeDefinition",
+            "switch": "#/components/schemas/SwitchNodeDefinition",
+            "sleep": "#/components/schemas/SleepNodeDefinition",
+            "split": "#/components/schemas/SplitNodeDefinition",
+            "join": "#/components/schemas/JoinNodeDefinition"
+          }
+        }
+      },
+      "TaskNodeDefinition": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "action"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["task"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/components/schemas/NodeActionDef"
+          },
+          "compensation": {
+            "$ref": "#/components/schemas/HttpCallNullable"
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "description": "Id of the next node. Omit or null on the last node of a branch/definition."
+          }
+        }
+      },
+      "SwitchNodeDefinition": {
+        "description": "Evaluates JSON Logic cases against the payload/prior results and routes to the matching target node, without making an HTTP call.",
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "cases",
+          "default"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["switch"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SwitchCaseDef"
+            }
+          },
+          "default": {
+            "type": "string",
+            "description": "Id of the node to route to when no case matches."
+          }
+        }
+      },
+      "SleepNodeDefinition": {
+        "description": "Pauses the execution for durationMillis (chunked internally to avoid a single very long delay) before continuing at next.",
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "durationMillis"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["sleep"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "durationMillis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "next": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SplitNodeDefinition": {
+        "description": "Fans out into independent sub-executions, one per branch entry node id, each running the full retry/compensation pipeline on its own. Paired with exactly one join node via `join`.",
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "branches",
+          "join"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["split"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "branches": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the node each branch starts at."
+          },
+          "join": {
+            "type": "string",
+            "description": "Id of the join node that barriers on this split's branches."
+          }
+        }
+      },
+      "JoinNodeDefinition": {
+        "description": "Barrier that waits for every branch spawned by its owning split node to reach a terminal state, then continues at next.",
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["join"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "description": "Omit or null to terminate the definition at this join."
+          }
+        }
+      },
+      "NodeActionDef": {
+        "type": "object",
+        "required": [
+          "mode",
+          "request"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/TaskMode"
+          },
+          "request": {
+            "$ref": "#/components/schemas/HttpCall"
+          },
+          "successStatusCodes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            }
+          },
+          "acceptedStatusCodes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "description": "For async task nodes: status codes on the initial fire-and-pause response that count as accepted (default 2xx)."
+          },
+          "callback": {
+            "$ref": "#/components/schemas/CallbackConfigDef"
+          }
+        }
+      },
+      "TaskMode": {
+        "type": "string",
+        "enum": ["sync", "async"]
+      },
+      "SwitchCaseDef": {
+        "type": "object",
+        "required": [
+          "when",
+          "target"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/AnyJson",
+            "description": "JSON Logic expression evaluated against the template context."
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "CallbackConfigDef": {
+        "type": "object",
+        "required": [
+          "timeoutMillis"
+        ],
+        "properties": {
+          "timeoutMillis": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "successWhen": {
+            "$ref": "#/components/schemas/AnyJson"
+          },
+          "failureWhen": {
+            "$ref": "#/components/schemas/AnyJson"
           }
         }
       },

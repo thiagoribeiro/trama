@@ -203,6 +203,15 @@ body {
 .props-badge--task   { background: #0c2a5e; color: var(--accent-hi); }
 .props-badge--switch { background: var(--purple-dim); color: #d8b4fe; }
 .props-badge--sleep  { background: #4c1d95; color: #ddd6fe; }
+.props-badge--split  { background: #155e63; color: #a5f3fc; }
+.props-badge--join   { background: #1e3a8a; color: #dbeafe; }
+
+.prop-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim, #8b949e);
+  margin: 4px 0 12px;
+}
 
 .props-id {
   font-family: var(--font-mono);

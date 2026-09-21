@@ -11,6 +11,7 @@ const cls = {
   FAILED: 'badge--red',
   IN_PROGRESS: 'badge--blue',
   WAITING_CALLBACK: 'badge--amber',
+  WAITING_JOIN: 'badge--amber',
   SLEEPING: 'badge--purple',
   CORRUPTED: 'badge--red',
 }[props.status] ?? 'badge--grey'

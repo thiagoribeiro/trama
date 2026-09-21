@@ -10,6 +10,8 @@ export function exportDefinition(st) {
     if (node.kind === 'task') exportedNodes.push(exportTask(node));
     else if (node.kind === 'switch') exportedNodes.push(exportSwitch(node));
     else if (node.kind === 'sleep') exportedNodes.push(exportSleep(node));
+    else if (node.kind === 'split') exportedNodes.push(exportSplit(node));
+    else if (node.kind === 'join') exportedNodes.push(exportJoin(node));
   }
 
   const def = {
@@ -66,6 +68,18 @@ function exportSwitch(node) {
   };
 }
 
+function exportSplit(node) {
+  const out = { kind: 'split', id: node.id, branches: node.branches || [] };
+  if (node.join) out.join = node.join;
+  return out;
+}
+
+function exportJoin(node) {
+  const out = { kind: 'join', id: node.id };
+  if (node.next) out.next = node.next;
+  return out;
+}
+
 function exportHttpCall(call) {
   if (!call) return null;
   const out = { url: call.url || '', verb: call.verb || 'POST' };
@@ -100,6 +114,8 @@ export function importDefinition(input) {
     if (n.kind === 'task') return importTask(n);
     if (n.kind === 'switch') return importSwitch(n);
     if (n.kind === 'sleep') return importSleep(n);
+    if (n.kind === 'split') return importSplit(n);
+    if (n.kind === 'join') return importJoin(n);
     return null;
   }).filter(Boolean);
 
@@ -155,6 +171,25 @@ function importSleep(n) {
     id: n.id,
     x: 0, y: 0,
     durationMillis: n.durationMillis ?? 0,
+    next: n.next || null,
+  };
+}
+
+function importSplit(n) {
+  return {
+    kind: 'split',
+    id: n.id,
+    x: 0, y: 0,
+    branches: Array.isArray(n.branches) ? [...n.branches] : [],
+    join: n.join || null,
+  };
+}
+
+function importJoin(n) {
+  return {
+    kind: 'join',
+    id: n.id,
+    x: 0, y: 0,
     next: n.next || null,
   };
 }
@@ -238,5 +273,7 @@ function nodeTargets(node) {
   if (node.kind === 'sleep') return node.next ? [node.next] : [];
   if (node.kind === 'switch')
     return [...node.cases.map(c => c.target), node.default].filter(Boolean);
+  if (node.kind === 'split') return [...(node.branches || []), node.join].filter(Boolean);
+  if (node.kind === 'join') return node.next ? [node.next] : [];
   return [];
 }

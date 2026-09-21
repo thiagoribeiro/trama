@@ -11,10 +11,13 @@ import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.toAny
 import run.trama.saga.workflow.DefinitionNormalizer
+import run.trama.saga.workflow.JoinNode
 import run.trama.saga.workflow.JsonLogicEvaluator
 import run.trama.saga.workflow.SleepNode
+import run.trama.saga.workflow.SplitNode
 import run.trama.saga.workflow.SwitchNode
 import run.trama.saga.workflow.TaskNode
+import run.trama.saga.workflow.WorkflowDefinition
 
 // ─── Scenario ────────────────────────────────────────────────────────────────
 
@@ -86,6 +89,18 @@ sealed class TraceEntry {
         val usedDefault: Boolean,
         val targetNodeId: String,
     ) : TraceEntry()
+
+    /** A split node: fans out into independent branches, each simulated from a clean context. */
+    data class Split(
+        val nodeId: String,
+        val branches: Map<String, List<TraceEntry>>,
+    ) : TraceEntry()
+
+    /** A join node: the barrier point where all branches of the owning split converged. */
+    data class Join(
+        val nodeId: String,
+        val allSucceeded: Boolean,
+    ) : TraceEntry()
 }
 
 enum class SimOutcome { SUCCEEDED, FAILED, MAX_NODES_EXCEEDED, CYCLE_DETECTED }
@@ -114,13 +129,30 @@ class DryRunSimulator {
     private val renderer = MustacheTemplateRenderer()
 
     fun run(definition: SagaDefinitionV2, scenario: DryRunScenario): SimulationResult {
-        val workflow     = DefinitionNormalizer.normalize(definition)
-        val payload      = scenario.payload.toMap()   // Map<String, JsonElement>
-        val entries      = mutableListOf<TraceEntry>()
-        val stepResults  = mutableListOf<StepResult>()
-        val visited      = mutableSetOf<String>()
-        var currentId: String? = workflow.entrypoint
-        var stepIndex    = 0
+        val workflow = DefinitionNormalizer.normalize(definition)
+        val payload = scenario.payload.toMap() // Map<String, JsonElement>
+        return walk(workflow, definition, payload, scenario, workflow.entrypoint, mutableSetOf(), mutableListOf())
+    }
+
+    /**
+     * Walks the graph from [startId], mutating [entries]/[stepResults] in place until a
+     * terminal node, a failure, a cycle, or the node-count cap is reached. Used both for
+     * the main trunk and, recursively, for each branch of a split (with a fresh
+     * [visited]/[stepResults] scope, since a branch is an independent child execution
+     * and does not see the parent's prior step results).
+     */
+    private fun walk(
+        workflow: WorkflowDefinition,
+        definition: SagaDefinitionV2,
+        payload: Map<String, JsonElement>,
+        scenario: DryRunScenario,
+        startId: String,
+        visited: MutableSet<String>,
+        stepResults: MutableList<StepResult>,
+        entries: MutableList<TraceEntry> = mutableListOf(),
+    ): SimulationResult {
+        var currentId: String? = startId
+        var stepIndex = stepResults.size
 
         while (currentId != null) {
             if (currentId in visited) return SimulationResult(entries, SimOutcome.CYCLE_DETECTED)
@@ -165,6 +197,39 @@ class DryRunSimulator {
                 }
                 is SleepNode -> {
                     // In a dry-run simulation, sleep nodes are skipped (no real wall-clock wait).
+                    currentId = node.next
+                }
+
+                is SplitNode -> {
+                    val branchTraces = linkedMapOf<String, List<TraceEntry>>()
+                    var allSucceeded = true
+                    var firstFailure: SimulationResult? = null
+                    for (branchId in node.branches) {
+                        // Each branch is an independent child execution: fresh visited set and
+                        // step-result history, seeded only by the parent's payload.
+                        val branchResult = walk(workflow, definition, payload, scenario, branchId, mutableSetOf(), mutableListOf())
+                        branchTraces[branchId] = branchResult.entries
+                        if (branchResult.outcome != SimOutcome.SUCCEEDED) {
+                            allSucceeded = false
+                            if (firstFailure == null) firstFailure = branchResult
+                        }
+                    }
+                    entries += TraceEntry.Split(node.id, branchTraces)
+                    if (!allSucceeded) {
+                        val failure = requireNotNull(firstFailure)
+                        return SimulationResult(entries, failure.outcome, failure.failureNodeId, failure.failureStatus)
+                    }
+                    val joinNode = workflow.nodes[node.join] as? JoinNode
+                        ?: return SimulationResult(entries, SimOutcome.FAILED, node.join)
+                    entries += TraceEntry.Join(joinNode.id, allSucceeded = true)
+                    stepResults += StepResult(stepIndex, joinNode.id, null, null)
+                    stepIndex++
+                    currentId = joinNode.next
+                }
+
+                is JoinNode -> {
+                    // Reached only if a join is walked directly (should not normally happen —
+                    // joins are consumed by the owning SplitNode branch above).
                     currentId = node.next
                 }
             }

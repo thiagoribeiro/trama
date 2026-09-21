@@ -104,6 +104,15 @@ object DefinitionNormalizer {
                     durationMillis = nodeDef.durationMillis,
                     next = nodeDef.next,
                 )
+                is NodeDefinition.Split -> SplitNode(
+                    id = nodeDef.id,
+                    branches = nodeDef.branches,
+                    join = nodeDef.join,
+                )
+                is NodeDefinition.Join -> JoinNode(
+                    id = nodeDef.id,
+                    next = nodeDef.next,
+                )
             }
         }
 

@@ -10,6 +10,7 @@ data class AppConfig(
     val rateLimit: RateLimitConfig,
     val metrics: MetricsConfig,
     val callbackTimeoutScanner: CallbackTimeoutScannerConfig = CallbackTimeoutScannerConfig(),
+    val joinCompletionScanner: JoinCompletionScannerConfig = JoinCompletionScannerConfig(),
     val sleep: SleepConfig = SleepConfig(),
 )
 
@@ -136,6 +137,19 @@ data class CallbackTimeoutScannerConfig(
     /** Grace period in seconds: skip executions whose deadline passed fewer than this many seconds ago. */
     val bufferSeconds: Long = 120,
     /** Maximum executions processed per scanner run. */
+    val batchSize: Int = 100,
+)
+
+/**
+ * Own config for [run.trama.runtime.JoinCompletionScanner] — deliberately a separate type/field
+ * from [CallbackTimeoutScannerConfig] (even though the shape is the same) so disabling the
+ * callback-timeout scanner can never silently disable the unrelated join-barrier backstop too.
+ */
+data class JoinCompletionScannerConfig(
+    val enabled: Boolean = true,
+    /** How often the scanner runs, in milliseconds. */
+    val intervalMillis: Long = 300_000,
+    /** Maximum barriers processed per scanner run. */
     val batchSize: Int = 100,
 )
 

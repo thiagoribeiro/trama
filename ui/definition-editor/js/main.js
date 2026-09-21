@@ -115,8 +115,11 @@ function validateDefinition(st) {
   const indeg = new Map(ids.map(id => [id, 0]));
   const adj   = new Map(ids.map(id => [id, []]));
   for (const [, n] of nodes) {
-    const targets = (n.kind === 'task' || n.kind === 'sleep') ? (n.next ? [n.next] : [])
-      : [...n.cases.map(c => c.target), n.default].filter(Boolean);
+    let targets;
+    if (n.kind === 'task' || n.kind === 'sleep' || n.kind === 'join') targets = n.next ? [n.next] : [];
+    else if (n.kind === 'switch') targets = [...n.cases.map(c => c.target), n.default].filter(Boolean);
+    else if (n.kind === 'split') targets = [...(n.branches || []), n.join].filter(Boolean);
+    else targets = [];
     for (const t of targets) {
       if (nodes.has(t)) { adj.get(n.id).push(t); indeg.set(t, indeg.get(t) + 1); }
     }
@@ -135,6 +138,23 @@ function validateDefinition(st) {
       warnings.push(`"${n.id}": switch has no default target`);
     if (n.kind === 'switch' && n.cases.some(c => !c.when))
       warnings.push(`"${n.id}": one or more cases are missing a condition`);
+    if (n.kind === 'split') {
+      if ((n.branches || []).length < 2) errors.push(`"${n.id}": split needs at least 2 branches`);
+      if (!n.join) errors.push(`"${n.id}": split has no join node set`);
+      else if (nodes.get(n.join)?.kind !== 'join') errors.push(`"${n.id}": join target "${n.join}" is not a join node`);
+    }
+  }
+
+  // Each join must be owned by exactly one split.
+  const joinOwners = new Map();
+  for (const [, n] of nodes) {
+    if (n.kind === 'split' && n.join) {
+      if (!joinOwners.has(n.join)) joinOwners.set(n.join, []);
+      joinOwners.get(n.join).push(n.id);
+    }
+  }
+  for (const [joinId, owners] of joinOwners) {
+    if (owners.length > 1) errors.push(`Join "${joinId}" is claimed by multiple splits: ${owners.join(', ')}`);
   }
 
   return { errors, warnings };
@@ -312,6 +332,19 @@ const TEMPLATES = {
       { kind: 'task', id: 'card-payment', action: { mode: 'async', request: { url: '', verb: 'POST' },
         acceptedStatusCodes: [202],
         callback: { timeoutMillis: 60000, successWhen: null, failureWhen: null } }, next: 'notify' },
+      { kind: 'task', id: 'notify', action: { mode: 'sync', request: { url: '', verb: 'POST' } } },
+    ],
+  },
+
+  'split-join': {
+    name: 'fan-out-saga', version: 'v1',
+    failureHandling: { type: 'retry', maxAttempts: 2, delayMillis: 500 },
+    entrypoint: 'fan-out',
+    nodes: [
+      { kind: 'split', id: 'fan-out', branches: ['reserve-stock', 'authorize-payment'], join: 'fan-in' },
+      { kind: 'task', id: 'reserve-stock', action: { mode: 'sync', request: { url: '', verb: 'POST' } } },
+      { kind: 'task', id: 'authorize-payment', action: { mode: 'sync', request: { url: '', verb: 'POST' } } },
+      { kind: 'join', id: 'fan-in', next: 'notify' },
       { kind: 'task', id: 'notify', action: { mode: 'sync', request: { url: '', verb: 'POST' } } },
     ],
   },

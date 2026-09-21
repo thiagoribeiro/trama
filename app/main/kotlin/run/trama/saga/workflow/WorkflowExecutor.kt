@@ -12,6 +12,7 @@ import run.trama.saga.FailureReason
 import run.trama.saga.HttpCall
 import run.trama.saga.HttpClientProvider
 import run.trama.saga.HttpVerb
+import run.trama.saga.JoinBranchLink
 import run.trama.saga.PayloadValue
 import run.trama.saga.RetryPolicy
 import run.trama.saga.RetryState
@@ -21,6 +22,7 @@ import run.trama.saga.SagaExecutionStore
 import run.trama.saga.StepCallEntry
 import run.trama.saga.StepResult
 import run.trama.saga.SagaExecutor
+import run.trama.runtime.JoinResumer
 import run.trama.saga.TemplateContextBuilder
 import run.trama.saga.TemplateRenderer
 import run.trama.saga.callback.CallbackTokenService
@@ -30,7 +32,9 @@ import run.trama.telemetry.Tracing
 import org.slf4j.LoggerFactory
 import net.logstash.logback.argument.StructuredArguments.kv
 import java.time.Instant
+import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -55,7 +59,7 @@ class WorkflowExecutor(
     private val sleepJitterMillis: Long = 60_000L,
     callbackTokenService: CallbackTokenService? = null,
     callbackUrlFactory: CallbackUrlFactory? = null,
-) : SagaExecutor {
+) : SagaExecutor, JoinResumer {
     private val logger = LoggerFactory.getLogger(WorkflowExecutor::class.java)
     private val tracer = Tracing.tracer("workflow-executor")
     private val taskHandler = TaskNodeHandler(renderer, httpClient, metrics, callbackTokenService, callbackUrlFactory)
@@ -102,6 +106,14 @@ class WorkflowExecutor(
                 is ExecutionState.Sleeping -> {
                     val workflow = resolveWorkflow(execution)
                     executeSleeping(execution, workflow, state)
+                }
+                is ExecutionState.WaitingJoin -> {
+                    // WaitingJoin executions are parked (see saveWaitingJoin), not re-enqueued —
+                    // they are only resumed by the last arriving branch (finalizeAndNotifyParent)
+                    // or by JoinCompletionScanner as a backstop. Seeing one dequeued directly
+                    // means a stray redelivery; there is nothing to do.
+                    logger.warn("unexpected WaitingJoin execution dequeued directly", kv("sagaId", execution.id.toString()))
+                    ExecutionOutcome.Reenqueued
                 }
             }
         }
@@ -281,6 +293,90 @@ class WorkflowExecutor(
                     }
                     return ExecutionOutcome.Reenqueued
                 }
+
+                is SplitNode -> {
+                    if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
+                    completedNodes.add(node.id)
+
+                    val children = node.branches.map { branchNodeId ->
+                        // Deterministic id/startedAt (not random/now()) so a redelivery of this
+                        // very split step — e.g. the worker crashed mid-spawn and the parent's
+                        // message got requeued — reconstructs byte-identical children instead of
+                        // a brand new batch. Combined with the ON CONFLICT on saga_join_branch and
+                        // the idempotent markChildArrived, this means a retried split can never
+                        // corrupt the barrier's bookkeeping or spawn extra untracked children.
+                        val childId = UUID.nameUUIDFromBytes("${execution.id}:${node.id}:$branchNodeId".toByteArray())
+                        SagaExecution(
+                            definition = execution.definition,
+                            definitionV2 = execution.definitionV2,
+                            id = childId,
+                            startedAt = execution.startedAt,
+                            currentStepIndex = 0,
+                            state = ExecutionState.InProgress(activeNodeId = branchNodeId),
+                            payload = execution.payload,
+                            parentExecutionId = execution.id,
+                            parentStartedAt = execution.startedAt,
+                            parentSplitNodeId = node.id,
+                            parentJoinNodeId = node.join,
+                            branchId = branchNodeId,
+                        )
+                    }
+
+                    store.insertStepResult(
+                        sagaId = execution.id,
+                        startedAt = execution.startedAt,
+                        stepIdx = stepIdx,
+                        stepName = node.id,
+                        phase = ExecutionPhase.SPLIT,
+                        statusCode = null,
+                        success = true,
+                        responseBody = buildSplitTraceJson(children),
+                        stepStartedAt = Instant.now(),
+                    )
+
+                    // Barrier + parked parent state must be durable BEFORE any child can run,
+                    // since a child could finish (and call markChildArrived) as soon as
+                    // it is enqueued below.
+                    val newlyRegisteredBranches = store.registerJoinBarrier(
+                        parentId = execution.id,
+                        parentStartedAt = execution.startedAt,
+                        splitNodeId = node.id,
+                        joinNodeId = node.join,
+                        branches = children.map { child -> JoinBranchLink(child.branchId!!, child.id, child.startedAt) },
+                    )
+                    store.saveWaitingJoin(
+                        execution.copy(
+                            state = ExecutionState.WaitingJoin(
+                                splitNodeId = node.id,
+                                joinNodeId = node.join,
+                                expectedBranches = children.size,
+                                completedNodes = completedNodes.toList(),
+                                compensationStack = compensationStack.toList(),
+                            ),
+                        ),
+                    )
+                    // Only enqueue branches newly registered by the call above: a redelivery of
+                    // this very split step reconstructs the same deterministic children, but any
+                    // branch already registered by an earlier (crashed) attempt was also already
+                    // enqueued then — re-enqueuing it here would run its entire subtree of work a
+                    // second time, independently of whatever the first copy already did, rather
+                    // than just repeating a single call the way an ordinary node redelivery does.
+                    children.filter { child -> child.branchId in newlyRegisteredBranches }
+                        .forEach { child -> enqueuer.enqueue(child, 0) }
+
+                    Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                        logger.info("saga split", kv("nodeId", node.id), kv("branchCount", children.size))
+                    }
+                    return ExecutionOutcome.Reenqueued
+                }
+
+                is JoinNode -> {
+                    // Joins are only ever reached via the resume path built by
+                    // finalizeAndNotifyParent/resumeAfterJoin (which sets activeNodeId to
+                    // join.next directly) — walking into a join node here is a definition/
+                    // executor bug, not a runtime condition.
+                    return handleBug(execution, "join node '${node.id}' reached directly by the forward walk")
+                }
             }
 
             processed++
@@ -365,7 +461,7 @@ class WorkflowExecutor(
                 }
             }
         }
-        store.updateFinal(execution.id, "SUCCEEDED")
+        finalizeAndNotifyParent(execution, "SUCCEEDED")
         metrics.recordSagaDuration(
             sagaName = execution.definition.name,
             sagaVersion = execution.definition.version,
@@ -445,7 +541,7 @@ class WorkflowExecutor(
                     } else {
                         if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                         val reason = result.reason.message
-                        store.updateFinal(execution.id, "CORRUPTED", reason)
+                        finalizeAndNotifyParent(execution, "CORRUPTED", reason)
                         metrics.recordSagaDuration(
                             sagaName = execution.definition.name,
                             sagaVersion = execution.definition.version,
@@ -494,7 +590,7 @@ class WorkflowExecutor(
                 }
             }
         }
-        store.updateFinal(execution.id, "FAILED", state.failureReason.message)
+        finalizeAndNotifyParent(execution, "FAILED", state.failureReason.message)
         metrics.recordSagaDuration(
             sagaName = execution.definition.name,
             sagaVersion = execution.definition.version,
@@ -645,7 +741,7 @@ class WorkflowExecutor(
 
     private suspend fun handleBug(execution: SagaExecution, msg: String): ExecutionOutcome {
         logger.error("workflow bug: $msg", kv("sagaId", execution.id.toString()))
-        store.updateFinal(execution.id, "CORRUPTED", msg)
+        finalizeAndNotifyParent(execution, "CORRUPTED", msg)
         metrics.recordSagaDuration(
             sagaName = execution.definition.name,
             sagaVersion = execution.definition.version,
@@ -666,6 +762,170 @@ class WorkflowExecutor(
             put("usedDefault", evalResult.usedDefault)
         }
         return kotlinx.serialization.json.Json.encodeToString(JsonObject.serializer(), obj)
+    }
+
+    // ── Split / join ───────────────────────────────────────────────────────────
+
+    /**
+     * Backstop entry point for [run.trama.runtime.JoinCompletionScanner]: re-checks whether
+     * [parentId]'s join barrier is already satisfied and, if so, resumes it. Safe to call
+     * redundantly — [consumeWaitingJoin] is atomic, so only one caller (ever) actually resumes
+     * a given parent.
+     */
+    override suspend fun resumeJoinIfSatisfied(parentId: UUID): Boolean {
+        val parent = store.consumeWaitingJoin(parentId) ?: return false
+        val waitingState = parent.state as? ExecutionState.WaitingJoin ?: return false
+        return resumeAfterJoinOrRestore(parent, waitingState)
+    }
+
+    /**
+     * Finalizes [execution] with [status]/[failureDescription], then — if this execution is a
+     * branch spawned by a split — marks its arrival on the parent's join barrier.
+     * [SagaExecutionStore.markChildArrived] is idempotent per child id, so a redelivered branch
+     * that already finalized once cannot double-count or re-trigger a resume: only the single
+     * call for which [JoinArrival.newlyMarked] is true and the barrier is now full proceeds.
+     */
+    private suspend fun finalizeAndNotifyParent(
+        execution: SagaExecution,
+        status: String,
+        failureDescription: String? = null,
+    ) {
+        store.updateFinal(execution.id, status, failureDescription)
+
+        val parentId = execution.parentExecutionId ?: return
+        val parentStartedAt = execution.parentStartedAt ?: return
+        val splitNodeId = execution.parentSplitNodeId ?: return
+
+        val arrival = store.markChildArrived(parentId, parentStartedAt, splitNodeId, execution.id) ?: return
+        if (!arrival.newlyMarked || arrival.arrived < arrival.expected) return
+
+        val parent = store.consumeWaitingJoin(parentId) ?: return
+        val waitingState = parent.state as? ExecutionState.WaitingJoin ?: return
+        resumeAfterJoinOrRestore(parent, waitingState)
+    }
+
+    /** Everything [resumeAfterJoin] needs to commit, once the (retryable) prep work is done. */
+    private data class PreparedJoinResume(val joinNode: JoinNode, val completedNodes: List<String>)
+
+    /**
+     * Runs [resumeAfterJoin] in two phases. Only the *preparation* phase (reading branch
+     * statuses, building and persisting the join's own step result — nothing externally
+     * irreversible) is covered by the catch: [consumeWaitingJoin] already deleted the parent's
+     * one durable pointer before this is called, so a failure there re-saves it, turning
+     * "permanently stranded in WAITING_JOIN" into "retried later" instead.
+     *
+     * The *commit* phase (`finishSuccess`/`enqueuer.enqueue`) runs outside the try/catch on
+     * purpose: once it starts, this join has already succeeded from its own point of view. In a
+     * nested split/join, `finishSuccess` recursively notifies the *outer* barrier — if that
+     * later, unrelated step throws, we must not re-park an execution we already marked
+     * terminal; that exception is the outer barrier's problem, not a reason to undo our own
+     * completion.
+     */
+    private suspend fun resumeAfterJoinOrRestore(parent: SagaExecution, state: ExecutionState.WaitingJoin): Boolean {
+        val prepared = try {
+            prepareJoinResume(parent, state)
+        } catch (ex: JoinResumeBugException) {
+            // Structural bug (e.g. a stored joinNodeId no longer resolves) — not transient, so
+            // retrying via saveWaitingJoin would just reproduce the same failure forever on every
+            // JoinCompletionScanner pass. Finalize as CORRUPTED like every other workflow bug in
+            // this executor instead of leaving the execution stuck in WAITING_JOIN indefinitely.
+            handleBug(parent, ex.message ?: "join resume failed")
+            return true
+        } catch (ex: Exception) {
+            logger.error("resumeAfterJoin failed before committing; restoring join pointer for a later retry", kv("sagaId", parent.id.toString()), ex)
+            runCatching { store.saveWaitingJoin(parent) }
+            return false
+        }
+        commitJoinResume(parent, state, prepared)
+        return true
+    }
+
+    /** Marks a failure in [prepareJoinResume] as a permanent workflow bug, not a transient one. */
+    private class JoinResumeBugException(message: String) : Exception(message)
+
+    /** Retryable half of resuming a join: no irreversible side effect past this point. */
+    private suspend fun prepareJoinResume(execution: SagaExecution, state: ExecutionState.WaitingJoin): PreparedJoinResume {
+        val workflow = resolveWorkflow(execution)
+        val joinNode = workflow.nodes[state.joinNodeId] as? JoinNode
+            ?: throw JoinResumeBugException("join node '${state.joinNodeId}' not found in workflow")
+
+        val branches = store.getJoinBranches(execution.id, execution.startedAt, state.splitNodeId)
+        val statuses = store.getChildStatuses(branches.map { it.childId })
+        var allSucceeded = branches.isNotEmpty()
+        val branchSummaries = branches.map { link ->
+            val childStatus = statuses[link.childId]
+            val statusStr = childStatus?.status ?: "UNKNOWN"
+            if (statusStr != "SUCCEEDED") allSucceeded = false
+            buildJsonObject {
+                put("branchId", link.branchId)
+                put("executionId", link.childId.toString())
+                put("status", statusStr)
+                childStatus?.failureDescription?.let { put("failureDescription", it) }
+                childStatus?.lastResultJson?.let { raw -> parseBodyOrNull(raw)?.let { put("result", it) } }
+            }
+        }
+        val joinBodyJson = Json.encodeToString(
+            JsonObject.serializer(),
+            buildJsonObject {
+                put("expected", state.expectedBranches)
+                put("allSucceeded", allSucceeded)
+                put("branches", JsonArray(branchSummaries))
+            },
+        )
+
+        store.insertStepResult(
+            sagaId = execution.id,
+            startedAt = execution.startedAt,
+            stepIdx = state.completedNodes.size,
+            stepName = state.joinNodeId,
+            phase = ExecutionPhase.JOIN,
+            statusCode = null,
+            success = true,
+            responseBody = joinBodyJson,
+            stepStartedAt = Instant.now(),
+        )
+
+        Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+            logger.info(
+                "join barrier satisfied",
+                kv("splitNodeId", state.splitNodeId),
+                kv("joinNodeId", state.joinNodeId),
+                kv("allSucceeded", allSucceeded),
+            )
+        }
+
+        return PreparedJoinResume(joinNode, state.completedNodes + state.joinNodeId)
+    }
+
+    /** Point of no return: commits the join's outcome. Not covered by the restore-on-failure catch. */
+    private suspend fun commitJoinResume(execution: SagaExecution, state: ExecutionState.WaitingJoin, prepared: PreparedJoinResume) {
+        val workflow = resolveWorkflow(execution)
+        val joinNode = prepared.joinNode
+        val completedNodes = prepared.completedNodes
+        if (joinNode.next == null) {
+            finishSuccess(execution, workflow, store.loadStepResults(execution.id))
+            return
+        }
+        val updated = execution.copy(
+            state = ExecutionState.InProgress(
+                activeNodeId = joinNode.next,
+                completedNodes = completedNodes,
+                compensationStack = state.compensationStack,
+            ),
+        )
+        enqueuer.enqueue(updated, 0)
+    }
+
+    private fun buildSplitTraceJson(children: List<SagaExecution>): String {
+        val arr = JsonArray(
+            children.map { child ->
+                buildJsonObject {
+                    put("branchId", child.branchId ?: "")
+                    put("executionId", child.id.toString())
+                }
+            },
+        )
+        return Json.encodeToString(JsonArray.serializer(), arr)
     }
 
     private data class RawCallResult(val success: Boolean, val statusCode: Int?, val error: String?)

@@ -81,4 +81,74 @@
         </sql>
     </changeSet>
 
+    <!-- Split/join support. Deliberately plain (non-partitioned) control tables, accessed via
+         raw JDBC rather than jOOQ — see SagaRepository's split/join methods. Row volume is
+         one saga_join_barrier row + N saga_join_branch rows per split node execution, not
+         per HTTP call, so partitioning is not needed at this scale. -->
+    <changeSet id="006-split-join-barrier" author="trama">
+        <sql splitStatements="true" stripComments="true">
+            CREATE TABLE IF NOT EXISTS saga_join_barrier (
+                parent_id         uuid         NOT NULL,
+                parent_started_at timestamptz  NOT NULL,
+                split_node_id     text         NOT NULL,
+                join_node_id      text         NOT NULL,
+                expected_count    integer      NOT NULL,
+                arrived_count     integer      NOT NULL DEFAULT 0,
+                created_at        timestamptz  NOT NULL,
+                PRIMARY KEY (parent_id, parent_started_at, split_node_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS saga_join_branch (
+                id                 bigserial   NOT NULL PRIMARY KEY,
+                parent_id          uuid        NOT NULL,
+                parent_started_at  timestamptz NOT NULL,
+                split_node_id      text        NOT NULL,
+                branch_id          text        NOT NULL,
+                child_id           uuid        NOT NULL,
+                child_started_at   timestamptz NOT NULL,
+                created_at         timestamptz NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_saga_join_branch_parent
+                ON saga_join_branch (parent_id, parent_started_at, split_node_id);
+        </sql>
+    </changeSet>
+
+    <!-- arrived_at + the uniqueness constraint make branch arrival idempotent per child: a
+         redelivered split step's INSERT ... ON CONFLICT DO NOTHING can no longer create a second
+         row for the same logical branch, and markChildArrived's UPDATE ... WHERE arrived_at IS
+         NULL can only ever transition a given branch from not-arrived to arrived once. -->
+    <changeSet id="007-join-branch-arrived-at" author="trama">
+        <!-- splitStatements=false: the DO $$ ... $$ block below has internal semicolons that
+             Liquibase's naive statement splitter would otherwise shred (same reasoning as the
+             001b-init-partitions changeset above). -->
+        <sql splitStatements="false" stripComments="true">
+            ALTER TABLE saga_join_branch
+                ADD COLUMN IF NOT EXISTS arrived_at timestamptz;
+
+            -- Defensive: a pre-fix split-step redelivery (before the ON CONFLICT on this
+            -- table's INSERT existed) could have left duplicate rows for the same logical
+            -- branch with different child_id. Keep only the earliest row per branch identity
+            -- so the UNIQUE constraint below can never fail on pre-existing data.
+            DELETE FROM saga_join_branch a
+                USING saga_join_branch b
+                WHERE a.parent_id = b.parent_id
+                  AND a.parent_started_at = b.parent_started_at
+                  AND a.split_node_id = b.split_node_id
+                  AND a.branch_id = b.branch_id
+                  AND a.id > b.id;
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'uq_saga_join_branch_identity'
+                ) THEN
+                    ALTER TABLE saga_join_branch
+                        ADD CONSTRAINT uq_saga_join_branch_identity
+                        UNIQUE (parent_id, parent_started_at, split_node_id, branch_id);
+                END IF;
+            END $$;
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>
