@@ -338,14 +338,24 @@ class SagaRepository(
 
     override suspend fun consumeWaitingState(executionId: UUID): WaitingInfo? {
         return db.withConnection { connection ->
-            // Atomically clear and return waiting_state in one round-trip.
+            // Atomically clear and return waiting_state in one round-trip. RETURNING evaluates
+            // against the row's POST-update state, so a bare `SET waiting_state = NULL ...
+            // RETURNING waiting_state` would always return NULL — the CTE below locks and
+            // captures the value BEFORE the UPDATE's SET clause overwrites it. The FOR UPDATE
+            // lock inside the CTE still makes this a single atomic statement: a second concurrent
+            // caller blocks on the row lock, then (once the first commits) sees waiting_state
+            // already NULL and legitimately matches zero rows.
             val sql = """
-                UPDATE saga_execution
+                WITH captured AS (
+                    SELECT id, waiting_state FROM saga_execution
+                    WHERE id = ? AND started_at >= ? AND waiting_state IS NOT NULL
+                    FOR UPDATE
+                )
+                UPDATE saga_execution se
                 SET waiting_state = NULL, updated_at = now()
-                WHERE id = ?
-                  AND started_at >= ?
-                  AND waiting_state IS NOT NULL
-                RETURNING waiting_state
+                FROM captured c
+                WHERE se.id = c.id
+                RETURNING c.waiting_state
             """.trimIndent()
             val rs = connection.prepareStatement(sql).also { ps ->
                 ps.setObject(1, executionId)
@@ -553,13 +563,27 @@ class SagaRepository(
             // Also flips status away from WAITING_JOIN here (not just waiting_state to NULL) so
             // findStalledJoinBarriers can no longer re-match this row in the window before the
             // re-enqueued parent is actually dequeued and upsertStart runs.
+            //
+            // RETURNING evaluates against the row's POST-update state, so a bare
+            // `SET waiting_state = NULL ... RETURNING waiting_state` always returns NULL —
+            // confirmed live against r2d2 (2026-09-21): the row's status correctly flipped to
+            // IN_PROGRESS but this method still returned null every time, silently breaking every
+            // split/join resume. The CTE below locks and captures the value BEFORE the UPDATE's
+            // SET clause overwrites it; the FOR UPDATE lock inside the CTE keeps this one atomic
+            // statement, so only a single concurrent caller can ever see a non-null result (a
+            // second caller blocks on the row lock, then sees waiting_state already NULL once the
+            // first commits, and legitimately matches zero rows — same guarantee as before).
             val sql = """
-                UPDATE saga_execution
+                WITH captured AS (
+                    SELECT id, waiting_state FROM saga_execution
+                    WHERE id = ? AND started_at >= ? AND waiting_state IS NOT NULL
+                    FOR UPDATE
+                )
+                UPDATE saga_execution se
                 SET waiting_state = NULL, status = 'IN_PROGRESS', updated_at = now()
-                WHERE id = ?
-                  AND started_at >= ?
-                  AND waiting_state IS NOT NULL
-                RETURNING waiting_state
+                FROM captured c
+                WHERE se.id = c.id
+                RETURNING c.waiting_state
             """.trimIndent()
             val rs = connection.prepareStatement(sql).also { ps ->
                 ps.setObject(1, executionId)

@@ -455,6 +455,15 @@ class RedisSagaExecutionStore(
         // writing a Redis mirror here would just be a wasted round trip that's never read back.
         val state = execution.state as? ExecutionState.WaitingJoin ?: return
         val executionJson = json.encodeToString(SagaExecution.serializer(), execution)
+
+        // upsertStart only writes to Redis (the hot-path store), never Postgres — so under the
+        // default REDIS store backend, the parent has no saga_execution row yet at this point.
+        // saveWaitingJoinState below is a plain UPDATE ... WHERE id = ?, which would silently
+        // affect zero rows without this — permanently losing the join pointer with no error,
+        // no trace in the status API, and no way for JoinCompletionScanner to ever find it.
+        // Same defensive upsert saveWaiting (the WaitingCallback sibling) already does above.
+        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
+        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
         repository.saveWaitingJoinState(
             executionId = execution.id,
             splitNodeId = state.splitNodeId,
