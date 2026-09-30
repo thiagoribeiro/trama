@@ -117,15 +117,6 @@ class E2EAdvancedFlowTest {
 
     private val approved = mapOf("==" to listOf(mapOf("var" to "callback.body.status"), "approved"))
 
-    private companion object {
-        const val SUCCESS_WHEN_BUG =
-            "BUG: any v2 async node with callback.successWhen/failureWhen makes POST /workflows/run return 500. " +
-                "CallbackConfigDef declares them as plain JsonElement (switch `when` uses JsonElementFlexSerializer), " +
-                "and the MsgPack queue encoder rejects JsonElement's JSON-only serializer. The feature is only " +
-                "reachable in unit tests today."
-    }
-
-    @Disabled(SUCCESS_WHEN_BUG)
     @Test
     fun `async callback matching successWhen resumes the saga`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/auth")
@@ -139,7 +130,6 @@ class E2EAdvancedFlowTest {
         assertEquals(1, wm.requestsTo("/step/done").size)
     }
 
-    @Disabled(SUCCESS_WHEN_BUG)
     @Test
     fun `async callback not matching successWhen fails the saga`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/auth")
