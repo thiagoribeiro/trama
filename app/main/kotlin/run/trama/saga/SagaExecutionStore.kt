@@ -151,6 +151,14 @@ interface SagaExecutionStore {
      */
     suspend fun updateStatus(executionId: java.util.UUID, status: String)
 
+    /**
+     * Keeps whatever transient state this store holds for [executionId] (e.g. Redis meta and step
+     * history, which otherwise expire after a short idle TTL) alive at least until [until].
+     * Called before an execution goes idle for a known period, e.g. a delayed retry.
+     * Stores whose state is durable need not do anything.
+     */
+    suspend fun retainUntil(executionId: java.util.UUID, until: Instant) {}
+
     // ── Split / join ───────────────────────────────────────────────────────────
 
     /**

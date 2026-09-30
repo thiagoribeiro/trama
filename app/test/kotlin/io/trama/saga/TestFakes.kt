@@ -63,6 +63,7 @@ open class RecordingStore : SagaExecutionStore {
     val stepCalls = mutableListOf<StepCallEntry>()
     val sleeping = mutableMapOf<UUID, SleepEntry>()
     val statusUpdates = mutableListOf<String>()
+    val retainedUntil = mutableListOf<Instant>()
     var preloadedStepResults: List<StepResult> = emptyList()
 
     override suspend fun upsertStart(execution: SagaExecution) { upserts += execution }
@@ -98,6 +99,7 @@ open class RecordingStore : SagaExecutionStore {
     override suspend fun peekSleeping(executionId: UUID): SleepEntry? = sleeping[executionId]
     override suspend fun consumeSleeping(executionId: UUID): SleepEntry? = sleeping.remove(executionId)
     override suspend fun updateStatus(executionId: UUID, status: String) { statusUpdates += status }
+    override suspend fun retainUntil(executionId: UUID, until: Instant) { retainedUntil += until }
     override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<JoinBranchLink>): Set<String> =
         branches.map { it.branchId }.toSet()
     override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? = null

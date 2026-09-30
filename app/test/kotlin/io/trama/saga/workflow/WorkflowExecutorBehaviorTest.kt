@@ -319,6 +319,18 @@ class WorkflowExecutorBehaviorTest {
     }
 
     @Test
+    fun `a delayed retry asks the store to retain transient state until it fires`() = runBlocking<Unit> {
+        val store = RecordingStore()
+        val d = def(syncTask("a", "http://svc/fail-a"), failureHandling = FailureHandling.Retry(maxAttempts = 1, delayMillis = 60_000))
+        val before = Instant.now()
+
+        testExecutor(store, RecordingEnqueuer(), http().provider).execute(v2Execution(d))
+
+        val until = store.retainedUntil.single()
+        assertTrue(!until.isBefore(before.plusMillis(60_000)), "retained until $until, retry fires 60s after $before")
+    }
+
+    @Test
     fun `long compensation stack checkpoints after maxNodesPerExecution`() = runBlocking<Unit> {
         val store = RecordingStore()
         val enqueuer = RecordingEnqueuer()

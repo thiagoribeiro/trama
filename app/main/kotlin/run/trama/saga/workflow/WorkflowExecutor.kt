@@ -425,6 +425,7 @@ class WorkflowExecutor(
                     retry = RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis),
                 ),
             )
+            retainForDelay(execution, retryDecision.delayMillis)
             enqueuer.enqueue(updated, retryDecision.delayMillis)
             ExecutionOutcome.Reenqueued
         } else {
@@ -536,6 +537,7 @@ class WorkflowExecutor(
                                 retry = RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis),
                             ),
                         )
+                        retainForDelay(execution, retryDecision.delayMillis)
                         enqueuer.enqueue(updated, retryDecision.delayMillis)
                         ExecutionOutcome.Reenqueued
                     } else {
@@ -715,6 +717,11 @@ class WorkflowExecutor(
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Keeps the store's transient state alive across a delayed retry (no-op for zero delay). */
+    private suspend fun retainForDelay(execution: SagaExecution, delayMillis: Long) {
+        if (delayMillis > 0) store.retainUntil(execution.id, Instant.now().plusMillis(delayMillis))
+    }
 
     /**
      * Resolves the active node id from [InProgress] state.
