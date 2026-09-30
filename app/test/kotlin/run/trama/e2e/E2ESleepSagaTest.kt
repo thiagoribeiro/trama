@@ -65,12 +65,6 @@ class E2ESleepSagaTest {
         assertTrue(bAt - aAt >= 1_400, "b ran only ${bAt - aAt}ms after a; expected >= 1500ms sleep")
     }
 
-    @Disabled(
-        "BUG: RedisSagaExecutionStore.saveSleeping calls repository.updateStatus(SLEEPING) without first " +
-            "upserting the saga_execution row (saveWaiting/saveWaitingJoin do upsert). Under the default REDIS " +
-            "store that row only exists after finalization, so the UPDATE matches nothing and " +
-            "GET /workflows/{id} returns 204 for the whole sleep instead of SLEEPING.",
-    )
     @Test
     fun `status API reports SLEEPING while the saga sleeps`() = e2eTest {
         val id = client.runInline(sleepDef(uniqueName("sleep-status"), sleepMillis = 10 * 60_000))

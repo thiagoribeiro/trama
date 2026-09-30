@@ -6,7 +6,6 @@ import io.lettuce.core.ScriptOutputType
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.InstantAsStringSerializer
-import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
 import run.trama.saga.SleepEntry
@@ -14,6 +13,8 @@ import run.trama.saga.StepResult
 import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.WaitingInfo
 import run.trama.saga.store.SagaRepository
+import run.trama.saga.store.persistedDefinitionJson
+import run.trama.saga.store.persistedPayloadJson
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -121,13 +122,14 @@ class RedisSagaExecutionStore(
             id = execution.id,
             name = execution.definition.name,
             version = execution.definition.version,
-            definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition),
+            definitionJson = execution.persistedDefinitionJson(),
             startedAt = execution.startedAt,
             status = "IN_PROGRESS",
             failureDescription = null,
             callbackWarning = null,
             lastFailedStepIndex = null,
             lastFailedPhase = null,
+            payloadJson = execution.persistedPayloadJson(),
         )
         writeMeta(meta)
     }
@@ -162,6 +164,7 @@ class RedisSagaExecutionStore(
             lastFailedPhase = meta.lastFailedPhase?.let { ExecutionPhase.valueOf(it) },
             callbackWarning = meta.callbackWarning,
             steps = steps,
+            payloadJson = meta.payloadJson,
         )
 
         deleteKeys(meta.id)
@@ -320,8 +323,7 @@ class RedisSagaExecutionStore(
 
         // Write to Postgres so the status endpoint can surface WAITING_CALLBACK
         // and the callback timeout scanner can find timed-out executions.
-        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
-        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
+        repository.upsertExecutionStart(execution)
         repository.saveWaitingState(
             executionId = execution.id,
             nodeId = state.nodeId,
@@ -372,7 +374,10 @@ class RedisSagaExecutionStore(
             commands.set(key, value)
             commands.expire(key, ttl)
         }
-        // Update Postgres so the status API surfaces SLEEPING
+        // Update Postgres so the status API surfaces SLEEPING. Under this store the row otherwise
+        // only exists after finalization, so it must be upserted first (as saveWaiting does) —
+        // without it the UPDATE matches nothing and /wake cannot find the execution.
+        repository.upsertExecutionStart(execution)
         repository.updateStatus(execution.id, "SLEEPING")
     }
 
@@ -462,8 +467,7 @@ class RedisSagaExecutionStore(
         // affect zero rows without this — permanently losing the join pointer with no error,
         // no trace in the status API, and no way for JoinCompletionScanner to ever find it.
         // Same defensive upsert saveWaiting (the WaitingCallback sibling) already does above.
-        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
-        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
+        repository.upsertExecutionStart(execution)
         repository.saveWaitingJoinState(
             executionId = execution.id,
             splitNodeId = state.splitNodeId,
@@ -535,6 +539,8 @@ data class RedisExecutionMeta(
     val callbackWarning: String?,
     val lastFailedStepIndex: Int?,
     val lastFailedPhase: String?,
+    /** Default keeps metas written by a previous version (still in Redis during a deploy) readable. */
+    val payloadJson: String? = null,
 )
 
 @Serializable

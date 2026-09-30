@@ -5,6 +5,7 @@ import run.trama.saga.ExecutionPhase
 import run.trama.saga.JoinArrival
 import run.trama.saga.JoinBranchLink
 import run.trama.saga.SagaDefinition
+import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.SagaExecution
 import run.trama.saga.StepCallEntry
 import run.trama.saga.WaitingInfo
@@ -23,6 +24,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import org.jooq.JSONB
 import org.jooq.impl.DSL
 import run.trama.saga.InstantAsStringSerializer
@@ -31,6 +33,20 @@ import run.trama.saga.redis.RedisStepEntry
 
 private fun Instant.toOffset(): OffsetDateTime = atOffset(ZoneOffset.UTC)
 private fun OffsetDateTime?.toInstant(): Instant = this?.toInstant() ?: Instant.EPOCH
+
+private val rowJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * The definition persisted in `saga_execution.definition`: the real v2 graph when the execution
+ * has one (its v1 `definition` is only a name/version stub), otherwise the v1 definition.
+ */
+fun SagaExecution.persistedDefinitionJson(): String =
+    definitionV2?.let { rowJson.encodeToString(SagaDefinitionV2.serializer(), it) }
+        ?: rowJson.encodeToString(SagaDefinition.serializer(), definition)
+
+/** The run payload persisted in `saga_execution.payload`; null when empty (stored as SQL NULL). */
+fun SagaExecution.persistedPayloadJson(): String? =
+    payload.takeIf { it.isNotEmpty() }?.let { p -> JsonObject(p.mapValues { it.value.value }).toString() }
 
 class SagaRepository(
     private val db: DatabaseClient,
@@ -56,19 +72,21 @@ class SagaRepository(
         )
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** The single way an execution's row is created or refreshed from a live [SagaExecution]. */
     suspend fun upsertExecutionStart(execution: SagaExecution) {
         upsertExecutionRecord(
             id = execution.id,
             name = execution.definition.name,
             version = execution.definition.version,
-            definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition),
+            definitionJson = execution.persistedDefinitionJson(),
             startedAt = execution.startedAt,
+            payloadJson = execution.persistedPayloadJson(),
         )
     }
 
     /**
      * Ensures a row exists in `saga_execution` for the given [id]/[startedAt] combination.
-     * On conflict, preserves any existing definition and resets status to `IN_PROGRESS`.
+     * On conflict, preserves any existing definition/payload and resets status to `IN_PROGRESS`.
      */
     suspend fun upsertExecutionRecord(
         id: UUID,
@@ -76,8 +94,10 @@ class SagaRepository(
         version: String,
         definitionJson: String,
         startedAt: Instant,
+        payloadJson: String? = null,
     ) {
         val definitionJsonb = JSONB.valueOf(definitionJson)
+        val payloadJsonb = payloadJson?.let { JSONB.valueOf(it) }
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now().toOffset()
@@ -90,6 +110,7 @@ class SagaRepository(
                     SAGA_EXECUTION.STATUS,
                     SAGA_EXECUTION.STARTED_AT,
                     SAGA_EXECUTION.UPDATED_AT,
+                    SAGA_EXECUTION.PAYLOAD,
                 )
                 .values(
                     id,
@@ -99,12 +120,14 @@ class SagaRepository(
                     "IN_PROGRESS",
                     startedAt.toOffset(),
                     now,
+                    payloadJsonb,
                 )
                 .onConflict(SAGA_EXECUTION.ID, SAGA_EXECUTION.STARTED_AT)
                 .doUpdate()
                 .set(SAGA_EXECUTION.STATUS, "IN_PROGRESS")
                 .set(SAGA_EXECUTION.DEFINITION,
                     DSL.coalesce(SAGA_EXECUTION.DEFINITION, definitionJsonb))
+                .set(SAGA_EXECUTION.PAYLOAD, DSL.coalesce(SAGA_EXECUTION.PAYLOAD, payloadJsonb))
                 .set(SAGA_EXECUTION.UPDATED_AT, now)
                 .execute()
         }
@@ -690,6 +713,8 @@ class SagaRepository(
                 SAGA_EXECUTION.LAST_FAILED_STEP_INDEX,
                 SAGA_EXECUTION.LAST_FAILED_PHASE,
                 SAGA_EXECUTION.STARTED_AT,
+                SAGA_EXECUTION.STATUS,
+                SAGA_EXECUTION.PAYLOAD,
             )
                 .from(SAGA_EXECUTION)
                 .where(SAGA_EXECUTION.ID.eq(sagaId))
@@ -705,6 +730,8 @@ class SagaRepository(
                 failedStepIndex = record.get(SAGA_EXECUTION.LAST_FAILED_STEP_INDEX),
                 failedPhase = record.get(SAGA_EXECUTION.LAST_FAILED_PHASE),
                 startedAt = record.get(SAGA_EXECUTION.STARTED_AT).toInstant(),
+                status = record.get(SAGA_EXECUTION.STATUS) ?: "UNKNOWN",
+                payloadJson = record.get(SAGA_EXECUTION.PAYLOAD)?.data(),
             )
         }
     }
@@ -970,8 +997,10 @@ class SagaRepository(
         lastFailedPhase: ExecutionPhase?,
         callbackWarning: String?,
         steps: List<RedisStepEntry>,
+        payloadJson: String? = null,
     ) {
         val definitionJsonb = JSONB.valueOf(definitionJson)
+        val payloadJsonb = payloadJson?.let { JSONB.valueOf(it) }
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val now = Instant.now().toOffset()
@@ -989,16 +1018,18 @@ class SagaRepository(
                     SAGA_EXECUTION.STARTED_AT,
                     SAGA_EXECUTION.COMPLETED_AT,
                     SAGA_EXECUTION.UPDATED_AT,
+                    SAGA_EXECUTION.PAYLOAD,
                 )
                 .values(
                     id, name, version, definitionJsonb, status,
-                    failureDescription, startedAt.toOffset(), completedAt, now,
+                    failureDescription, startedAt.toOffset(), completedAt, now, payloadJsonb,
                 )
                 .onConflict(SAGA_EXECUTION.ID, SAGA_EXECUTION.STARTED_AT)
                 .doUpdate()
                 .set(SAGA_EXECUTION.STATUS, status)
                 .set(SAGA_EXECUTION.FAILURE_DESCRIPTION, failureDescription)
                 .set(SAGA_EXECUTION.DEFINITION, DSL.coalesce(SAGA_EXECUTION.DEFINITION, definitionJsonb))
+                .set(SAGA_EXECUTION.PAYLOAD, DSL.coalesce(SAGA_EXECUTION.PAYLOAD, payloadJsonb))
                 .set(SAGA_EXECUTION.COMPLETED_AT, completedAt)
                 .set(SAGA_EXECUTION.UPDATED_AT, now)
                 .execute()
@@ -1252,6 +1283,8 @@ class SagaRepository(
         val failedStepIndex: Int?,
         val failedPhase: String?,
         val startedAt: Instant,
+        val status: String,
+        val payloadJson: String?,
     )
 
     data class SagaDefinitionRecord(

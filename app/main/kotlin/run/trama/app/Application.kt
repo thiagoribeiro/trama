@@ -328,6 +328,13 @@ fun Application.module() {
                 call.respond(HttpStatusCode.NoContent)
                 return@post
             }
+            if (retryData.status != "FAILED") {
+                call.respond(
+                    HttpStatusCode.Conflict,
+                    ValidationErrorResponse(listOf("only FAILED executions can be retried (current status: ${retryData.status})")),
+                )
+                return@post
+            }
             val definitionJson = retryData.definitionJson
             if (definitionJson.isNullOrBlank()) {
                 call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("workflow definition not stored")))
@@ -355,7 +362,9 @@ fun Application.module() {
                     completedNodes = completedNodes,
                     compensationStack = compensationStack,
                 ),
-                payload = emptyMap(),
+                payload = retryData.payloadJson
+                    ?.let { raw -> json.parseToJsonElement(raw).jsonObject.mapValues { PayloadValue(it.value) } }
+                    ?: emptyMap(),
             )
             repo.markRetrying(id)
             bootstrap.enqueueRetry(execution)

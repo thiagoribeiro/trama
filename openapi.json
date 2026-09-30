@@ -134,7 +134,7 @@
             }
           },
           "409": {
-            "description": "Saga definition not stored",
+            "description": "Saga is not in FAILED status, or its definition is not stored",
             "content": {
               "application/json": {
                 "schema": {
