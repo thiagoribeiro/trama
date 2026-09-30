@@ -15,7 +15,6 @@ import run.trama.saga.SwitchCaseDef
 import run.trama.saga.TaskMode
 import run.trama.saga.TemplateString
 import kotlin.test.Test
-import org.junit.jupiter.api.Disabled
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -25,11 +24,6 @@ class DefinitionNormalizerTest {
 
     // ── Cache correctness ─────────────────────────────────────────────────────
 
-    @Disabled(
-        "BUG: DefinitionNormalizer caches the IR by name:version forever and never invalidates it. A second " +
-            "definition with the same name/version (inline POST /workflows/run, or PUT /workflows/definitions/{id} " +
-            "that keeps name/version) silently executes the FIRST graph ever seen by this JVM.",
-    )
     @Test
     fun `v2 definitions sharing name and version but differing in content normalize independently`() {
         val name = "cache-${java.util.UUID.randomUUID()}"
@@ -46,7 +40,6 @@ class DefinitionNormalizerTest {
         assertEquals("http://new", (second.nodes.getValue("a") as TaskNode).action.request.url.value)
     }
 
-    @Disabled("BUG: same name:version cache issue as above, for v1 definitions.")
     @Test
     fun `v1 definitions sharing name and version but differing in content normalize independently`() {
         val name = "cache-v1-${java.util.UUID.randomUUID()}"

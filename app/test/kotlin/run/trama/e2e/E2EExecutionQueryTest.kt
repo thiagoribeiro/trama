@@ -34,8 +34,6 @@ class E2EExecutionQueryTest {
 
     private fun svc(path: String) = "http://localhost:${wm.port()}$path"
 
-    // Distinct versions per variant: the normalizer caches graphs by name:version (see the
-    // @Disabled cache test below), so reusing name+version with different content is unsafe.
     private fun def(name: String, failing: Boolean, maxAttempts: Int = 0) = v2DefinitionMap(
         name,
         listOf(
@@ -43,13 +41,8 @@ class E2EExecutionQueryTest {
             taskNodeMap("b", svc(if (failing) "/fail/b" else "/step/b")),
         ),
         failureHandling = mapOf("type" to "retry", "maxAttempts" to maxAttempts, "delayMillis" to 10),
-        version = if (failing) "fail-$maxAttempts" else "ok-$maxAttempts",
     )
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: DefinitionNormalizer caches the normalized graph by name:version for the life of the JVM. A second " +
-            "inline POST /workflows/run with the same name/version but a different graph executes the first one.",
-    )
     @Test
     fun `inline runs with the same name and version execute their own graph`() = e2eTest {
         wm.stubPath("/fail/b", 500)
