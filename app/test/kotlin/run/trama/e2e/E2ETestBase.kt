@@ -11,6 +11,10 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.http.contentType
 import io.ktor.client.statement.bodyAsText
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
@@ -187,17 +191,123 @@ suspend fun awaitSagaStatus(
  */
 fun e2eTest(
     wmPort: Int? = null,
+    /** Extra system properties for this app instance only (e.g. `config.override.runtime.store`); restored afterwards. */
+    props: Map<String, String> = emptyMap(),
     block: suspend ApplicationTestBuilder.() -> Unit,
 ) {
     E2EContainers.configureSystemProperties(
         callbackBaseUrl = if (wmPort != null) "http://localhost:$wmPort" else "http://test-callback-host"
     )
-    testApplication {
-        application { module() }
-        block()
+    val previous = props.keys.associateWith { System.getProperty(it) }
+    props.forEach { (k, v) -> System.setProperty(k, v) }
+    try {
+        testApplication {
+            application { module() }
+            block()
+        }
+    } finally {
+        previous.forEach { (k, v) -> if (v == null) System.clearProperty(k) else System.setProperty(k, v) }
     }
 }
 
 // ── Definition builders ───────────────────────────────────────────────────────
 
 fun uniqueName(prefix: String = "e2e"): String = "$prefix-${UUID.randomUUID().toString().take(8)}"
+
+// ── Compact v2 definition DSL + request helpers (used by the newer E2E suites) ──────────
+
+fun httpCallMap(url: String, body: Any? = null, headers: Map<String, String> = mapOf("Content-Type" to "application/json")): Map<String, Any?> =
+    buildMap {
+        put("url", url)
+        put("verb", "POST")
+        put("headers", headers)
+        if (body != null) put("body", body)
+    }
+
+fun taskNodeMap(
+    id: String,
+    url: String,
+    next: String? = null,
+    compensationUrl: String? = null,
+    body: Any? = mapOf("step" to id),
+    headers: Map<String, String> = mapOf("Content-Type" to "application/json"),
+): Map<String, Any?> = buildMap {
+    put("kind", "task")
+    put("id", id)
+    put("action", mapOf("mode" to "sync", "request" to httpCallMap(url, body, headers)))
+    if (compensationUrl != null) put("compensation", httpCallMap(compensationUrl, mapOf("compensate" to id)))
+    if (next != null) put("next", next)
+}
+
+fun sleepNodeMap(id: String, durationMillis: Long, next: String? = null): Map<String, Any?> = buildMap {
+    put("kind", "sleep")
+    put("id", id)
+    put("durationMillis", durationMillis)
+    if (next != null) put("next", next)
+}
+
+fun v2DefinitionMap(
+    name: String,
+    nodes: List<Map<String, Any?>>,
+    entrypoint: String = nodes.first()["id"] as String,
+    failureHandling: Map<String, Any?> = mapOf("type" to "retry", "maxAttempts" to 0, "delayMillis" to 10),
+    onSuccess: Map<String, Any?>? = null,
+    onFailure: Map<String, Any?>? = null,
+    version: String = "v1",
+): Map<String, Any?> = buildMap {
+    put("name", name)
+    put("version", version)
+    put("failureHandling", failureHandling)
+    put("entrypoint", entrypoint)
+    put("nodes", nodes)
+    if (onSuccess != null) put("onSuccessCallback", onSuccess)
+    if (onFailure != null) put("onFailureCallback", onFailure)
+}
+
+suspend fun HttpClient.postJson(path: String, body: Any?, headers: Map<String, String> = emptyMap()): io.ktor.client.statement.HttpResponse =
+    request(path) {
+        method = io.ktor.http.HttpMethod.Post
+        headers.forEach { (k, v) -> header(k, v) }
+        if (body != null) {
+            contentType(io.ktor.http.ContentType.Application.Json)
+            setBody(if (body is String) body else body.toJsonElement().toString())
+        }
+    }
+
+suspend fun HttpClient.putJson(path: String, body: Any?): io.ktor.client.statement.HttpResponse =
+    request(path) {
+        method = io.ktor.http.HttpMethod.Put
+        contentType(io.ktor.http.ContentType.Application.Json)
+        setBody(if (body is String) body else body.toJsonElement().toString())
+    }
+
+/** POSTs an inline run request and returns the new saga id (asserting a 200). */
+suspend fun HttpClient.runInline(definition: Map<String, Any?>, payload: Map<String, Any?> = emptyMap()): String {
+    val resp = postJson("/workflows/run", mapOf("definition" to definition, "payload" to payload))
+    check(resp.status.value == 200) { "run failed: ${resp.status.value} ${resp.bodyAsText()}" }
+    return testJson.parseToJsonElement(resp.bodyAsText()).jsonObject["id"]!!.jsonPrimitive.content
+}
+
+suspend fun HttpClient.getJson(path: String): Pair<Int, JsonElement?> {
+    val resp = get(path)
+    val text = resp.bodyAsText()
+    return resp.status.value to (if (text.isBlank()) null else runCatching { testJson.parseToJsonElement(text) }.getOrNull())
+}
+
+fun WireMockServer.stubPath(path: String, status: Int, body: String = """{"status":"ok"}""") {
+    stubFor(
+        post(urlPathEqualTo(path)).willReturn(
+            aResponse().withStatus(status).withHeader("Content-Type", "application/json").withBody(body)
+        )
+    )
+}
+
+fun WireMockServer.requestsTo(path: String) = findAll(postRequestedFor(urlPathEqualTo(path)))
+
+/** Skip (JUnit assumption) instead of silently passing when no container runtime is available. */
+fun assumeDocker() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        org.testcontainers.DockerClientFactory.instance().isDockerAvailable,
+        "Docker/Podman not available",
+    )
+}

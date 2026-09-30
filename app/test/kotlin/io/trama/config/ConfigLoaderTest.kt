@@ -81,6 +81,18 @@ class ConfigLoaderTest {
     }
 
     @Test
+    fun `fields without an explicit override can be set via hoplite config override properties`() {
+        // runtime.store has no dedicated env var in ConfigLoader; Hoplite's `config.override.` system
+        // property prefix is the supported escape hatch.
+        System.setProperty("config.override.runtime.store", "POSTGRES")
+        try {
+            assertEquals(RuntimeStore.POSTGRES, ConfigLoader.load().runtime.store)
+        } finally {
+            System.clearProperty("config.override.runtime.store")
+        }
+    }
+
+    @Test
     fun `invalid values are ignored instead of crashing`() {
         System.setProperty("runtime.enabled", "yes")          // not strict boolean
         System.setProperty("runtime.emptyPollDelayMillis", "abc")

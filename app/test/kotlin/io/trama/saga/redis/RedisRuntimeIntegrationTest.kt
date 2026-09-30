@@ -8,13 +8,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.testcontainers.DockerClientFactory
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.utility.DockerImageName
-import run.trama.config.RedisConfig
-import run.trama.config.RedisConsumerConfig
-import run.trama.config.RedisPoolConfig
-import run.trama.config.RedisQueueConfig
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.FailureHandling
@@ -28,11 +21,11 @@ import kotlin.test.assertTrue
 
 class RedisRuntimeIntegrationTest {
     @Test
-    fun `stop polling leaves unclaimed work on ready queue`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `stop polling leaves unclaimed work on ready queue`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
 
         withRedisContainer { redis ->
-            val keyspace = RedisShardKeyspace("saga:executions", 64)
+            val keyspace = RedisShardKeyspace("it-runtime-${UUID.randomUUID()}", 64)
             val allocator = RendezvousShardAllocator(localPodId = "pod-a", virtualShardCount = 64)
             allocator.updatePods(listOf("pod-a"))
             val consumer = SagaExecutionRedisConsumer(
@@ -75,18 +68,19 @@ class RedisRuntimeIntegrationTest {
     }
 
     @Test
-    fun `membership handoff reassigns shards and new owner can claim queued work`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `membership handoff reassigns shards and new owner can claim queued work`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
 
         withRedisContainer { redis ->
             val virtualShardCount = 64
-            val keyspace = RedisShardKeyspace("saga:executions", virtualShardCount)
+            val keyspace = RedisShardKeyspace("it-runtime-${UUID.randomUUID()}", virtualShardCount)
             val metrics = Metrics(SimpleMeterRegistry())
+            val membershipKey = "it:pods:${UUID.randomUUID()}"
             val allocatorA = RendezvousShardAllocator(localPodId = "pod-a", virtualShardCount = virtualShardCount)
             val allocatorB = RendezvousShardAllocator(localPodId = "pod-b", virtualShardCount = virtualShardCount)
             val membershipA = PodMembershipRegistry(
                 redis = redis,
-                membershipKey = "saga:runtime:pods:test",
+                membershipKey = membershipKey,
                 podId = "pod-a",
                 membershipTtlMillis = 10_000,
                 heartbeatIntervalMillis = 1_000,
@@ -96,7 +90,7 @@ class RedisRuntimeIntegrationTest {
             )
             val membershipB = PodMembershipRegistry(
                 redis = redis,
-                membershipKey = "saga:runtime:pods:test",
+                membershipKey = membershipKey,
                 podId = "pod-b",
                 membershipTtlMillis = 10_000,
                 heartbeatIntervalMillis = 1_000,
@@ -147,28 +141,10 @@ class RedisRuntimeIntegrationTest {
         }
     }
 
+    // Shared container (a dedicated one per test intermittently failed to launch under load);
+    // every key below uses a per-test prefix so nothing collides with other suites.
     private suspend fun withRedisContainer(block: suspend (RedisClientProvider) -> Unit) {
-        val container = GenericContainer(DockerImageName.parse("redis:7-alpine"))
-            .withExposedPorts(6379)
-        container.start()
-        try {
-            val redisUrl = "redis://${container.host}:${container.getMappedPort(6379)}"
-            val redis = RedisClientProvider(
-                RedisConfig(
-                    url = redisUrl,
-                    pool = RedisPoolConfig(),
-                    queue = RedisQueueConfig(),
-                    consumer = RedisConsumerConfig(),
-                )
-            )
-            try {
-                block(redis)
-            } finally {
-                redis.close()
-            }
-        } finally {
-            container.stop()
-        }
+        block(run.trama.saga.store.IntegrationDb.redis)
     }
 
     private suspend fun readyCount(

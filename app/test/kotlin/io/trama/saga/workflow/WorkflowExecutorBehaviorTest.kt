@@ -150,6 +150,24 @@ class WorkflowExecutorBehaviorTest {
         assertEquals("SUCCEEDED", store.finalStatus)
     }
 
+    @org.junit.jupiter.api.Disabled(
+        "BUG: RuntimeBootstrap.wakeExecution turns a terminal Sleeping state (nextNodeId = null) into " +
+            "InProgress(activeNodeId = null). For v2 executions that falls into the legacy v1 path, which indexes " +
+            "the empty definition.steps list and throws instead of finishing the saga.",
+    )
+    @Test
+    fun `a woken terminal sleep (InProgress with null activeNodeId) finishes the v2 saga`() = runBlocking<Unit> {
+        val store = RecordingStore()
+        val d = def(syncTask("a", "http://svc/a", next = "nap"), NodeDefinition.Sleep("nap", 60_000, next = null))
+        // Exactly what wakeExecution enqueues for a terminal sleep:
+        val woken = v2Execution(d, state = ExecutionState.InProgress(activeNodeId = null, completedNodes = listOf("a")))
+
+        val outcome = testExecutor(store, RecordingEnqueuer(), http().provider).execute(woken)
+
+        assertEquals(ExecutionOutcome.Succeeded, outcome)
+        assertEquals("SUCCEEDED", store.finalStatus)
+    }
+
     // ── Success / failure hooks ─────────────────────────────────────────────
 
     @Test

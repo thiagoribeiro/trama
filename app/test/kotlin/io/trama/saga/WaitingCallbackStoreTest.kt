@@ -1,6 +1,5 @@
 package run.trama.saga
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -9,11 +8,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import org.testcontainers.DockerClientFactory
-import org.testcontainers.containers.PostgreSQLContainer
-import run.trama.config.DatabaseConfig
-import run.trama.config.DatabasePoolConfig
-import run.trama.saga.store.DatabaseClient
+import run.trama.saga.store.IntegrationDb
 import run.trama.saga.store.SagaRepository
 
 /**
@@ -29,23 +24,11 @@ import run.trama.saga.store.SagaRepository
  */
 class WaitingCallbackStoreTest {
     @Test
-    fun `waiting callback round-trips through real Postgres`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
-        val postgres = PostgreSQLContainer("postgres:15-alpine")
-        postgres.start()
-        try {
-            val db = DatabaseClient(
-                DatabaseConfig(
-                    host = postgres.host,
-                    port = postgres.firstMappedPort,
-                    database = postgres.databaseName,
-                    user = postgres.username,
-                    password = postgres.password,
-                    pool = DatabasePoolConfig(),
-                ),
-                SimpleMeterRegistry(),
-            )
-            val repository = SagaRepository(db)
+    fun `waiting callback round-trips through real Postgres`() = runBlocking<Unit> {
+        // Shared container (a dedicated one per test intermittently failed to launch under load).
+        IntegrationDb.assumeDocker()
+        run {
+            val repository = SagaRepository(IntegrationDb.client)
             val id = UUID.randomUUID()
             val startedAt = Instant.now()
             val def = SagaDefinition(
@@ -93,9 +76,6 @@ class WaitingCallbackStoreTest {
 
             assertNull(repository.consumeWaitingState(id), "consuming twice must be a no-op — already delivered")
 
-            db.close()
-        } finally {
-            postgres.stop()
         }
     }
 }
