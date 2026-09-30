@@ -7,7 +7,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -219,12 +218,6 @@ class E2EAdvancedFlowTest {
         assertEquals(1, wm.requestsTo("/step/end").size)
     }
 
-    @Disabled(
-        "BUG: when the async node is the LAST node of a branch, CallbackReceiver finalizes the child with a bare " +
-            "store.updateFinal(SUCCEEDED) instead of WorkflowExecutor.finalizeAndNotifyParent. The join barrier " +
-            "never counts the arrival, so the parent stays WAITING_JOIN forever (JoinCompletionScanner only resumes " +
-            "barriers whose arrivals were already counted).",
-    )
     @Test
     fun `join fires when a branch ends with an async node`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/ext")

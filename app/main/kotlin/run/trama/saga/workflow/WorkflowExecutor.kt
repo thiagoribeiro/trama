@@ -98,7 +98,11 @@ class WorkflowExecutor(
                     executeCompensating(execution, workflow, state)
                 }
                 is ExecutionState.Failed -> ExecutionOutcome.FailedFinal
-                is ExecutionState.Succeeded -> ExecutionOutcome.Succeeded
+                is ExecutionState.Succeeded -> {
+                    // Enqueued by CallbackReceiver when the callback of a terminal async node is
+                    // accepted: finish exactly as when the executor itself completes the last node.
+                    finishSuccess(execution, resolveWorkflow(execution), store.loadStepResults(execution.id))
+                }
                 is ExecutionState.WaitingCallback -> {
                     val workflow = resolveWorkflow(execution)
                     executeWaitingCallback(execution, workflow, state)

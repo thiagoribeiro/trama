@@ -76,10 +76,6 @@ class E2ECallbackHooksTest {
         assertEquals(0, wm.requestsTo("/hooks/success").size)
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: when the last node is async, CallbackReceiver finalizes the saga with a bare store.updateFinal " +
-            "and never calls onSuccessCallback, so the success hook silently never fires.",
-    )
     @Test
     fun `success hook fires when the last node is async`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/last")
