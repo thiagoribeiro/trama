@@ -52,13 +52,22 @@ fun SagaExecution.persistedPayloadJson(): String? =
 class SagaRepository(
     private val db: DatabaseClient,
     definitionCacheMaxSize: Int = 1000,
+    /**
+     * How long a cached definition is served without re-reading Postgres. The cache is per pod and
+     * only invalidated locally, so this bounds how long another pod may keep serving (and running)
+     * a definition that was deleted elsewhere. 0 disables caching.
+     */
+    definitionCacheTtlMillis: Long = 5_000,
 ) : CallbackTimeoutRepository, JoinBarrierRepository {
-    private val definitionCache: MutableMap<UUID, SagaDefinitionRecord> =
+    private class CachedDefinition(val record: SagaDefinitionRecord, val cachedAtNanos: Long)
+
+    private val definitionCacheTtlNanos = definitionCacheTtlMillis * 1_000_000
+    private val definitionCache: MutableMap<UUID, CachedDefinition> =
         java.util.Collections.synchronizedMap(
-            object : java.util.LinkedHashMap<UUID, SagaDefinitionRecord>(
+            object : java.util.LinkedHashMap<UUID, CachedDefinition>(
                 minOf(definitionCacheMaxSize, 16), 0.75f, true
             ) {
-                override fun removeEldestEntry(eldest: Map.Entry<UUID, SagaDefinitionRecord>) =
+                override fun removeEldestEntry(eldest: Map.Entry<UUID, CachedDefinition>) =
                     size > definitionCacheMaxSize
             }
         )
@@ -837,7 +846,7 @@ class SagaRepository(
     }
 
     suspend fun getDefinition(id: UUID): SagaDefinitionRecord? {
-        definitionCache[id]?.let { return it }
+        freshCachedDefinition(id)?.let { return it }
         return db.withConnection { connection ->
             val dsl = DSL.using(connection)
             val record = dsl.select(
@@ -867,7 +876,7 @@ class SagaRepository(
     suspend fun getDefinitionByNameVersion(name: String, version: String): SagaDefinitionRecord? {
         val key = definitionNameVersionKey(name, version)
         definitionNameVersionCache[key]?.let { id ->
-            definitionCache[id]?.let { return it }
+            freshCachedDefinition(id)?.let { return it }
             definitionNameVersionCache.remove(key, id)
         }
 
@@ -906,7 +915,7 @@ class SagaRepository(
                 .where(SAGA_DEFINITION.ID.eq(id))
                 .execute() > 0
             if (deleted) {
-                val removed = definitionCache.remove(id)
+                val removed = definitionCache.remove(id)?.record
                 if (removed != null) {
                     definitionNameVersionCache.remove(
                         definitionNameVersionKey(removed.name, removed.version), id)
@@ -1220,8 +1229,18 @@ class SagaRepository(
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
+    private fun freshCachedDefinition(id: UUID): SagaDefinitionRecord? {
+        val cached = definitionCache[id] ?: return null
+        if (System.nanoTime() - cached.cachedAtNanos >= definitionCacheTtlNanos) {
+            definitionCache.remove(id)
+            return null
+        }
+        return cached.record
+    }
+
     private fun putDefinitionInCache(record: SagaDefinitionRecord) {
-        definitionCache[record.id] = record
+        if (definitionCacheTtlNanos <= 0) return
+        definitionCache[record.id] = CachedDefinition(record, System.nanoTime())
         definitionNameVersionCache[definitionNameVersionKey(record.name, record.version)] = record.id
     }
 

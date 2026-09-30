@@ -80,6 +80,8 @@ data class DatabasePoolConfig(
     val maxPoolSize: Int = 10,
     val minIdle: Int = 1,
     val definitionCacheMaxSize: Int = 1000,
+    /** Max staleness of the per-pod definition cache (see SagaRepository). */
+    val definitionCacheTtlMillis: Long = 5_000,
 )
 
 data class RuntimeConfig(
