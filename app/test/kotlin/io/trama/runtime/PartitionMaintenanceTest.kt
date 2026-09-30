@@ -7,7 +7,6 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Disabled
 import run.trama.config.MaintenanceConfig
 import run.trama.saga.store.DatabaseClient
 import run.trama.saga.store.IntegrationDb
@@ -50,12 +49,6 @@ class PartitionMaintenanceTest {
         }
     }
 
-    @Disabled(
-        "BUG: schema_partitions.sql (Liquibase) computes partition bounds with ::timestamptz in the JDBC " +
-            "session zone, which pgjdbc takes from the JVM default zone, while PartitionMaintenance uses UTC. " +
-            "With TZ=America/Sao_Paulo the next month's partition overlaps the previous one by 3h, so every " +
-            "createPartitions run throws and no partition beyond the startup window is ever created.",
-    )
     @Test
     fun `createPartitions works when the JVM time zone is not UTC`() = runBlocking<Unit> {
         IntegrationDb.freshClient("America/Sao_Paulo").use { db ->
@@ -64,11 +57,6 @@ class PartitionMaintenanceTest {
         }
     }
 
-    @Disabled(
-        "BUG: PartitionMaintenance.createPartitions never creates saga_step_call partitions. Only the " +
-            "runAlways Liquibase changeset at startup does, so a pod running past its initial 13-month window " +
-            "starts failing every step-call insert.",
-    )
     @Test
     fun `createPartitions also covers saga_step_call`() = runBlocking<Unit> {
         IntegrationDb.freshClient("UTC").use { db ->
@@ -90,10 +78,6 @@ class PartitionMaintenanceTest {
         assertTrue(tableExists("saga_step_result_${suffix(thisMonth)}"))
     }
 
-    @Disabled(
-        "BUG: dropOldPartitions only inspects children of saga_execution and saga_step_result, so " +
-            "saga_step_call (which stores full request/response bodies) is never pruned and grows forever.",
-    )
     @Test
     fun `dropOldPartitions also prunes saga_step_call`() = runBlocking<Unit> {
         val old = LocalDate.of(2019, 4, 1)
