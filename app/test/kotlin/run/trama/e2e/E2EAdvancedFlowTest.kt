@@ -112,6 +112,17 @@ class E2EAdvancedFlowTest {
         assertEquals("7", body["prev"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `JSON bodies carry values with quotes, backslashes and newlines intact`() = e2eTest {
+        val tricky = "O'Brien & \"Co\" <x> \\path\nline"
+        val def = v2DefinitionMap(uniqueName("escape"), listOf(taskNodeMap("a", svc("/step/a"), body = mapOf("name" to "{{payload.name}}"))))
+        val id = client.runInline(def, mapOf("name" to tricky))
+
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, id)["status"]?.jsonPrimitive?.content)
+        val received = testJson.parseToJsonElement(wm.requestsTo("/step/a").single().bodyAsString).jsonObject
+        assertEquals(tricky, received["name"]?.jsonPrimitive?.content)
+    }
+
     // ── Async successWhen ───────────────────────────────────────────────────
 
     private val approved = mapOf("==" to listOf(mapOf("var" to "callback.body.status"), "approved"))
