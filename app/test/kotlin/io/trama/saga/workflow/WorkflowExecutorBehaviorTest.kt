@@ -143,6 +143,7 @@ class WorkflowExecutorBehaviorTest {
         val store = RecordingStore()
         val d = def(NodeDefinition.Sleep("nap", 1, next = null))
         val exec = v2Execution(d, state = ExecutionState.Sleeping(Instant.now().minusMillis(1), null, emptyList(), emptyList()))
+        store.saveSleeping(exec, Instant.now())
 
         val outcome = testExecutor(store, RecordingEnqueuer(), http().provider).execute(exec)
 
@@ -150,22 +151,35 @@ class WorkflowExecutorBehaviorTest {
         assertEquals("SUCCEEDED", store.finalStatus)
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: RuntimeBootstrap.wakeExecution turns a terminal Sleeping state (nextNodeId = null) into " +
-            "InProgress(activeNodeId = null). For v2 executions that falls into the legacy v1 path, which indexes " +
-            "the empty definition.steps list and throws instead of finishing the saga.",
-    )
     @Test
-    fun `a woken terminal sleep (InProgress with null activeNodeId) finishes the v2 saga`() = runBlocking<Unit> {
+    fun `a sleep item past wakeAt whose sentinel was already consumed is discarded`() = runBlocking<Unit> {
+        // e.g. the original chunk arriving after /wake already advanced the saga.
+        val store = RecordingStore()
+        val http = http()
+        val d = def(NodeDefinition.Sleep("nap", 1, next = "b"), syncTask("b", "http://svc/b"))
+        val stale = v2Execution(d, state = ExecutionState.Sleeping(Instant.now().minusMillis(1), "b", emptyList(), emptyList()))
+
+        val outcome = testExecutor(store, RecordingEnqueuer(), http.provider).execute(stale)
+
+        assertEquals(ExecutionOutcome.Reenqueued, outcome)
+        assertTrue(http.requests.isEmpty(), "the next node must not run a second time")
+        assertNull(store.finalStatus)
+    }
+
+    @Test
+    fun `a woken terminal sleep (re-delivered with wakeAt = now) finishes the v2 saga`() = runBlocking<Unit> {
         val store = RecordingStore()
         val d = def(syncTask("a", "http://svc/a", next = "nap"), NodeDefinition.Sleep("nap", 60_000, next = null))
-        // Exactly what wakeExecution enqueues for a terminal sleep:
-        val woken = v2Execution(d, state = ExecutionState.InProgress(activeNodeId = null, completedNodes = listOf("a")))
+        val asleep = v2Execution(d, state = ExecutionState.Sleeping(Instant.now().plusSeconds(60), null, listOf("a"), emptyList()))
+        store.saveSleeping(asleep, (asleep.state as ExecutionState.Sleeping).wakeAt)
+        // Exactly what RuntimeBootstrap.wakeExecution enqueues:
+        val woken = asleep.copy(state = (asleep.state as ExecutionState.Sleeping).copy(wakeAt = Instant.now()))
 
         val outcome = testExecutor(store, RecordingEnqueuer(), http().provider).execute(woken)
 
         assertEquals(ExecutionOutcome.Succeeded, outcome)
         assertEquals("SUCCEEDED", store.finalStatus)
+        assertNull(store.sleeping[asleep.id], "the wake-up consumes the sentinel")
     }
 
     // ── Success / failure hooks ─────────────────────────────────────────────

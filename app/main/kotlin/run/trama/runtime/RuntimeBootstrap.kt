@@ -202,18 +202,15 @@ class RuntimeBootstrap(
     suspend fun wakeExecution(executionId: java.util.UUID): WakeResult {
         val s = store ?: return WakeResult.RuntimeDisabled
         val repo = repository ?: return WakeResult.RuntimeDisabled
+        val enq = enqueuer ?: return WakeResult.RuntimeDisabled
         val status = repo.getExecutionStatus(executionId) ?: return WakeResult.NotFound
         if (status.status != "SLEEPING") return WakeResult.NotSleeping
-        val entry = s.consumeSleeping(executionId) ?: return WakeResult.AlreadyWaking
-        val updatedExecution = entry.execution.copy(
-            state = run.trama.saga.ExecutionState.InProgress(
-                activeNodeId = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.nextNodeId,
-                completedNodes = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.completedNodes ?: emptyList(),
-                compensationStack = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.compensationStack ?: emptyList(),
-            ),
-        )
-        val enq = enqueuer ?: return WakeResult.RuntimeDisabled
-        enq.enqueue(updatedExecution, 0)
+        val entry = s.peekSleeping(executionId) ?: return WakeResult.AlreadyWaking
+        val sleeping = entry.execution.state as? run.trama.saga.ExecutionState.Sleeping ?: return WakeResult.NotSleeping
+        // Re-deliver the sleep with wakeAt = now instead of rebuilding the next state here: the
+        // executor's normal wake-up path (consume sentinel → next node, or finishSuccess for a
+        // terminal sleep) then runs exactly once, whichever queue copy claims the sentinel first.
+        enq.enqueue(entry.execution.copy(state = sleeping.copy(wakeAt = java.time.Instant.now())), 0)
         return WakeResult.Woken
     }
 

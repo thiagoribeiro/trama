@@ -7,6 +7,7 @@ import run.trama.saga.JoinBranchLink
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.SagaExecution
+import run.trama.saga.SleepEntry
 import run.trama.saga.StepCallEntry
 import run.trama.saga.WaitingInfo
 import run.trama.runtime.CallbackTimeoutRepository
@@ -560,6 +561,67 @@ class SagaRepository(
             links
         }
     }
+
+    // ── Sleep sentinel (POSTGRES store) ────────────────────────────────────────
+    // Same parking slot as callbacks/joins (waiting_state), discriminated by status = 'SLEEPING'.
+    // CallbackTimeoutScanner only looks at WAITING_CALLBACK rows, so it never sees these.
+
+    suspend fun saveSleepingState(executionId: UUID, wakeAt: Instant, executionJson: String) {
+        val stateJson = JSONB.valueOf(json.encodeToString(SleepStateJson.serializer(), SleepStateJson(wakeAt, executionJson)))
+        db.withConnection { connection ->
+            DSL.using(connection).update(SAGA_EXECUTION)
+                .set(SAGA_EXECUTION.WAITING_STATE, stateJson)
+                .set(SAGA_EXECUTION.STATUS, "SLEEPING")
+                .set(SAGA_EXECUTION.UPDATED_AT, Instant.now().toOffset())
+                .where(SAGA_EXECUTION.ID.eq(executionId))
+                .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
+                .execute()
+        }
+    }
+
+    suspend fun peekSleepingState(executionId: UUID): SleepEntry? {
+        val raw = db.withConnection { connection ->
+            DSL.using(connection).select(SAGA_EXECUTION.WAITING_STATE)
+                .from(SAGA_EXECUTION)
+                .where(SAGA_EXECUTION.ID.eq(executionId))
+                .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
+                .and(SAGA_EXECUTION.STATUS.eq("SLEEPING"))
+                .fetchOne(SAGA_EXECUTION.WAITING_STATE)
+                ?.data()
+        }
+        return raw?.let(::parseSleepEntry)
+    }
+
+    /** Atomically clears and returns the sleep sentinel; only one concurrent caller gets it. */
+    suspend fun consumeSleepingState(executionId: UUID): SleepEntry? {
+        val raw = db.withConnection { connection ->
+            // Same lock-then-clear CTE as consumeWaitingState (RETURNING sees the post-update row,
+            // so the value must be captured before SET), guarded on status = 'SLEEPING'.
+            val sql = """
+                WITH captured AS (
+                    SELECT id, waiting_state FROM saga_execution
+                    WHERE id = ? AND started_at >= ? AND status = 'SLEEPING' AND waiting_state IS NOT NULL
+                    FOR UPDATE
+                )
+                UPDATE saga_execution se
+                SET waiting_state = NULL, updated_at = now()
+                FROM captured c
+                WHERE se.id = c.id
+                RETURNING c.waiting_state
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setObject(1, executionId)
+                ps.setObject(2, java.sql.Timestamp.from(cutoff().toInstant()))
+                ps.executeQuery().use { rs -> if (rs.next()) rs.getString("waiting_state") else null }
+            }
+        }
+        return raw?.let(::parseSleepEntry)
+    }
+
+    private fun parseSleepEntry(raw: String): SleepEntry? = runCatching {
+        val state = json.decodeFromString(SleepStateJson.serializer(), raw)
+        SleepEntry(state.wakeAt, json.decodeFromString(SagaExecution.serializer(), state.executionJson))
+    }.getOrNull()
 
     suspend fun saveWaitingJoinState(
         executionId: UUID,
@@ -1342,6 +1404,13 @@ class SagaRepository(
         val signature: String,
         @Serializable(with = InstantAsStringSerializer::class)
         val expiresAt: Instant,
+        val executionJson: String,
+    )
+
+    @Serializable
+    private data class SleepStateJson(
+        @Serializable(with = InstantAsStringSerializer::class)
+        val wakeAt: Instant,
         val executionJson: String,
     )
 

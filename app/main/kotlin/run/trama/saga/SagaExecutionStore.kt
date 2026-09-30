@@ -282,14 +282,15 @@ class SagaRepositoryStore(
     override suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean = true
 
     override suspend fun saveSleeping(execution: SagaExecution, wakeAt: Instant) {
-        // Postgres-only path: update status so the API reflects SLEEPING.
-        // The execution stays in the queue payload; no separate Redis key here.
-        repository.updateStatus(execution.id, "SLEEPING")
+        if (execution.state !is ExecutionState.Sleeping) return
+        repository.saveSleepingState(execution.id, wakeAt, Json.encodeToString(SagaExecution.serializer(), execution))
     }
 
-    override suspend fun peekSleeping(executionId: java.util.UUID): SleepEntry? = null
+    override suspend fun peekSleeping(executionId: java.util.UUID): SleepEntry? =
+        repository.peekSleepingState(executionId)
 
-    override suspend fun consumeSleeping(executionId: java.util.UUID): SleepEntry? = null
+    override suspend fun consumeSleeping(executionId: java.util.UUID): SleepEntry? =
+        repository.consumeSleepingState(executionId)
 
     override suspend fun updateStatus(executionId: java.util.UUID, status: String) =
         repository.updateStatus(executionId, status)

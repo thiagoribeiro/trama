@@ -368,8 +368,10 @@ class RedisSagaExecutionStore(
         )
         val key = sleepKey(execution.id).toByteArray()
         val value = json.encodeToString(RedisSleepEntry.serializer(), entry).toByteArray()
-        // TTL: seconds until wakeAt + 2-hour buffer so the key outlives any re-enqueue chunks
-        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + 7200).coerceAtLeast(120)
+        // TTL: until wakeAt + 24h. The sentinel is what lets exactly one queue item claim the
+        // wake-up, so it must outlive any realistic queue backlog; it is deleted on consume, so the
+        // buffer only costs memory for abandoned sleeps.
+        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + 86_400).coerceAtLeast(120)
         redis.withCommands { commands ->
             commands.set(key, value)
             commands.expire(key, ttl)

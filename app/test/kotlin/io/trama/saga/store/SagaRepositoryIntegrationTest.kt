@@ -179,12 +179,6 @@ class SagaRepositoryIntegrationTest {
         assertTrue(!repo.deleteDefinition(id))
     }
 
-    @Disabled(
-        "BUG: SagaRepositoryStore (runtime.store=POSTGRES) never persists the sleep sentinel: peekSleeping and " +
-            "consumeSleeping always return null. WorkflowExecutor treats a missing sentinel on an early delivery " +
-            "as 'already woken' and drops the queue item, so any sleep longer than sleep.maxChunkMillis (12h) " +
-            "stays SLEEPING forever, and POST /workflows/{id}/wake answers 200 without waking anything.",
-    )
     @Test
     fun `POSTGRES store keeps a sleep sentinel that can be peeked and consumed once`() = runBlocking<Unit> {
         val pgStore = run.trama.saga.SagaRepositoryStore(repo)

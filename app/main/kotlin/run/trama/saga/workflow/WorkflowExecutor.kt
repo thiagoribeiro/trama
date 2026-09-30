@@ -684,9 +684,16 @@ class WorkflowExecutor(
             return ExecutionOutcome.Reenqueued
         }
 
-        // wakeAt has passed — advance to next node.
-        // Clean up the sentinel key (if still present; wake endpoint may have already removed it).
-        store.consumeSleeping(execution.id)
+        // wakeAt has passed. Consuming the sentinel is what claims the wake-up: exactly one queue
+        // item per sleep wins. Every other copy — the original chunk arriving after a /wake, or a
+        // second concurrent /wake — finds it gone and is a stale duplicate; advancing it would run
+        // the next node twice.
+        if (store.consumeSleeping(execution.id) == null) {
+            Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                logger.info("stale sleeping queue item discarded (already woken)", kv("sagaId", execution.id.toString()))
+            }
+            return ExecutionOutcome.Reenqueued
+        }
         Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
             logger.info("saga waking up", kv("nextNodeId", state.nextNodeId))
         }
