@@ -6,6 +6,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import org.junit.jupiter.api.Disabled
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import run.trama.saga.ExecutionPhase
@@ -38,6 +39,73 @@ class RedisShardingTest {
         }
 
         assertTrue(moved in 1 until 1024)
+    }
+
+    @Test
+    fun `every shard has exactly one owner across the pod set`() {
+        // Deployment-style pod names (random suffix), i.e. the HOSTNAME a k8s Deployment gives each pod.
+        val pods = listOf("trama-7d9f8c6b5-x2k9p", "trama-7d9f8c6b5-qm4tz", "trama-7d9f8c6b5-8hvbn", "trama-7d9f8c6b5-lw3rc")
+        val owned = pods.map { pod ->
+            RendezvousShardAllocator(localPodId = pod, virtualShardCount = 1024).also { it.updatePods(pods) }.ownedShards()
+        }
+        val all = owned.flatten()
+        assertEquals(1024, all.size, "no shard may be owned twice")
+        assertEquals((0 until 1024).toSet(), all.toSet(), "no shard may be orphaned")
+        owned.forEach { assertTrue(it.size in 150..370, "distribution too skewed: ${owned.map { o -> o.size }}") }
+    }
+
+    @Disabled(
+        "BUG: RendezvousShardAllocator scores with plain FNV-1a and no final mixing, so pod ids that differ " +
+            "only in the last character (StatefulSet trama-0..2, compose trama-app-1..3) split shards unevenly: " +
+            "3 pods get [255, 255, 514]. Fix: run the FNV result through a finalizer (e.g. murmur3 fmix64).",
+    )
+    @Test
+    fun `sequentially named pods get a balanced share of shards`() {
+        val pods = listOf("trama-0", "trama-1", "trama-2")
+        val counts = pods.map { pod ->
+            RendezvousShardAllocator(localPodId = pod, virtualShardCount = 1024).also { it.updatePods(pods) }.ownedShards().size
+        }
+        counts.forEach { assertTrue(it in 280..400, "distribution too skewed: $counts") }
+    }
+
+    @Test
+    fun `removing a pod only moves the shards it owned`() {
+        val allocator = RendezvousShardAllocator(localPodId = "pod-a", virtualShardCount = 1024)
+        val before = listOf("pod-a", "pod-b", "pod-c")
+        val after = listOf("pod-a", "pod-b")
+        (0 until 1024).forEach { shardId ->
+            val prev = allocator.ownerFor(shardId, before)
+            val next = allocator.ownerFor(shardId, after)
+            if (prev != "pod-c") assertEquals(prev, next, "shard $shardId moved although its owner stayed")
+        }
+    }
+
+    @Test
+    fun `empty, blank and duplicate pod lists are normalized`() {
+        val allocator = RendezvousShardAllocator(localPodId = "pod-a", virtualShardCount = 16)
+        allocator.updatePods(emptyList())
+        assertEquals(emptyList(), allocator.ownedShards())
+
+        allocator.updatePods(listOf("pod-a", "pod-a", " ", ""))
+        assertEquals(listOf("pod-a"), allocator.activePods())
+        assertEquals((0 until 16).toList(), allocator.ownedShards(), "a single pod owns everything")
+    }
+
+    @Test
+    fun `a pod not in the active list owns nothing`() {
+        val allocator = RendezvousShardAllocator(localPodId = "pod-z", virtualShardCount = 64)
+        allocator.updatePods(listOf("pod-a", "pod-b"))
+        assertEquals(emptyList(), allocator.ownedShards())
+    }
+
+    @Test
+    fun `keyspace maps every execution into the configured shard range`() {
+        val keyspace = RedisShardKeyspace("saga:executions", 32)
+        val shards = List(2_000) { keyspace.virtualShardFor(UUID.randomUUID()) }
+        assertTrue(shards.all { it in 0 until 32 })
+        assertEquals(32, shards.toSet().size, "2000 random ids should hit all 32 shards")
+        val id = UUID.randomUUID()
+        assertEquals(keyspace.virtualShardFor(id), keyspace.virtualShardFor(id))
     }
 
     @Test
