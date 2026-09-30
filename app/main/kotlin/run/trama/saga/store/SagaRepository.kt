@@ -946,101 +946,7 @@ class SagaRepository(
         }
     }
 
-    /**
-     * Batch-inserts all step results in a single multi-row INSERT, replacing the per-step loop
-     * that was used during finalization.
-     */
-    suspend fun insertStepResults(sagaId: UUID, steps: List<RedisStepEntry>) {
-        if (steps.isEmpty()) return
-        db.withConnection { connection ->
-            val dsl = DSL.using(connection)
-            val now = Instant.now().toOffset()
-            var insert = dsl.insertInto(
-                SAGA_STEP_RESULT,
-                SAGA_STEP_RESULT.SAGA_ID,
-                SAGA_STEP_RESULT.STEP_INDEX,
-                SAGA_STEP_RESULT.STEP_NAME,
-                SAGA_STEP_RESULT.PHASE,
-                SAGA_STEP_RESULT.STATUS_CODE,
-                SAGA_STEP_RESULT.SUCCESS,
-                SAGA_STEP_RESULT.RESPONSE_BODY,
-                SAGA_STEP_RESULT.STEP_STARTED_AT,
-                SAGA_STEP_RESULT.STARTED_AT,
-                SAGA_STEP_RESULT.CREATED_AT,
-            )
-            for (step in steps) {
-                val body = step.responseBody?.let { toJsonb(it) }
-                val stepStartedAt = step.stepStartedAt.takeIf { it != Instant.EPOCH }
-                insert = insert.values(
-                    sagaId,
-                    step.stepIndex,
-                    step.stepName,
-                    step.phase,
-                    step.statusCode,
-                    step.success,
-                    body,
-                    stepStartedAt?.toOffset(),
-                    step.startedAt.toOffset(),
-                    now,
-                )
-            }
-            insert.execute()
-        }
-    }
 
-    /**
-     * Single UPSERT that inserts a new execution row OR updates an existing one with the final
-     * status, replacing the `upsertExecutionRecord` + `updateExecutionFinal` pair used during
-     * finalization. Saves one DB round-trip per saga completion.
-     */
-    suspend fun upsertExecutionFinal(
-        id: UUID,
-        name: String,
-        version: String,
-        definitionJson: String,
-        startedAt: Instant,
-        status: String,
-        failureDescription: String?,
-    ) {
-        val definitionJsonb = JSONB.valueOf(definitionJson)
-        db.withConnection { connection ->
-            val dsl = DSL.using(connection)
-            val now = Instant.now().toOffset()
-            val completedAt = if (status == "IN_PROGRESS") null else now
-            dsl.insertInto(SAGA_EXECUTION)
-                .columns(
-                    SAGA_EXECUTION.ID,
-                    SAGA_EXECUTION.NAME,
-                    SAGA_EXECUTION.VERSION,
-                    SAGA_EXECUTION.DEFINITION,
-                    SAGA_EXECUTION.STATUS,
-                    SAGA_EXECUTION.FAILURE_DESCRIPTION,
-                    SAGA_EXECUTION.STARTED_AT,
-                    SAGA_EXECUTION.COMPLETED_AT,
-                    SAGA_EXECUTION.UPDATED_AT,
-                )
-                .values(
-                    id,
-                    name,
-                    version,
-                    definitionJsonb,
-                    status,
-                    failureDescription,
-                    startedAt.toOffset(),
-                    completedAt,
-                    now,
-                )
-                .onConflict(SAGA_EXECUTION.ID, SAGA_EXECUTION.STARTED_AT)
-                .doUpdate()
-                .set(SAGA_EXECUTION.STATUS, status)
-                .set(SAGA_EXECUTION.FAILURE_DESCRIPTION, failureDescription)
-                .set(SAGA_EXECUTION.DEFINITION,
-                    DSL.coalesce(SAGA_EXECUTION.DEFINITION, definitionJsonb))
-                .set(SAGA_EXECUTION.COMPLETED_AT, completedAt)
-                .set(SAGA_EXECUTION.UPDATED_AT, now)
-                .execute()
-        }
-    }
 
     /**
      * Performs all finalization DB writes in a single connection (one HikariCP checkout).
@@ -1118,32 +1024,40 @@ class SagaRepository(
             }
 
             // 4. Batch insert all step results (replaces N×insertStepResult)
-            if (steps.isNotEmpty()) {
-                var insert = dsl.insertInto(
-                    SAGA_STEP_RESULT,
-                    SAGA_STEP_RESULT.SAGA_ID,
-                    SAGA_STEP_RESULT.STEP_INDEX,
-                    SAGA_STEP_RESULT.STEP_NAME,
-                    SAGA_STEP_RESULT.PHASE,
-                    SAGA_STEP_RESULT.STATUS_CODE,
-                    SAGA_STEP_RESULT.SUCCESS,
-                    SAGA_STEP_RESULT.RESPONSE_BODY,
-                    SAGA_STEP_RESULT.STEP_STARTED_AT,
-                    SAGA_STEP_RESULT.STARTED_AT,
-                    SAGA_STEP_RESULT.CREATED_AT,
-                )
-                for (step in steps) {
-                    val body = step.responseBody?.let { toJsonb(it) }
-                    val stepStartedAt = step.stepStartedAt.takeIf { it != Instant.EPOCH }
-                    insert = insert.values(
-                        id, step.stepIndex, step.stepName, step.phase,
-                        step.statusCode, step.success, body,
-                        stepStartedAt?.toOffset(), step.startedAt.toOffset(), now,
-                    )
-                }
-                insert.execute()
-            }
+            insertStepResultBatch(dsl, id, steps)
         }
+    }
+
+    /**
+     * One multi-row INSERT for step results buffered by the REDIS store. Each row keeps the
+     * createdAt recorded when the step actually completed: stamping them all with the flush time
+     * made /steps ordering arbitrary and inflated latencyMs (created_at - step_started_at).
+     */
+    private fun insertStepResultBatch(dsl: org.jooq.DSLContext, sagaId: UUID, steps: List<RedisStepEntry>) {
+        if (steps.isEmpty()) return
+        var insert = dsl.insertInto(
+            SAGA_STEP_RESULT,
+            SAGA_STEP_RESULT.SAGA_ID,
+            SAGA_STEP_RESULT.STEP_INDEX,
+            SAGA_STEP_RESULT.STEP_NAME,
+            SAGA_STEP_RESULT.PHASE,
+            SAGA_STEP_RESULT.STATUS_CODE,
+            SAGA_STEP_RESULT.SUCCESS,
+            SAGA_STEP_RESULT.RESPONSE_BODY,
+            SAGA_STEP_RESULT.STEP_STARTED_AT,
+            SAGA_STEP_RESULT.STARTED_AT,
+            SAGA_STEP_RESULT.CREATED_AT,
+        )
+        // Redis keeps steps newest-first (LPUSH); insert oldest-first so the id tie-breaker agrees.
+        for (step in steps.sortedBy { it.createdAt }) {
+            insert = insert.values(
+                sagaId, step.stepIndex, step.stepName, step.phase,
+                step.statusCode, step.success, step.responseBody?.let { toJsonb(it) },
+                step.stepStartedAt.takeIf { it != Instant.EPOCH }?.toOffset(),
+                step.startedAt.toOffset(), step.createdAt.toOffset(),
+            )
+        }
+        insert.execute()
     }
 
     suspend fun insertStepCalls(calls: List<StepCallEntry>) {
@@ -1243,7 +1157,7 @@ class SagaRepository(
                 .from(SAGA_STEP_RESULT)
                 .where(SAGA_STEP_RESULT.SAGA_ID.eq(sagaId))
                 .and(SAGA_STEP_RESULT.STARTED_AT.ge(cutoff()))
-                .orderBy(SAGA_STEP_RESULT.CREATED_AT.asc())
+                .orderBy(SAGA_STEP_RESULT.CREATED_AT.asc(), SAGA_STEP_RESULT.ID.asc())
                 .fetch()
                 .map { record ->
                     SagaStepResultRecord(

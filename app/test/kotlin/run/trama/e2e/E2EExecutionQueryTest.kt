@@ -109,11 +109,6 @@ class E2EExecutionQueryTest {
         assertTrue(steps.all { it["latencyMs"]!!.jsonPrimitive.long >= 0 })
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: under the REDIS store, step results are flushed at finalization by SagaRepository.insertStepResults " +
-            "in one multi-row INSERT that stamps every row with the same created_at. getStepResults orders by " +
-            "created_at, so the timeline comes back in arbitrary order (observed reversed).",
-    )
     @Test
     fun `steps endpoint returns steps in execution order`() = e2eTest {
         wm.stubPath("/fail/b", 500)
@@ -123,10 +118,6 @@ class E2EExecutionQueryTest {
         assertEquals(listOf("a:UP:true", "b:UP:false", "a:DOWN:true"), stepKeys(steps))
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: /workflows/{id}/steps computes latencyMs = created_at - step_started_at. With the REDIS store every " +
-            "created_at is the finalization time, so a step's latency includes all later steps and sleeps.",
-    )
     @Test
     fun `step latency reflects the step itself, not the rest of the saga`() = e2eTest {
         val def = v2DefinitionMap(
