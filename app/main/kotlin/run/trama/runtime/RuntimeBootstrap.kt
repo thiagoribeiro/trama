@@ -85,7 +85,7 @@ class RuntimeBootstrap(
             RuntimeStore.POSTGRES -> SagaRepositoryStore(repo)
         }
         this.store = store
-        val enq = RedisSagaEnqueuer(redis, keyspace)
+        val enq = RedisSagaEnqueuer(redis, keyspace, runtimeMetrics)
         enqueuer = enq
         val renderer = MustacheTemplateRenderer()
         val retryPolicy = DefaultRetryPolicy()
