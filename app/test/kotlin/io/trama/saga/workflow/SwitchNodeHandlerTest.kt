@@ -24,6 +24,16 @@ import kotlin.test.assertTrue
 class SwitchNodeHandlerTest {
 
     @Test
+    fun `input is an alias of payload`() {
+        val node = switchNode(
+            SwitchCase("pix", condition("input.type", "pix"), "pix-node"),
+            default = "fallback",
+        )
+        val result = SwitchNodeHandler.evaluate(node, execution(), payloadOf("type" to "pix"), emptyList())
+        assertEquals("pix-node", result.targetNodeId)
+    }
+
+    @Test
     fun `first case matches returns first target`() {
         val node = switchNode(
             SwitchCase("pix", condition("payload.type", "pix"), "pix-node"),

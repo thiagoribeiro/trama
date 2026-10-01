@@ -44,6 +44,10 @@ object ConfigLoader {
             ?: System.getenv("REDIS_SHARDING_VIRTUALSHARDCOUNT")
         val definitionCacheTtlMillis = System.getProperty("database.pool.definitionCacheTtlMillis")
             ?: System.getenv("DATABASE_POOL_DEFINITIONCACHETTLMILLIS")
+        val redisTopology = System.getProperty("redis.topology")
+            ?: System.getenv("REDIS_TOPOLOGY")
+        val redisClusterNodes = System.getProperty("redis.cluster.nodes")
+            ?: System.getenv("REDIS_CLUSTER_NODES")
 
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
@@ -88,6 +92,13 @@ object ConfigLoader {
         virtualShardCount?.toIntOrNull()?.let {
             config = config.copy(redis = config.redis.copy(sharding = config.redis.sharding.copy(virtualShardCount = it)))
         }
+        redisTopology?.trim()?.uppercase()
+            ?.let { name -> RedisTopology.entries.firstOrNull { it.name == name } }
+            ?.let { config = config.copy(redis = config.redis.copy(topology = it)) }
+        redisClusterNodes
+            ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { config = config.copy(redis = config.redis.copy(cluster = config.redis.cluster.copy(nodes = it))) }
         definitionCacheTtlMillis?.toLongOrNull()?.let {
             config = config.copy(database = config.database.copy(pool = config.database.pool.copy(definitionCacheTtlMillis = it)))
         }

@@ -51,7 +51,17 @@ class E2EOpsTest {
     @Test
     fun `metrics endpoint exposes saga metrics after an execution`() = e2eTest(props = mapOf("metrics.enabled" to "true")) {
         val name = uniqueName("metrics")
-        val id = client.runInline(v2DefinitionMap(name, listOf(taskNodeMap("a", "http://localhost:${wm.port()}/step/a"))))
+        val def = v2DefinitionMap(
+            name,
+            listOf(
+                mapOf(
+                    "kind" to "switch", "id" to "route", "default" to "a",
+                    "cases" to listOf(mapOf("name" to "never", "when" to mapOf("==" to listOf(1, 2)), "target" to "a")),
+                ),
+                taskNodeMap("a", "http://localhost:${wm.port()}/step/a"),
+            ),
+        )
+        val id = client.runInline(def)
         awaitSagaTerminal(client, id)
 
         val scrape = client.get("/metrics")
@@ -60,6 +70,8 @@ class E2EOpsTest {
         assertTrue(text.contains("saga_duration_seconds_count") && text.contains(name), "saga duration timer missing for $name")
         assertTrue(text.contains("saga_step_duration_success"), "step duration timer missing")
         assertTrue(text.lines().any { it.startsWith("saga_dequeue") }, "dequeue counter missing")
+        assertTrue(text.lines().any { it.startsWith("saga_node_duration_seconds_bucket") && "node_kind=\"task\"" in it }, "node duration histogram missing")
+        assertTrue(text.lines().any { it.startsWith("saga_switch_evaluated_total") }, "switch counter missing")
     }
 
     @Test

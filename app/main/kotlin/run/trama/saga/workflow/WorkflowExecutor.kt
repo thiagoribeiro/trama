@@ -21,6 +21,7 @@ import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
 import run.trama.saga.StepCallEntry
 import run.trama.saga.StepResult
+import run.trama.saga.TaskMode
 import run.trama.saga.SagaExecutor
 import run.trama.runtime.JoinResumer
 import run.trama.saga.TemplateContextBuilder
@@ -162,7 +163,9 @@ class WorkflowExecutor(
 
             when (node) {
                 is TaskNode -> {
+                    val taskStartNanos = System.nanoTime()
                     val httpResult = taskHandler.execute(node, execution, execution.payload, stepResults)
+                    recordNodeDuration(execution, "task", if (node.action.mode == TaskMode.ASYNC) "async" else "sync", taskStartNanos)
 
                     store.insertStepResult(
                         sagaId = execution.id,
@@ -242,7 +245,9 @@ class WorkflowExecutor(
 
                 is SwitchNode -> {
                     val switchStartedAt = Instant.now()
+                    val switchStartNanos = System.nanoTime()
                     val evalResult = SwitchNodeHandler.evaluate(node, execution, execution.payload, stepResults)
+                    recordNodeDuration(execution, "switch", "none", switchStartNanos)
                     val traceJson = buildSwitchTraceJson(evalResult)
                     store.insertStepResult(
                         sagaId = execution.id,
@@ -286,8 +291,10 @@ class WorkflowExecutor(
                             compensationStack = compensationStack.toList(),
                         ),
                     )
+                    val sleepStartNanos = System.nanoTime()
                     store.saveSleeping(updated, wakeAt)
                     enqueuer.enqueue(updated, delay)
+                    recordNodeDuration(execution, "sleep", "none", sleepStartNanos)
                     Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                         logger.info(
                             "saga sleeping",
@@ -342,6 +349,7 @@ class WorkflowExecutor(
                     // Barrier + parked parent state must be durable BEFORE any child can run,
                     // since a child could finish (and call markChildArrived) as soon as
                     // it is enqueued below.
+                    val splitStartNanos = System.nanoTime()
                     val newlyRegisteredBranches = store.registerJoinBarrier(
                         parentId = execution.id,
                         parentStartedAt = execution.startedAt,
@@ -368,6 +376,7 @@ class WorkflowExecutor(
                     // than just repeating a single call the way an ordinary node redelivery does.
                     children.filter { child -> child.branchId in newlyRegisteredBranches }
                         .forEach { child -> enqueuer.enqueue(child, 0) }
+                    recordNodeDuration(execution, "split", "none", splitStartNanos)
 
                     Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                         logger.info("saga split", kv("nodeId", node.id), kv("branchCount", children.size))
@@ -722,6 +731,11 @@ class WorkflowExecutor(
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun recordNodeDuration(execution: SagaExecution, nodeKind: String, mode: String, startNanos: Long) =
+        metrics.recordNodeDuration(
+            execution.definition.name, execution.definition.version, nodeKind, mode, System.nanoTime() - startNanos,
+        )
 
     /** Keeps the store's transient state alive across a delayed retry (no-op for zero delay). */
     private suspend fun retainForDelay(execution: SagaExecution, delayMillis: Long) {

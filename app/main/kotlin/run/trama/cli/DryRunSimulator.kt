@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import run.trama.saga.MustacheTemplateRenderer
 import run.trama.saga.NodeDefinition
+import run.trama.saga.PayloadValue
 import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
@@ -15,6 +16,7 @@ import run.trama.saga.workflow.DefinitionNormalizer
 import run.trama.saga.workflow.JoinNode
 import run.trama.saga.workflow.JsonLogicEvaluator
 import run.trama.saga.workflow.SleepNode
+import run.trama.saga.workflow.SwitchNodeHandler
 import run.trama.saga.workflow.SplitNode
 import run.trama.saga.workflow.SwitchNode
 import run.trama.saga.workflow.TaskNode
@@ -190,7 +192,7 @@ class DryRunSimulator {
                 }
 
                 is SwitchNode -> {
-                    val ctx     = buildSwitchContext(payload, stepResults)
+                    val ctx     = SwitchNodeHandler.evaluationContext(payload.mapValues { PayloadValue(it.value) }, stepResults)
                     val matched = node.cases.firstOrNull { JsonLogicEvaluator.evaluateBool(it.whenExpression, ctx) }
                     val target  = matched?.target ?: node.defaultTarget
                     entries += TraceEntry.Switch(node.id, matched?.name, matched == null, target)
@@ -287,18 +289,4 @@ class DryRunSimulator {
         }
         return ctx
     }
-
-    /**
-     * Context used by switch node json-logic conditions.
-     * Mirrors [run.trama.saga.workflow.SwitchNodeHandler.buildEvaluationContext].
-     */
-    private fun buildSwitchContext(
-        payload: Map<String, JsonElement>,
-        stepResults: List<StepResult>,
-    ): Map<String, Any?> = mapOf(
-        "input" to payload.mapValues { it.value.toAny() },
-        "nodes" to stepResults.associate { s ->
-            s.name to mapOf("response" to mapOf("body" to (s.upBody ?: s.downBody).toAny()))
-        },
-    )
 }

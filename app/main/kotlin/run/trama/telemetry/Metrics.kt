@@ -54,6 +54,23 @@ class Metrics(
                 .register(registry)
         }
 
+    private fun nodeDurationTimer(sagaName: String, sagaVersion: String, nodeKind: String, mode: String): Timer =
+        timerCache.computeIfAbsent("saga.node.duration:$sagaName:$sagaVersion:$nodeKind:$mode") {
+            Timer.builder("saga.node.duration")
+                .description("Per-node dispatch duration (HTTP call for tasks, evaluation for switches)")
+                .publishPercentileHistogram()
+                .tag("saga_name", sagaName)
+                .tag("saga_version", sagaVersion)
+                .tag("node_kind", nodeKind)
+                .tag("mode", mode)
+                .register(registry)
+        }
+
+    /** [nodeKind]: task | switch | sleep | split; [mode]: sync | async for tasks, none otherwise. */
+    fun recordNodeDuration(sagaName: String, sagaVersion: String, nodeKind: String, mode: String, durationNanos: Long) {
+        nodeDurationTimer(sagaName, sagaVersion, nodeKind, mode).record(durationNanos, java.util.concurrent.TimeUnit.NANOSECONDS)
+    }
+
     fun setQueueSize(size: Long) {
         inMemoryQueueSize.set(size)
     }
