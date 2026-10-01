@@ -8,6 +8,10 @@ const NODE_SWITCH_W = 160;
 const NODE_SWITCH_H = 84;
 const NODE_SLEEP_W = 170;
 const NODE_SLEEP_H = 90;
+const NODE_SPLIT_W = 170;
+const NODE_SPLIT_H = 70;
+const NODE_JOIN_W = 170;
+const NODE_JOIN_H = 70;
 const COL_W = 280;
 const ROW_H = 150;
 
@@ -107,6 +111,10 @@ export function render(st) {
   const terminalSet = computeTerminals(nodes);
   const cycleSet    = detectCycles(nodes);
   const issues      = computeIssues(nodes);
+  const dupJoinSet  = computeDuplicateJoinOwners(nodes);
+  for (const id of dupJoinSet) {
+    issues.set(id, [...(issues.get(id) ?? []), 'Join is shared with another split']);
+  }
 
   const edgeGroup = svgNS('g');
   renderEdges(edgeGroup, nodes, cycleSet);
@@ -130,9 +138,25 @@ export function render(st) {
 function computeTerminals(nodes) {
   const t = new Set();
   for (const [, n] of nodes) {
-    if ((n.kind === 'task' || n.kind === 'sleep') && !n.next) t.add(n.id);
+    if ((n.kind === 'task' || n.kind === 'sleep' || n.kind === 'join') && !n.next) t.add(n.id);
   }
   return t;
+}
+
+/** Splits whose `join` is claimed by more than one split — a validator error, flagged inline. */
+function computeDuplicateJoinOwners(nodes) {
+  const owners = new Map();
+  for (const [, n] of nodes) {
+    if (n.kind === 'split' && n.join) {
+      if (!owners.has(n.join)) owners.set(n.join, []);
+      owners.get(n.join).push(n.id);
+    }
+  }
+  const dup = new Set();
+  for (const [, splitIds] of owners) {
+    if (splitIds.length > 1) splitIds.forEach(id => dup.add(id));
+  }
+  return dup;
 }
 
 // ── Cycle detection (Kahn's algorithm) ────────────────────────────────────────
@@ -179,6 +203,11 @@ function computeIssues(nodes) {
       if (!n.default) list.push('No default target');
       if (n.cases.some(c => !c.when)) list.push('Case missing condition');
     }
+    if (n.kind === 'split') {
+      if ((n.branches || []).length < 2) list.push('Needs at least 2 branches');
+      if (!n.join) list.push('No join target set');
+      else if (nodes.get(n.join)?.kind !== 'join') list.push('Join target must be a join node');
+    }
     if (list.length) map.set(n.id, list);
   }
   return map;
@@ -193,6 +222,8 @@ function renderNode(parent, node, selected, terminal, inCycle, issues) {
 
   if (node.kind === 'task') drawTask(g, node, selected, terminal, inCycle, issues);
   else if (node.kind === 'sleep') drawSleep(g, node, selected, terminal, inCycle);
+  else if (node.kind === 'split') drawSplit(g, node, selected, inCycle, issues);
+  else if (node.kind === 'join') drawJoin(g, node, selected, terminal, inCycle);
   else drawSwitch(g, node, selected, inCycle, issues);
 
   renderPorts(g, node);
@@ -338,6 +369,77 @@ function drawSwitch(g, node, selected, inCycle, issues) {
   if (inCycle)   renderCycleBadge(g, x + 4, y - 6);
 }
 
+function drawSplit(g, node, selected, inCycle, issues) {
+  const { x, y } = node;
+  const w = NODE_SPLIT_W, h = NODE_SPLIT_H;
+  const hasIssues = issues.length > 0;
+  const stroke = inCycle ? '#ef4444' : selected ? '#5eead4' : hasIssues ? '#f59e0b' : '#0e7490';
+  const fill   = inCycle ? '#2d0a0a' : selected ? '#0e3a3a' : '#062b2e';
+
+  const rect = sa(svgNS('rect'), {
+    x, y, width: w, height: h, rx: 8, fill, stroke,
+    'stroke-width': (selected || inCycle) ? 2 : hasIssues ? 1.5 : 1,
+  });
+  if (selected) rect.setAttribute('filter', 'url(#glow)');
+  g.appendChild(rect);
+
+  g.appendChild(sa(svgNS('rect'), { x: x + w - 54, y: y + 5, width: 50, height: 16, rx: 4, fill: '#155e63' }));
+  const bt = sa(svgNS('text'), { x: x + w - 29, y: y + 17, 'text-anchor': 'middle', fill: '#cffafe', 'font-size': 9, 'font-family': 'monospace' });
+  bt.textContent = 'SPLIT';
+  g.appendChild(bt);
+
+  const idText = sa(svgNS('text'), {
+    x: x + 10, y: y + h / 2 - 2,
+    fill: selected ? '#a5f3fc' : '#7dd3d8',
+    'font-size': 13, 'font-family': 'system-ui, sans-serif', 'font-weight': '600',
+  });
+  idText.textContent = trunc(node.id, 16);
+  g.appendChild(idText);
+
+  const countText = sa(svgNS('text'), { x: x + 10, y: y + h - 10, fill: '#3a8a90', 'font-size': 9, 'font-family': 'monospace' });
+  countText.textContent = `${(node.branches || []).length} branch(es) → join: ${node.join || '—'}`;
+  g.appendChild(countText);
+
+  if (hasIssues) renderIssueBadge(g, x + w - 8, y - 6, issues.length);
+  if (inCycle)   renderCycleBadge(g, x + 4, y - 6);
+}
+
+function drawJoin(g, node, selected, terminal, inCycle) {
+  const { x, y } = node;
+  const w = NODE_JOIN_W, h = NODE_JOIN_H;
+  const stroke = inCycle ? '#ef4444' : selected ? '#93c5fd' : '#1d4ed8';
+  const fill   = inCycle ? '#2d0a0a' : selected ? '#1e2f5c' : '#0f1a3d';
+
+  const rect = sa(svgNS('rect'), {
+    x, y, width: w, height: h, rx: 8, fill, stroke,
+    'stroke-width': (selected || inCycle) ? 2 : 1,
+  });
+  if (selected) rect.setAttribute('filter', 'url(#glow)');
+  g.appendChild(rect);
+
+  g.appendChild(sa(svgNS('rect'), { x: x + w - 50, y: y + 5, width: 46, height: 16, rx: 4, fill: '#1e3a8a' }));
+  const bt = sa(svgNS('text'), { x: x + w - 27, y: y + 17, 'text-anchor': 'middle', fill: '#dbeafe', 'font-size': 9, 'font-family': 'monospace' });
+  bt.textContent = 'JOIN';
+  g.appendChild(bt);
+
+  const idText = sa(svgNS('text'), {
+    x: x + 10, y: y + h / 2 + 5,
+    fill: selected ? '#c5d8ff' : '#93b4f0',
+    'font-size': 13, 'font-family': 'system-ui, sans-serif', 'font-weight': '600',
+  });
+  idText.textContent = trunc(node.id, 16);
+  g.appendChild(idText);
+
+  if (inCycle) renderCycleBadge(g, x + 4, y - 6);
+
+  if (terminal) {
+    g.appendChild(sa(svgNS('rect'), { x: x + w + 4, y: y + h / 2 - 8, width: 32, height: 14, rx: 3, fill: '#14532d' }));
+    const et = sa(svgNS('text'), { x: x + w + 20, y: y + h / 2 + 3, 'text-anchor': 'middle', fill: '#86efac', 'font-size': 9, 'font-family': 'monospace' });
+    et.textContent = 'END';
+    g.appendChild(et);
+  }
+}
+
 function renderIssueBadge(g, x, y, count) {
   g.appendChild(sa(svgNS('circle'), { cx: x, cy: y, r: 8, fill: '#92400e' }));
   const t = sa(svgNS('text'), { x, y: y + 4, 'text-anchor': 'middle', fill: '#fef3c7', 'font-size': 9, 'font-weight': 'bold', 'font-family': 'monospace' });
@@ -357,15 +459,22 @@ function renderCycleBadge(g, x, y) {
 function renderPorts(g, node) {
   const ip = inputPort(node);
   const op = outputPort(node);
-  const mkPort = (cx, cy, type) => {
-    const c = sa(svgNS('circle'), { cx, cy, r: 5, fill: '#0d1117', stroke: type === 'out' ? '#3a6090' : '#253550', 'stroke-width': 1.5 });
+  const mkPort = (cx, cy, type, stroke) => {
+    const c = sa(svgNS('circle'), { cx, cy, r: 5, fill: '#0d1117', stroke: stroke ?? (type === 'out' ? '#3a6090' : '#253550'), 'stroke-width': 1.5 });
     c.setAttribute('data-port-type', type);
     c.setAttribute('data-port-node', node.id);
-    c.style.cursor = type === 'out' ? 'crosshair' : 'default';
+    c.style.cursor = type === 'in' ? 'default' : 'crosshair';
     return c;
   };
   g.appendChild(mkPort(ip.x, ip.y, 'in'));
   g.appendChild(mkPort(op.x, op.y, 'out'));
+
+  if (node.kind === 'split') {
+    // Distinct port for the split→join barrier reference — dragged onto an
+    // existing join node, never onto a branch target.
+    const jp = joinRefPort(node);
+    g.appendChild(mkPort(jp.x, jp.y, 'join-ref', '#a855f7'));
+  }
 }
 
 // ── Start pill ────────────────────────────────────────────────────────────────
@@ -386,7 +495,7 @@ function renderStartPill(parent, entryNode) {
 
 function renderEdges(parent, nodes, cycleSet) {
   for (const [, node] of nodes) {
-    if ((node.kind === 'task' || node.kind === 'sleep') && node.next && nodes.has(node.next)) {
+    if ((node.kind === 'task' || node.kind === 'sleep' || node.kind === 'join') && node.next && nodes.has(node.next)) {
       const inCycle = cycleSet.has(node.id) && cycleSet.has(node.next);
       drawEdge(parent, outputPort(node), inputPort(nodes.get(node.next)), null, false, node.id, node.next, null, inCycle);
     } else if (node.kind === 'switch') {
@@ -400,8 +509,38 @@ function renderEdges(parent, nodes, cycleSet) {
         const inCycle = cycleSet.has(node.id) && cycleSet.has(node.default);
         drawEdge(parent, switchPort(node), inputPort(nodes.get(node.default)), 'default', true, node.id, node.default, 'default', inCycle);
       }
+    } else if (node.kind === 'split') {
+      (node.branches || []).forEach((branchId, i) => {
+        if (branchId && nodes.has(branchId)) {
+          const inCycle = cycleSet.has(node.id) && cycleSet.has(branchId);
+          drawEdge(parent, outputPort(node), inputPort(nodes.get(branchId)), null, false, node.id, branchId, `branch-${i}`, inCycle);
+        }
+      });
+      if (node.join && nodes.has(node.join)) {
+        drawJoinRefEdge(parent, joinRefPort(node), inputPort(nodes.get(node.join)), node.id, node.join);
+      }
     }
   }
+}
+
+/** Dashed reference line from a split to its owning join — not a walkable execution edge. */
+function drawJoinRefEdge(parent, src, dst, srcId, dstId) {
+  const d = `M ${src.x} ${src.y} C ${src.x} ${src.y + 40} ${dst.x - 40} ${dst.y} ${dst.x} ${dst.y}`;
+  parent.appendChild(sa(svgNS('path'), {
+    d, stroke: '#a855f7', 'stroke-width': 1.5, fill: 'none',
+    'stroke-dasharray': '3,3', 'marker-end': 'url(#arrow)', 'pointer-events': 'none', opacity: 0.7,
+  }));
+  const hit = sa(svgNS('path'), { d, stroke: 'transparent', 'stroke-width': 14, fill: 'none', cursor: 'pointer' });
+  hit.setAttribute('data-edge-src', srcId);
+  hit.setAttribute('data-edge-dst', dstId);
+  hit.setAttribute('data-edge-case', 'join-ref');
+  parent.appendChild(hit);
+
+  const mx = (src.x + dst.x) / 2, my = (src.y + dst.y) / 2 + 12;
+  parent.appendChild(sa(svgNS('rect'), { x: mx - 16, y: my - 9, width: 32, height: 16, rx: 3, fill: '#0d1117' }));
+  const lt = sa(svgNS('text'), { x: mx, y: my + 4, 'text-anchor': 'middle', fill: '#c084fc', 'font-size': 9, 'font-family': 'monospace' });
+  lt.textContent = 'join';
+  parent.appendChild(lt);
 }
 
 function drawEdge(parent, src, dst, label, dashed, srcId, dstId, caseKey, inCycle) {
@@ -447,14 +586,23 @@ function switchPort(node) {
   return { x: node.x + NODE_SWITCH_W, y: node.y + NODE_SWITCH_H / 2 };
 }
 
+/** Bottom-middle of a split node — the barrier reference to its owning join. */
+function joinRefPort(node) {
+  return { x: node.x + NODE_SPLIT_W / 2, y: node.y + NODE_SPLIT_H };
+}
+
 function nw(node) {
   if (node.kind === 'task')  return NODE_TASK_W;
   if (node.kind === 'sleep') return NODE_SLEEP_W;
+  if (node.kind === 'split') return NODE_SPLIT_W;
+  if (node.kind === 'join')  return NODE_JOIN_W;
   return NODE_SWITCH_W;
 }
 function nh(node) {
   if (node.kind === 'task')  return NODE_TASK_H;
   if (node.kind === 'sleep') return NODE_SLEEP_H;
+  if (node.kind === 'split') return NODE_SPLIT_H;
+  if (node.kind === 'join')  return NODE_JOIN_H;
   return NODE_SWITCH_H;
 }
 
@@ -592,12 +740,14 @@ function updateMinimap(st) {
   for (const [, n] of nodes) {
     const x = n.x * scale + offX, y = n.y * scale + offY;
     const w = nw(n) * scale,      h = nh(n) * scale;
-    if (n.kind === 'task') {
+    if (n.kind === 'task' || n.kind === 'split' || n.kind === 'join') {
       const r = document.createElementNS(NS, 'rect');
       Object.assign(r, {}); r.setAttribute('x', x); r.setAttribute('y', y);
       r.setAttribute('width', w); r.setAttribute('height', h);
-      r.setAttribute('rx', 2); r.setAttribute('fill', '#1d2d52');
-      r.setAttribute('stroke', '#2d4070'); r.setAttribute('stroke-width', 0.5);
+      r.setAttribute('rx', 2);
+      r.setAttribute('fill', n.kind === 'split' ? '#062b2e' : n.kind === 'join' ? '#0f1a3d' : '#1d2d52');
+      r.setAttribute('stroke', n.kind === 'split' ? '#0e7490' : n.kind === 'join' ? '#1d4ed8' : '#2d4070');
+      r.setAttribute('stroke-width', 0.5);
       minimapSvg.appendChild(r);
     } else if (n.kind === 'sleep') {
       const bx = w / 3;
@@ -635,9 +785,10 @@ function updateMinimap(st) {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function nodeTargets(node) {
-  if (node.kind === 'task' || node.kind === 'sleep') return node.next ? [node.next] : [];
+  if (node.kind === 'task' || node.kind === 'sleep' || node.kind === 'join') return node.next ? [node.next] : [];
   if (node.kind === 'switch')
     return [...node.cases.map(c => c.target), node.default].filter(Boolean);
+  if (node.kind === 'split') return [...(node.branches || []), node.join].filter(Boolean);
   return [];
 }
 

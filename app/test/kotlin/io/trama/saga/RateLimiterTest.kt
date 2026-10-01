@@ -12,7 +12,7 @@ import kotlinx.coroutines.runBlocking
 
 class RateLimiterTest {
     @Test
-    fun `rate limiter blocks after max failures`() = runBlocking {
+    fun `rate limiter blocks after max failures`() = runBlocking<Unit> {
         var count = 0L
         var blocked: ByteArray? = null
 

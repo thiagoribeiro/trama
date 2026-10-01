@@ -4,13 +4,17 @@ package run.trama.saga.redis
 
 import com.ensarsarajcic.kotlinx.serialization.msgpack.MsgPack
 import io.lettuce.core.ScriptOutputType
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromByteArray
+import org.slf4j.LoggerFactory
+import net.logstash.logback.argument.StructuredArguments.kv
 import run.trama.saga.SagaExecution
 import run.trama.telemetry.Metrics
 import kotlin.math.max
@@ -30,12 +34,28 @@ class SagaExecutionRedisConsumer(
     private val effectiveClaimerCount = claimerCount.coerceAtLeast(1)
     private val claimLimit = max(1, batchSize / effectiveClaimerCount)
 
+    private val logger = LoggerFactory.getLogger(SagaExecutionRedisConsumer::class.java)
+
+    /**
+     * Claims one batch from a shard. It first moves this shard's expired in-flight items (claimed by
+     * a pod that died or stalled) back to ready, so recovery happens on the claimers' normal pass
+     * over every owned shard — within processingTimeoutMillis plus one poll — at the cost of one
+     * extra ZRANGEBYSCORE that is empty in the common case, and no extra round trip. Both keys
+     * share the shard's hash slot, so this stays valid on Redis Cluster.
+     */
     private val claimScript = """
         local ready = KEYS[1]
         local inflight = KEYS[2]
         local now = tonumber(ARGV[1])
         local limit = tonumber(ARGV[2])
         local inflightScore = tonumber(ARGV[3])
+        local expired = redis.call('ZRANGEBYSCORE', inflight, '-inf', now, 'LIMIT', 0, limit)
+        if #expired > 0 then
+            redis.call('ZREM', inflight, unpack(expired))
+            for i = 1, #expired do
+                redis.call('ZADD', ready, now, expired[i])
+            end
+        end
         local items = redis.call('ZRANGEBYSCORE', ready, '-inf', now, 'LIMIT', 0, limit)
         if #items > 0 then
             redis.call('ZREM', ready, unpack(items))
@@ -46,30 +66,35 @@ class SagaExecutionRedisConsumer(
         return items
     """.trimIndent()
 
-    private val requeueExpiredScript = """
+    /** Pushes the in-flight deadline of claims still being processed; skips any no longer in flight. */
+    private val renewClaimsScript = """
         local inflight = KEYS[1]
-        local ready = KEYS[2]
-        local now = tonumber(ARGV[1])
-        local limit = tonumber(ARGV[2])
-        local items = redis.call('ZRANGEBYSCORE', inflight, '-inf', now, 'LIMIT', 0, limit)
-        if #items > 0 then
-            redis.call('ZREM', inflight, unpack(items))
-            for i = 1, #items do
-                redis.call('ZADD', ready, now, items[i])
+        local score = ARGV[1]
+        local renewed = 0
+        for i = 2, #ARGV do
+            if redis.call('ZSCORE', inflight, ARGV[i]) then
+                redis.call('ZADD', inflight, score, ARGV[i])
+                renewed = renewed + 1
             end
         end
-        return items
+        return renewed
     """.trimIndent()
+
+    /** A claim handed to the processor and not yet acked or released. */
+    private class LiveClaim(val shardId: Int, val payload: ByteArray, @Volatile var renewedAtMillis: Long)
+
+    private val liveClaims = ConcurrentHashMap<Long, LiveClaim>()
+    private val claimIds = AtomicLong()
 
     // SHA1 digests loaded via SCRIPT LOAD at startup — avoids sending the full script on every poll
     private var claimScriptSha: String? = null
-    private var requeueExpiredScriptSha: String? = null
+    private var renewClaimsScriptSha: String? = null
 
     /** Must be called once before the consumer loop starts. Loads scripts into Redis script cache. */
     suspend fun loadScripts() {
         redis.withCommands { commands ->
             claimScriptSha = commands.scriptLoad(claimScript.toByteArray())
-            requeueExpiredScriptSha = commands.scriptLoad(requeueExpiredScript.toByteArray())
+            renewClaimsScriptSha = commands.scriptLoad(renewClaimsScript.toByteArray())
         }
     }
 
@@ -113,25 +138,57 @@ class SagaExecutionRedisConsumer(
     }
 
     override suspend fun ack(inFlight: ClaimedExecution) {
+        liveClaims.remove(inFlight.claimId)
         redis.withCommands { commands ->
             commands.zrem(keyspace.queueInFlightKey(inFlight.shardId).encodeToByteArray(), inFlight.payload)
         }
     }
 
-    suspend fun runExpiredRequeuePoller(
-        intervalMillis: Long,
-        limit: Int = batchSize,
-    ) {
-        var cursor = 0
-        while (polling.get() && currentCoroutineContext().isActive) {
-            val shards = allocator.ownedShards()
-            if (shards.isNotEmpty()) {
-                val shardId = shards[cursor % shards.size]
-                requeueExpired(shardId, limit)
-                cursor = (cursor + 1) % shards.size
+    override fun release(inFlight: ClaimedExecution) {
+        liveClaims.remove(inFlight.claimId)
+    }
+
+    /**
+     * Keeps every live claim's in-flight deadline ahead of processingTimeoutMillis while it is being
+     * worked on (or waits in the processor buffer), so a slow but healthy execution is never
+     * re-delivered to another worker. When this pod dies the renewals stop, and the claims expire
+     * and are recovered by the shard owner's next claim pass. Only claims older than a third of
+     * the timeout are renewed, so the usual sub-second executions cost nothing here.
+     * Must run until the processor has drained (see RuntimeBootstrap.stop).
+     */
+    suspend fun runClaimHeartbeat() {
+        val interval = (processingTimeoutMillis / 3).coerceAtLeast(1)
+        while (currentCoroutineContext().isActive) {
+            delay(interval.milliseconds)
+            runCatching { renewDueClaims(interval) }
+                .onFailure { logger.warn("claim heartbeat failed", it) }
+        }
+    }
+
+    private suspend fun renewDueClaims(interval: Long) {
+        val now = System.currentTimeMillis()
+        val due = liveClaims.values.filter { now - it.renewedAtMillis >= interval }
+        if (due.isEmpty()) return
+        val score = (now + processingTimeoutMillis).toString().toByteArray()
+        for ((shardId, claims) in due.groupBy { it.shardId }) {
+            for (batch in claims.chunked(RENEW_BATCH_SIZE)) {
+                val args = arrayOf(score) + batch.map { it.payload }
+                val keys = arrayOf(keyspace.queueInFlightKey(shardId).encodeToByteArray())
+                val renewed = redis.withCommands { commands ->
+                    val sha = renewClaimsScriptSha
+                    if (sha != null) {
+                        commands.evalsha<Long>(sha, ScriptOutputType.INTEGER, keys, *args)
+                    } else {
+                        commands.eval<Long>(renewClaimsScript.toByteArray(), ScriptOutputType.INTEGER, keys, *args)
+                    }
+                } ?: 0L
+                batch.forEach { it.renewedAtMillis = now }
+                if (renewed < batch.size) {
+                    // Deadline passed before this renewal (e.g. a long GC pause or Redis outage):
+                    // those items were already recovered and may run again (at-least-once).
+                    logger.warn("claims expired before renewal", kv("shardId", shardId), kv("lost", batch.size - renewed))
+                }
             }
-            if (!polling.get()) break
-            delay(intervalMillis.milliseconds)
         }
     }
 
@@ -173,36 +230,9 @@ class SagaExecutionRedisConsumer(
         return items.map { payload ->
             val execution = msgPack.decodeFromByteArray(SagaExecution.serializer(), payload)
             metrics.recordDequeued(execution)
-            ClaimedExecution(execution, payload, shardId)
-        }
-    }
-
-    private suspend fun requeueExpired(
-        shardId: Int,
-        limit: Int,
-    ) {
-        val now = System.currentTimeMillis()
-        val inFlightKey = keyspace.queueInFlightKey(shardId).encodeToByteArray()
-        val readyKey = keyspace.queueReadyKey(shardId).encodeToByteArray()
-        redis.withCommands { commands ->
-            val sha = requeueExpiredScriptSha
-            if (sha != null) {
-                commands.evalsha<List<ByteArray>>(
-                    sha,
-                    ScriptOutputType.MULTI,
-                    arrayOf(inFlightKey, readyKey),
-                    now.toString().toByteArray(),
-                    limit.toString().toByteArray(),
-                )
-            } else {
-                commands.eval<List<ByteArray>>(
-                    requeueExpiredScript.toByteArray(),
-                    ScriptOutputType.MULTI,
-                    arrayOf(inFlightKey, readyKey),
-                    now.toString().toByteArray(),
-                    limit.toString().toByteArray(),
-                )
-            }
+            val claimId = claimIds.incrementAndGet()
+            liveClaims[claimId] = LiveClaim(shardId, payload, now)
+            ClaimedExecution(execution, payload, shardId, claimId)
         }
     }
 
@@ -210,4 +240,9 @@ class SagaExecutionRedisConsumer(
         ownedShards: List<Int>,
         claimerIndex: Int,
     ): List<Int> = ownedShards.filterIndexed { index, _ -> index % effectiveClaimerCount == claimerIndex }
+
+    private companion object {
+        /** Members per renew script call, bounding the size of a single EVAL. */
+        const val RENEW_BATCH_SIZE = 100
+    }
 }

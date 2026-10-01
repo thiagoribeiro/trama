@@ -57,6 +57,8 @@ function draw(node) {
 
   if (node.kind === 'task') drawTask(node);
   else if (node.kind === 'sleep') drawSleep(node);
+  else if (node.kind === 'split') drawSplit(node);
+  else if (node.kind === 'join') drawJoin(node);
   else drawSwitch(node);
 }
 
@@ -249,6 +251,75 @@ function drawSwitch(node) {
   _panel.appendChild(deleteBtn(node));
 }
 
+// ── Split form ────────────────────────────────────────────────────────────────
+
+function drawSplit(node) {
+  const isEntry = state.getState().entrypoint === node.id;
+  const entryBtn = d('button', 'btn btn--sm' + (isEntry ? ' btn--active' : ''));
+  entryBtn.textContent = isEntry ? '★ Entrypoint' : '☆ Set as Entrypoint';
+  entryBtn.onclick = () => state.setEntrypoint(node.id);
+  _panel.appendChild(entryBtn);
+
+  const hint = d('div', 'prop-hint');
+  hint.textContent = 'Each branch runs as its own independent execution. They do not need to reach the join node directly — the join fires once every branch finishes on its own.';
+  _panel.appendChild(hint);
+
+  label(_panel, 'Branches');
+  const branches = node.branches || [];
+  branches.forEach((branchId, i) => {
+    const row = d('div', 'case-block');
+    const head = d('div', 'case-head');
+    const lbl = d('span', '');
+    lbl.textContent = `Branch ${i + 1}`;
+    const rm = d('button', 'btn btn--icon');
+    rm.textContent = '×';
+    rm.title = 'Remove branch';
+    rm.onclick = () => state.updateNode(node.id, { branches: branches.filter((_, j) => j !== i) });
+    head.appendChild(lbl);
+    head.appendChild(rm);
+    row.appendChild(head);
+
+    field(row, 'Entry node', nodeSelect(branchId, node.id, v => {
+      const next = [...branches];
+      next[i] = v;
+      state.updateNode(node.id, { branches: next });
+    }));
+    _panel.appendChild(row);
+  });
+
+  const addBtn = d('button', 'btn btn--sm');
+  addBtn.textContent = '+ Add branch';
+  addBtn.onclick = () => {
+    state.updateNode(node.id, { branches: [...branches, null] });
+  };
+  _panel.appendChild(addBtn);
+
+  field(_panel, 'Join node', nodeSelectFiltered(node.join, node.id, v =>
+    state.updateNode(node.id, { join: v }), n => n.kind === 'join'));
+
+  _panel.appendChild(deleteBtn(node));
+}
+
+// ── Join form ─────────────────────────────────────────────────────────────────
+
+function drawJoin(node) {
+  const isEntry = state.getState().entrypoint === node.id;
+  const entryBtn = d('button', 'btn btn--sm' + (isEntry ? ' btn--active' : ''));
+  entryBtn.textContent = isEntry ? '★ Entrypoint' : '☆ Set as Entrypoint';
+  entryBtn.onclick = () => state.setEntrypoint(node.id);
+  _panel.appendChild(entryBtn);
+
+  const owner = [...state.getNodes().values()].find(n => n.kind === 'split' && n.join === node.id);
+  const ownerInfo = d('div', 'prop-hint');
+  ownerInfo.textContent = owner ? `Owned by split "${owner.id}"` : 'Not referenced by any split yet — set this node as a split\'s "Join node".';
+  _panel.appendChild(ownerInfo);
+
+  field(_panel, 'Next node', nodeSelect(node.next, node.id, v =>
+    state.updateNode(node.id, { next: v })));
+
+  _panel.appendChild(deleteBtn(node));
+}
+
 // ── Widgets ───────────────────────────────────────────────────────────────────
 
 function deleteBtn(node) {
@@ -399,6 +470,21 @@ function nodeSelect(currentId, excludeId, onChange) {
   sel.appendChild(none);
   for (const [id] of state.getNodes()) {
     if (id === excludeId) continue;
+    const o = document.createElement('option');
+    o.value = id; o.textContent = id; o.selected = id === currentId;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => onChange(sel.value || null));
+  return sel;
+}
+
+function nodeSelectFiltered(currentId, excludeId, onChange, predicate) {
+  const sel = d('select', 'prop-input');
+  const none = document.createElement('option');
+  none.value = ''; none.textContent = '— none —'; none.selected = !currentId;
+  sel.appendChild(none);
+  for (const [id, n] of state.getNodes()) {
+    if (id === excludeId || !predicate(n)) continue;
     const o = document.createElement('option');
     o.value = id; o.textContent = id; o.selected = id === currentId;
     sel.appendChild(o);

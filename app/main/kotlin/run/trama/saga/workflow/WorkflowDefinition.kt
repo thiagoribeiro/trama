@@ -44,6 +44,19 @@ data class SleepNode(
     val next: String? = null,
 ) : WorkflowNode()
 
+/** Fans out into independent child executions, one per entry in [branches]; [join] resumes the parent. */
+data class SplitNode(
+    override val id: String,
+    val branches: List<String>,
+    val join: String,
+) : WorkflowNode()
+
+/** Barrier: resumes the parent flow at [next] once every branch of the owning split has finished. */
+data class JoinNode(
+    override val id: String,
+    val next: String? = null,
+) : WorkflowNode()
+
 data class SwitchCase(
     val name: String?,
     /** Raw json-logic expression evaluated as boolean */

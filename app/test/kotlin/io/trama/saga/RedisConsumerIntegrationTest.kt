@@ -1,10 +1,5 @@
 package run.trama.saga
 
-import run.trama.config.RedisConfig
-import run.trama.config.RedisConsumerConfig
-import run.trama.config.RedisPoolConfig
-import run.trama.config.RedisQueueConfig
-import run.trama.saga.redis.RedisClientProvider
 import run.trama.saga.redis.RedisShardKeyspace
 import run.trama.saga.redis.RendezvousShardAllocator
 import run.trama.saga.redis.SagaExecutionRedisConsumer
@@ -15,28 +10,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.DockerClientFactory
-import org.testcontainers.utility.DockerImageName
 
 class RedisConsumerIntegrationTest {
     @Test
-    fun `claim moves items to in-flight and ack removes`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
-        val container = GenericContainer(DockerImageName.parse("redis:7-alpine"))
-            .withExposedPorts(6379)
-        container.start()
-        try {
-            val redisUrl = "redis://${container.host}:${container.getMappedPort(6379)}"
-            val redis = RedisClientProvider(
-                RedisConfig(
-                    url = redisUrl,
-                    pool = RedisPoolConfig(),
-                    queue = RedisQueueConfig(),
-                    consumer = RedisConsumerConfig(),
-                )
-            )
-            val keyspace = RedisShardKeyspace("saga:executions", 1024)
+    fun `claim moves items to in-flight and ack removes`() = runBlocking<Unit> {
+        // Shared container (a dedicated one per test intermittently failed to launch under load).
+        run.trama.saga.store.IntegrationDb.assumeDocker()
+        run {
+            val redis = run.trama.saga.store.IntegrationDb.redis
+            val keyspace = RedisShardKeyspace("it-consumer-${java.util.UUID.randomUUID()}", 1024)
             val allocator = RendezvousShardAllocator(
                 localPodId = "pod-a",
                 virtualShardCount = 1024,
@@ -79,9 +61,6 @@ class RedisConsumerIntegrationTest {
             val inFlight = items.first()
             consumer.ack(inFlight)
             producer.cancel()
-            redis.close()
-        } finally {
-            container.stop()
         }
     }
 }

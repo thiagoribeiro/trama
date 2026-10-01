@@ -6,7 +6,6 @@ import io.lettuce.core.ScriptOutputType
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.InstantAsStringSerializer
-import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
 import run.trama.saga.SleepEntry
@@ -14,6 +13,8 @@ import run.trama.saga.StepResult
 import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.WaitingInfo
 import run.trama.saga.store.SagaRepository
+import run.trama.saga.store.persistedDefinitionJson
+import run.trama.saga.store.persistedPayloadJson
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -22,6 +23,22 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import org.slf4j.LoggerFactory
+
+/**
+ * Generous TTL for join-barrier keys (:expected/:arrived) — unlike :waiting/:sleep, there is
+ * no known deadline to size the TTL against at registration time (branches may sleep for hours
+ * or wait on long async callbacks). If it expires before all branches arrive, markChildArrived
+ * falls back to the durable Postgres counter — correctness holds either way, this only affects
+ * whether the fast path is used.
+ */
+private const val JOIN_BARRIER_TTL_SECONDS = 86_400L
+
+/**
+ * How long past its expected resume time a parked execution's Redis state (sleep sentinel, meta,
+ * step history) is kept. Normally irrelevant — resuming consumes/refreshes it and finalization
+ * deletes it — it only bounds memory for abandoned executions and absorbs queue backlog.
+ */
+private const val PARKED_RETENTION_BUFFER_SECONDS = 86_400L
 
 class RedisSagaExecutionStore(
     private val redis: RedisCommandsProvider,
@@ -52,15 +69,36 @@ class RedisSagaExecutionStore(
         return 1
     """.trimIndent()
 
+    /**
+     * Idempotently marks ARGV[1] (a child execution id) as arrived in the SET at KEYS[1], and
+     * atomically reads the resulting set size plus the expected count at KEYS[2] — all in one
+     * round trip so "did I just add it" and "how many have arrived" can never race against a
+     * concurrent sibling doing the same. SADD is a no-op if the member is already present, which
+     * is exactly what makes this safe to call twice for the same child (a redelivered branch).
+     * The EXPIRE lives in the same script (not a follow-up call) so a crash between the two can
+     * never leave the arrived-set key with no TTL at all — same reasoning as [lpushExpireScript].
+     * Returns "added:size:expected" (expected is empty when the key has expired/was evicted).
+     */
+    private val markArrivedScript = """
+        local added = redis.call('SADD', KEYS[1], ARGV[1])
+        redis.call('EXPIRE', KEYS[1], ARGV[2])
+        local size = redis.call('SCARD', KEYS[1])
+        local expected = redis.call('GET', KEYS[2])
+        if not expected then expected = '' end
+        return added .. ':' .. size .. ':' .. expected
+    """.trimIndent()
+
     // SHA1 digests for pre-loaded scripts. Populated by [loadScripts].
     private var getDelScriptSha: String? = null
     private var lpushExpireScriptSha: String? = null
+    private var markArrivedScriptSha: String? = null
 
     /** Loads Lua scripts into Redis at startup. Call once before processing begins. */
     suspend fun loadScripts() {
         redis.withCommands { commands ->
             getDelScriptSha = commands.scriptLoad(getDelScript.toByteArray())
             lpushExpireScriptSha = commands.scriptLoad(lpushExpireScript.toByteArray())
+            markArrivedScriptSha = commands.scriptLoad(markArrivedScript.toByteArray())
         }
     }
 
@@ -75,18 +113,30 @@ class RedisSagaExecutionStore(
         }
     }
 
+    private suspend fun atomicMarkArrived(arrivedKey: ByteArray, expectedKey: ByteArray, childId: ByteArray, ttlSeconds: ByteArray): ByteArray? {
+        return redis.withCommands { commands ->
+            val sha = markArrivedScriptSha
+            if (sha != null) {
+                commands.evalsha<ByteArray>(sha, ScriptOutputType.VALUE, arrayOf(arrivedKey, expectedKey), childId, ttlSeconds)
+            } else {
+                commands.eval<ByteArray>(markArrivedScript.toByteArray(), ScriptOutputType.VALUE, arrayOf(arrivedKey, expectedKey), childId, ttlSeconds)
+            }
+        }
+    }
+
     override suspend fun upsertStart(execution: SagaExecution) {
         val meta = RedisExecutionMeta(
             id = execution.id,
             name = execution.definition.name,
             version = execution.definition.version,
-            definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition),
+            definitionJson = execution.persistedDefinitionJson(),
             startedAt = execution.startedAt,
             status = "IN_PROGRESS",
             failureDescription = null,
             callbackWarning = null,
             lastFailedStepIndex = null,
             lastFailedPhase = null,
+            payloadJson = execution.persistedPayloadJson(),
         )
         writeMeta(meta)
     }
@@ -121,6 +171,7 @@ class RedisSagaExecutionStore(
             lastFailedPhase = meta.lastFailedPhase?.let { ExecutionPhase.valueOf(it) },
             callbackWarning = meta.callbackWarning,
             steps = steps,
+            payloadJson = meta.payloadJson,
         )
 
         deleteKeys(meta.id)
@@ -250,6 +301,19 @@ class RedisSagaExecutionStore(
         }
     }
 
+    override suspend fun retainUntil(executionId: UUID, until: Instant) {
+        retainFor(executionId, until.epochSecond - Instant.now().epochSecond + PARKED_RETENTION_BUFFER_SECONDS)
+    }
+
+    /** Extends meta + step history to [seconds] (never below the normal idle TTL), one round trip. */
+    private suspend fun retainFor(executionId: UUID, seconds: Long) {
+        val ttl = seconds.coerceAtLeast(ttlSeconds)
+        redis.withCommands { commands ->
+            commands.expire(metaKey(executionId).toByteArray(), ttl)
+            commands.expire(stepsKey(executionId).toByteArray(), ttl)
+        }
+    }
+
     private suspend fun touchMetaTtl(executionId: UUID) {
         val key = metaKey(executionId)
         redis.withCommands { commands ->
@@ -276,11 +340,11 @@ class RedisSagaExecutionStore(
             commands.set(key, value)
             commands.expire(key, ttl)
         }
+        retainUntil(execution.id, state.deadlineAt)
 
         // Write to Postgres so the status endpoint can surface WAITING_CALLBACK
         // and the callback timeout scanner can find timed-out executions.
-        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
-        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
+        repository.upsertExecutionStart(execution)
         repository.saveWaitingState(
             executionId = execution.id,
             nodeId = state.nodeId,
@@ -325,13 +389,19 @@ class RedisSagaExecutionStore(
         )
         val key = sleepKey(execution.id).toByteArray()
         val value = json.encodeToString(RedisSleepEntry.serializer(), entry).toByteArray()
-        // TTL: seconds until wakeAt + 2-hour buffer so the key outlives any re-enqueue chunks
-        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + 7200).coerceAtLeast(120)
+        // TTL: until wakeAt + buffer. The sentinel is what lets exactly one queue item claim the
+        // wake-up, so it must outlive any realistic queue backlog; it is deleted on consume, so the
+        // buffer only costs memory for abandoned sleeps.
+        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + PARKED_RETENTION_BUFFER_SECONDS).coerceAtLeast(120)
         redis.withCommands { commands ->
             commands.set(key, value)
             commands.expire(key, ttl)
         }
-        // Update Postgres so the status API surfaces SLEEPING
+        retainFor(execution.id, ttl)
+        // Update Postgres so the status API surfaces SLEEPING. Under this store the row otherwise
+        // only exists after finalization, so it must be upserted first (as saveWaiting does) —
+        // without it the UPDATE matches nothing and /wake cannot find the execution.
+        repository.upsertExecutionStart(execution)
         repository.updateStatus(execution.id, "SLEEPING")
     }
 
@@ -349,6 +419,106 @@ class RedisSagaExecutionStore(
 
     override suspend fun updateStatus(executionId: UUID, status: String) =
         repository.updateStatus(executionId, status)
+
+    // ── Split / join ───────────────────────────────────────────────────────────
+    // The arrival counter has a Redis fast path — a SET of arrived child ids (SADD), not a
+    // raw INCR: SADD is idempotent by construction (adding the same member twice is a no-op),
+    // which is exactly what a redelivered branch re-finalizing needs. registerJoinBarrier seeds
+    // the `:expected` count; markArrivedScript atomically SADDs + SCARDs + reads `:expected` in
+    // one round trip via Lua, so "did I just add it" and "how many have arrived" never race.
+    // Postgres (saga_join_barrier/saga_join_branch) is still written on every call as a durable
+    // mirror — it's what JoinCompletionScanner reads, and it's the fallback decision-maker if
+    // the Redis keys are ever lost (TTL/eviction/restart). Branch linkage (getJoinBranches) has
+    // no hot path of its own — it's read exactly once, when the join fires — so it stays
+    // Postgres-only.
+
+    private fun joinExpectedKey(executionId: UUID, splitNodeId: String) = keyspace.joinExpectedKey(executionId, splitNodeId)
+    private fun joinArrivedKey(executionId: UUID, splitNodeId: String) = keyspace.joinArrivedKey(executionId, splitNodeId)
+
+    override suspend fun registerJoinBarrier(
+        parentId: UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        joinNodeId: String,
+        branches: List<run.trama.saga.JoinBranchLink>,
+    ): Set<String> {
+        val expectedKey = joinExpectedKey(parentId, splitNodeId).toByteArray()
+        redis.withCommands { commands ->
+            commands.set(expectedKey, branches.size.toString().toByteArray())
+            commands.expire(expectedKey, JOIN_BARRIER_TTL_SECONDS)
+        }
+        return repository.registerJoinBarrier(parentId, parentStartedAt, splitNodeId, joinNodeId, branches)
+    }
+
+    override suspend fun markChildArrived(
+        parentId: UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+        childId: UUID,
+    ): run.trama.saga.JoinArrival? {
+        val arrivedKey = joinArrivedKey(parentId, splitNodeId).toByteArray()
+        val expectedKey = joinExpectedKey(parentId, splitNodeId).toByteArray()
+        val raw = atomicMarkArrived(arrivedKey, expectedKey, childId.toString().toByteArray(), JOIN_BARRIER_TTL_SECONDS.toString().toByteArray())
+
+        // Always mirror into Postgres — durable record for the backstop scanner and for
+        // getJoinBranches; used as the decision-maker only if Redis lost the expected count.
+        val postgresArrival = repository.markChildArrived(parentId, parentStartedAt, splitNodeId, childId)
+
+        val parts = raw?.toString(Charsets.UTF_8)?.split(":")
+        if (parts == null || parts.size != 3 || parts[2].isEmpty()) return postgresArrival
+        val added = parts[0].toIntOrNull() ?: return postgresArrival
+        val size = parts[1].toIntOrNull() ?: return postgresArrival
+        val expected = parts[2].toIntOrNull() ?: return postgresArrival
+        return run.trama.saga.JoinArrival(arrived = size, expected = expected, newlyMarked = added == 1)
+    }
+
+    override suspend fun getJoinBranches(
+        parentId: UUID,
+        parentStartedAt: Instant,
+        splitNodeId: String,
+    ): List<run.trama.saga.JoinBranchLink> = repository.getJoinBranches(parentId, parentStartedAt, splitNodeId)
+
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {
+        // Postgres-only: consumeWaitingJoin below no longer gives Redis an independent vote
+        // (that was the round-2 fix for two stores each being able to declare a winner), so
+        // writing a Redis mirror here would just be a wasted round trip that's never read back.
+        val state = execution.state as? ExecutionState.WaitingJoin ?: return
+        val executionJson = json.encodeToString(SagaExecution.serializer(), execution)
+        // No known deadline for a join: keep the parent's history as long as the barrier keys.
+        retainFor(execution.id, JOIN_BARRIER_TTL_SECONDS)
+
+        // upsertStart only writes to Redis (the hot-path store), never Postgres — so under the
+        // default REDIS store backend, the parent has no saga_execution row yet at this point.
+        // saveWaitingJoinState below is a plain UPDATE ... WHERE id = ?, which would silently
+        // affect zero rows without this — permanently losing the join pointer with no error,
+        // no trace in the status API, and no way for JoinCompletionScanner to ever find it.
+        // Same defensive upsert saveWaiting (the WaitingCallback sibling) already does above.
+        repository.upsertExecutionStart(execution)
+        repository.saveWaitingJoinState(
+            executionId = execution.id,
+            splitNodeId = state.splitNodeId,
+            joinNodeId = state.joinNodeId,
+            executionJson = executionJson,
+        )
+    }
+
+    override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? {
+        // Postgres is the SOLE decision-maker here, unlike markChildArrived's per-branch hot
+        // path: this is called once per split (by whichever branch wins the barrier, or by the
+        // backstop scanner), not once per branch, so there is no meaningful load to save by
+        // giving Redis an independent vote. Two independent atomic ops (one per store) each
+        // able to return non-null previously let two concurrent callers (the winning branch and
+        // the backstop scanner) both "win" from different stores. A single UPDATE ... RETURNING
+        // is naturally serialized per row, so concurrent callers can never both succeed. There is
+        // no Redis mirror to clean up here — saveWaitingJoin no longer writes one (see there).
+        return repository.consumeWaitingJoinState(executionId)
+    }
+
+    override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? =
+        repository.getChildStatus(executionId)
+
+    override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> =
+        repository.getChildStatuses(executionIds)
 
     private fun parseSleepEntry(raw: ByteArray): SleepEntry? =
         runCatching {
@@ -395,6 +565,8 @@ data class RedisExecutionMeta(
     val callbackWarning: String?,
     val lastFailedStepIndex: Int?,
     val lastFailedPhase: String?,
+    /** Default keeps metas written by a previous version (still in Redis during a deploy) readable. */
+    val payloadJson: String? = null,
 )
 
 @Serializable
@@ -434,3 +606,4 @@ data class RedisSleepEntry(
     /** Full [SagaExecution] JSON (with Sleeping state) for re-enqueueing on wake. */
     val executionJson: String,
 )
+

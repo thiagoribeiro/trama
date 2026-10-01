@@ -58,18 +58,19 @@ class RuntimeBootstrap(
     private var callbackReceiver: CallbackReceiver? = null
     private var heartbeatJob: Job? = null
     private var refreshJob: Job? = null
-    private var requeueJob: Job? = null
+    private var claimHeartbeatJob: Job? = null
     private var producerJob: Job? = null
     private val workerJobs = mutableListOf<Job>()
     private var maintenanceJob: Job? = null
     private var callbackScannerJob: Job? = null
+    private var joinScannerJob: Job? = null
 
     fun start() {
         val metricsRegistry = if (config.metrics.enabled) meterRegistry else SimpleMeterRegistry()
         database = DatabaseClient(config.database, metricsRegistry)
         redis = RedisClientProvider(config.redis)
         httpClient = SagaHttpClient(config.http)
-        val repo = SagaRepository(database, config.database.pool.definitionCacheMaxSize)
+        val repo = SagaRepository(database, config.database.pool.definitionCacheMaxSize, config.database.pool.definitionCacheTtlMillis)
         repository = repo
         val runtimeMetrics = Metrics(metricsRegistry)
         metrics = runtimeMetrics
@@ -84,7 +85,7 @@ class RuntimeBootstrap(
             RuntimeStore.POSTGRES -> SagaRepositoryStore(repo)
         }
         this.store = store
-        val enq = RedisSagaEnqueuer(redis, keyspace)
+        val enq = RedisSagaEnqueuer(redis, keyspace, runtimeMetrics)
         enqueuer = enq
         val renderer = MustacheTemplateRenderer()
         val retryPolicy = DefaultRetryPolicy()
@@ -167,18 +168,20 @@ class RuntimeBootstrap(
             metrics = runtimeMetrics,
             config = config.callbackTimeoutScanner,
         )
+        val joinScanner = JoinCompletionScanner(
+            repository = repo,
+            resumer = executor,
+            config = config.joinCompletionScanner,
+        )
 
         heartbeatJob = scope.launch { membershipRegistry.runHeartbeatLoop() }
         refreshJob = scope.launch { membershipRegistry.runRefreshLoop() }
-        requeueJob = scope.launch {
-            consumer.runExpiredRequeuePoller(
-                intervalMillis = config.redis.consumer.requeueIntervalMillis,
-            )
-        }
+        claimHeartbeatJob = scope.launch { consumer.runClaimHeartbeat() }
         producerJob = scope.launch { processor.runProducer() }
         repeat(config.runtime.workerCount) { workerJobs += scope.launch { processor.runWorker() } }
         maintenanceJob = scope.launch { maintenance.runLoop() }
         callbackScannerJob = scope.launch { callbackScanner.runLoop() }
+        joinScannerJob = scope.launch { joinScanner.runLoop() }
     }
 
     fun repositoryOrNull(): SagaRepository? = repository
@@ -195,18 +198,15 @@ class RuntimeBootstrap(
     suspend fun wakeExecution(executionId: java.util.UUID): WakeResult {
         val s = store ?: return WakeResult.RuntimeDisabled
         val repo = repository ?: return WakeResult.RuntimeDisabled
+        val enq = enqueuer ?: return WakeResult.RuntimeDisabled
         val status = repo.getExecutionStatus(executionId) ?: return WakeResult.NotFound
         if (status.status != "SLEEPING") return WakeResult.NotSleeping
-        val entry = s.consumeSleeping(executionId) ?: return WakeResult.AlreadyWaking
-        val updatedExecution = entry.execution.copy(
-            state = run.trama.saga.ExecutionState.InProgress(
-                activeNodeId = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.nextNodeId,
-                completedNodes = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.completedNodes ?: emptyList(),
-                compensationStack = (entry.execution.state as? run.trama.saga.ExecutionState.Sleeping)?.compensationStack ?: emptyList(),
-            ),
-        )
-        val enq = enqueuer ?: return WakeResult.RuntimeDisabled
-        enq.enqueue(updatedExecution, 0)
+        val entry = s.peekSleeping(executionId) ?: return WakeResult.AlreadyWaking
+        val sleeping = entry.execution.state as? run.trama.saga.ExecutionState.Sleeping ?: return WakeResult.NotSleeping
+        // Re-deliver the sleep with wakeAt = now instead of rebuilding the next state here: the
+        // executor's normal wake-up path (consume sentinel → next node, or finishSuccess for a
+        // terminal sleep) then runs exactly once, whichever queue copy claims the sentinel first.
+        enq.enqueue(entry.execution.copy(state = sleeping.copy(wakeAt = java.time.Instant.now())), 0)
         return WakeResult.Woken
     }
 
@@ -238,9 +238,11 @@ class RuntimeBootstrap(
             processor?.stopPolling()
             runCatching { membership?.unregister() }
 
-            listOfNotNull(heartbeatJob, refreshJob, requeueJob, maintenanceJob, callbackScannerJob).forEach { it.cancel() }
+            listOfNotNull(heartbeatJob, refreshJob, maintenanceJob, callbackScannerJob, joinScannerJob).forEach { it.cancel() }
             producerJob?.join()
             workerJobs.joinAll()
+            // Only after the drain: claims still being processed must keep being renewed.
+            claimHeartbeatJob?.cancel()
             runtimeJob.cancelAndJoin()
         }
         redis.close()

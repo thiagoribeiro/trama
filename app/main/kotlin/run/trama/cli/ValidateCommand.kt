@@ -180,6 +180,19 @@ private fun printTrace(result: SimulationResult) {
                 println("      $routing")
                 println()
             }
+
+            is TraceEntry.Split -> {
+                println("  → ${entry.nodeId.padEnd(20)} [split, ${entry.branches.size} branches]")
+                for ((branchId, branchTrace) in entry.branches) {
+                    println("      branch \"$branchId\" (${branchTrace.size} steps)")
+                }
+                println()
+            }
+
+            is TraceEntry.Join -> {
+                println("  → ${entry.nodeId.padEnd(20)} [join] all branches ${if (entry.allSucceeded) "succeeded" else "did not succeed"}")
+                println()
+            }
         }
     }
 

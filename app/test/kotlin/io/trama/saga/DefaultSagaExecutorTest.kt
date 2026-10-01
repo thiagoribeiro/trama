@@ -140,7 +140,7 @@ class DefaultSagaExecutorTest {
         }
         val exec = SagaExecution(
             definition = SagaDefinition(
-                name = "s1",
+                name = "s1-max-nodes",
                 version = "1",
                 failureHandling = FailureHandling.Retry(1, 1),
                 steps = steps,
@@ -165,7 +165,7 @@ class DefaultSagaExecutorTest {
     }
 
     @Test
-    fun `failed step starts compensation after retries exhausted`() = runBlocking {
+    fun `failed step starts compensation after retries exhausted`() = runBlocking<Unit> {
         val store = FakeStore()
         val enqueuer = FakeEnqueuer()
         // First call (step1 UP) succeeds, second call (step2 UP) always fails
@@ -187,7 +187,7 @@ class DefaultSagaExecutorTest {
         // maxAttempts = 1 → after 1 failure retry is exhausted immediately
         val exec = SagaExecution(
             definition = SagaDefinition(
-                name = "s1",
+                name = "s1-compensation",
                 version = "1",
                 failureHandling = FailureHandling.Retry(maxAttempts = 1, delayMillis = 0),
                 steps = listOf(
@@ -384,6 +384,13 @@ private class FakeStore : SagaExecutionStore {
     override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun updateStatus(executionId: UUID, status: String) {}
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): run.trama.saga.JoinArrival? = null
+    override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> = emptyMap()
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {}
+    override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
+    override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
 }
 
 private class CapturingStore : SagaExecutionStore {
@@ -409,4 +416,11 @@ private class CapturingStore : SagaExecutionStore {
     override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun updateStatus(executionId: UUID, status: String) {}
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): run.trama.saga.JoinArrival? = null
+    override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> = emptyMap()
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
+    override suspend fun saveWaitingJoin(execution: SagaExecution) {}
+    override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
+    override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
 }

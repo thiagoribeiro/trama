@@ -10,6 +10,7 @@ data class AppConfig(
     val rateLimit: RateLimitConfig,
     val metrics: MetricsConfig,
     val callbackTimeoutScanner: CallbackTimeoutScannerConfig = CallbackTimeoutScannerConfig(),
+    val joinCompletionScanner: JoinCompletionScannerConfig = JoinCompletionScannerConfig(),
     val sleep: SleepConfig = SleepConfig(),
 )
 
@@ -46,7 +47,12 @@ data class RedisQueueConfig(
 
 data class RedisConsumerConfig(
     val batchSize: Int = 50,
-    val processingTimeoutMillis: Long = 60_000,
+    /**
+     * In-flight claim lease. Live claims are renewed every third of it (claim heartbeat), so it
+     * only bounds how long work claimed by a dead pod waits before being re-delivered.
+     */
+    val processingTimeoutMillis: Long = 20_000,
+    /** Obsolete and ignored: expired claims are now recovered by the claim script itself. */
     val requeueIntervalMillis: Long = 5_000,
 )
 
@@ -79,6 +85,8 @@ data class DatabasePoolConfig(
     val maxPoolSize: Int = 10,
     val minIdle: Int = 1,
     val definitionCacheMaxSize: Int = 1000,
+    /** Max staleness of the per-pod definition cache (see SagaRepository). */
+    val definitionCacheTtlMillis: Long = 5_000,
 )
 
 data class RuntimeConfig(
@@ -136,6 +144,19 @@ data class CallbackTimeoutScannerConfig(
     /** Grace period in seconds: skip executions whose deadline passed fewer than this many seconds ago. */
     val bufferSeconds: Long = 120,
     /** Maximum executions processed per scanner run. */
+    val batchSize: Int = 100,
+)
+
+/**
+ * Own config for [run.trama.runtime.JoinCompletionScanner] — deliberately a separate type/field
+ * from [CallbackTimeoutScannerConfig] (even though the shape is the same) so disabling the
+ * callback-timeout scanner can never silently disable the unrelated join-barrier backstop too.
+ */
+data class JoinCompletionScannerConfig(
+    val enabled: Boolean = true,
+    /** How often the scanner runs, in milliseconds. */
+    val intervalMillis: Long = 300_000,
+    /** Maximum barriers processed per scanner run. */
     val batchSize: Int = 100,
 )
 

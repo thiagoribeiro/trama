@@ -99,7 +99,7 @@ class CallbackReceiverTest {
     }
 
     @Test
-    fun `valid callback for terminal node finalizes saga without re-enqueueing`() = runBlocking {
+    fun `valid callback for terminal node hands finalization to the executor`() = runBlocking {
         val execution = makeExecution(nextNodeName = null)
         val meta = tokenService.generate(executionId, nodeId, attempt = 0, timeoutMillis = 60_000)
         val token = tokenService.tokenString(meta)
@@ -110,8 +110,10 @@ class CallbackReceiverTest {
         val result = receiver.receive(executionId, nodeId, token, "{}")
 
         assertIs<CallbackReceiver.CallbackResult.Accepted>(result)
-        assert(enqueued.isEmpty()) { "terminal node should not re-enqueue, got ${enqueued.size}" }
-        assert(store.finalStatus == "SUCCEEDED") { "expected SUCCEEDED, got ${store.finalStatus}" }
+        // Finalizing in the receiver skipped onSuccessCallback and the parent join notification;
+        // the executor's Succeeded handling (finishSuccess) now does it.
+        assertIs<ExecutionState.Succeeded>(enqueued.single().state)
+        assert(store.finalStatus == null) { "the receiver must not finalize directly, got ${store.finalStatus}" }
     }
 
     @Test
@@ -320,6 +322,13 @@ class CallbackReceiverTest {
         override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
         override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
         override suspend fun updateStatus(executionId: UUID, status: String) {}
+        override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
+        override suspend fun markChildArrived(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String, childId: UUID): run.trama.saga.JoinArrival? = null
+        override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> = emptyMap()
+        override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
+        override suspend fun saveWaitingJoin(execution: run.trama.saga.SagaExecution) {}
+        override suspend fun consumeWaitingJoin(executionId: UUID): run.trama.saga.SagaExecution? = null
+        override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
     }
 
     private class FakeEnqueuer(private val captured: MutableList<SagaExecution> = mutableListOf()) : SagaEnqueuer {

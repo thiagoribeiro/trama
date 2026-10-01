@@ -140,6 +140,29 @@ sealed class NodeDefinition {
         val durationMillis: Long,
         val next: String? = null,
     ) : NodeDefinition()
+
+    /**
+     * Fans out into [branches] independent sub-executions (one per entry node id, running
+     * the same definition). Paired with exactly one [Join] node via [join].
+     */
+    @Serializable
+    @SerialName("split")
+    data class Split(
+        override val id: String,
+        val branches: List<String>,
+        val join: String,
+    ) : NodeDefinition()
+
+    /**
+     * Barrier that waits for every branch spawned by its owning [Split] to reach a
+     * terminal state, then continues the parent flow at [next].
+     */
+    @Serializable
+    @SerialName("join")
+    data class Join(
+        override val id: String,
+        val next: String? = null,
+    ) : NodeDefinition()
 }
 
 @Serializable
@@ -163,7 +186,11 @@ data class SwitchCaseDef(
 @Serializable
 data class CallbackConfigDef(
     val timeoutMillis: Long,
+    // Flex serializer (as for SwitchCaseDef.whenExpression): executions carrying the v2 definition
+    // are MsgPack-encoded on the queue, and plain JsonElement serialization is JSON-format only.
+    @Serializable(with = JsonElementFlexSerializer::class)
     val successWhen: JsonElement? = null,
+    @Serializable(with = JsonElementFlexSerializer::class)
     val failureWhen: JsonElement? = null,
 )
 

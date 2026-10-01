@@ -37,7 +37,7 @@ export function init(container) {
     const src = state.getNodes().get(srcId);
     if (!src) return;
 
-    if (src.kind === 'task' || src.kind === 'sleep') {
+    if (src.kind === 'task' || src.kind === 'sleep' || src.kind === 'join') {
       state.updateNode(srcId, { next: null });
     } else if (src.kind === 'switch') {
       if (caseKey === 'default') {
@@ -46,13 +46,20 @@ export function init(container) {
         const idx = parseInt(caseKey);
         state.updateNode(srcId, { cases: src.cases.filter((_, i) => i !== idx) });
       }
+    } else if (src.kind === 'split') {
+      if (caseKey === 'join-ref') {
+        state.updateNode(srcId, { join: null });
+      } else if (caseKey?.startsWith('branch-')) {
+        const idx = parseInt(caseKey.slice('branch-'.length));
+        state.updateNode(srcId, { branches: src.branches.filter((_, i) => i !== idx) });
+      }
     }
   });
 
   // ── Mousedown: output port (connection) OR node body (reposition) ──────────
   canvas.addEventListener('mousedown', e => {
-    // Priority 1: output port → draw connection
-    const portEl = e.target.closest('[data-port-type="out"]');
+    // Priority 1: output port (or split's join-ref port) → draw connection
+    const portEl = e.target.closest('[data-port-type="out"], [data-port-type="join-ref"]');
     if (portEl) {
       e.preventDefault();
       e.stopPropagation();
@@ -91,7 +98,8 @@ export function init(container) {
 // ── Connection drawing ─────────────────────────────────────────────────────────
 
 function startConnection(portEl, container) {
-  const srcId = portEl.getAttribute('data-port-node');
+  const srcId   = portEl.getAttribute('data-port-node');
+  const srcType = portEl.getAttribute('data-port-type'); // 'out' | 'join-ref'
   const srcX  = parseFloat(portEl.getAttribute('cx'));
   const srcY  = parseFloat(portEl.getAttribute('cy'));
 
@@ -131,13 +139,22 @@ function startConnection(portEl, container) {
 
     const src = state.getNodes().get(srcId);
     if (!src) return;
+    const dst = state.getNodes().get(dstId);
 
-    if (src.kind === 'task' || src.kind === 'sleep') {
+    if (srcType === 'join-ref') {
+      if (dst?.kind !== 'join') return; // join-ref only ever points at a join node
+      state.updateNode(srcId, { join: dstId });
+      return;
+    }
+
+    if (src.kind === 'task' || src.kind === 'sleep' || src.kind === 'join') {
       state.updateNode(srcId, { next: dstId });
     } else if (src.kind === 'switch') {
       state.updateNode(srcId, {
         cases: [...src.cases, { name: '', when: null, target: dstId }],
       });
+    } else if (src.kind === 'split') {
+      state.updateNode(srcId, { branches: [...(src.branches || []), dstId] });
     }
   };
 
