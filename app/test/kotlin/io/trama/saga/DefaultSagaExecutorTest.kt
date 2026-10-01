@@ -140,7 +140,7 @@ class DefaultSagaExecutorTest {
         }
         val exec = SagaExecution(
             definition = SagaDefinition(
-                name = "s1",
+                name = "s1-max-nodes",
                 version = "1",
                 failureHandling = FailureHandling.Retry(1, 1),
                 steps = steps,
@@ -165,7 +165,7 @@ class DefaultSagaExecutorTest {
     }
 
     @Test
-    fun `failed step starts compensation after retries exhausted`() = runBlocking {
+    fun `failed step starts compensation after retries exhausted`() = runBlocking<Unit> {
         val store = FakeStore()
         val enqueuer = FakeEnqueuer()
         // First call (step1 UP) succeeds, second call (step2 UP) always fails
@@ -187,7 +187,7 @@ class DefaultSagaExecutorTest {
         // maxAttempts = 1 → after 1 failure retry is exhausted immediately
         val exec = SagaExecution(
             definition = SagaDefinition(
-                name = "s1",
+                name = "s1-compensation",
                 version = "1",
                 failureHandling = FailureHandling.Retry(maxAttempts = 1, delayMillis = 0),
                 steps = listOf(

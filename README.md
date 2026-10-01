@@ -89,6 +89,8 @@ A payment flow with async authorization and sync capture:
 
 👉 No polling. No cron. No hidden state machines.
 
+Templates are [Mustache](https://mustache.github.io/). `{{ }}` escapes the value for where it lands: inside JSON string literals for JSON bodies (by `Content-Type`, or a body starting with `{`/`[` when none is set), XML entities for XML/HTML bodies, form encoding for `application/x-www-form-urlencoded`, and the literal value in URLs, headers (line breaks removed) and other bodies. `{{{ }}}` always inserts the raw value.
+
 ---
 
 ## Why not just use events and queues?

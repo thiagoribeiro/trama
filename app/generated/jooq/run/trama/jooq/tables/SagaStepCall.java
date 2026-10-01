@@ -20,13 +20,14 @@ import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -60,7 +61,7 @@ public class SagaStepCall extends TableImpl<SagaStepCallRecord> {
     /**
      * The column <code>public.saga_step_call.id</code>.
      */
-    public final TableField<SagaStepCallRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
+    public final TableField<SagaStepCallRecord, Long> ID = createField(DSL.name("id"), SQLDataType.BIGINT.nullable(false).generatedByDefaultAsIdentity(), this, "");
 
     /**
      * The column <code>public.saga_step_call.saga_id</code>.
@@ -158,7 +159,7 @@ public class SagaStepCall extends TableImpl<SagaStepCallRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_SAGA_STEP_CALL_SAGA_ID_STARTED_AT);
+        return Arrays.asList(Indexes.IDX_SAGA_STEP_CALL_SAGA_ID_STARTED_AT, Indexes.IDX_SAGA_STEP_CALL_SAGA_ID_STEP_STARTED_AT);
     }
 
     @Override
@@ -215,7 +216,7 @@ public class SagaStepCall extends TableImpl<SagaStepCallRecord> {
      */
     @Override
     public SagaStepCall where(Condition condition) {
-        return new SagaStepCall(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new SagaStepCall(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -282,7 +283,7 @@ public class SagaStepCall extends TableImpl<SagaStepCallRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public SagaStepCall whereExists(Select<?> select) {
+    public SagaStepCall whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -290,7 +291,7 @@ public class SagaStepCall extends TableImpl<SagaStepCallRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public SagaStepCall whereNotExists(Select<?> select) {
+    public SagaStepCall whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

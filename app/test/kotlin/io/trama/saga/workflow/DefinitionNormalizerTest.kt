@@ -22,6 +22,37 @@ import kotlin.test.assertNotNull
 
 class DefinitionNormalizerTest {
 
+    // ── Cache correctness ─────────────────────────────────────────────────────
+
+    @Test
+    fun `v2 definitions sharing name and version but differing in content normalize independently`() {
+        val name = "cache-${java.util.UUID.randomUUID()}"
+        fun def(url: String) = SagaDefinitionV2(
+            name = name, version = "1",
+            failureHandling = FailureHandling.Retry(1, 1),
+            entrypoint = "a",
+            nodes = listOf(
+                NodeDefinition.Task("a", NodeActionDef(TaskMode.SYNC, HttpCall(TemplateString(url), HttpVerb.POST))),
+            ),
+        )
+        DefinitionNormalizer.normalize(def("http://old"))
+        val second = DefinitionNormalizer.normalize(def("http://new"))
+        assertEquals("http://new", (second.nodes.getValue("a") as TaskNode).action.request.url.value)
+    }
+
+    @Test
+    fun `v1 definitions sharing name and version but differing in content normalize independently`() {
+        val name = "cache-v1-${java.util.UUID.randomUUID()}"
+        fun def(url: String) = SagaDefinition(
+            name = name, version = "1",
+            failureHandling = FailureHandling.Retry(1, 1),
+            steps = listOf(SagaStep("a", HttpCall(TemplateString(url), HttpVerb.POST), HttpCall(TemplateString(url), HttpVerb.POST))),
+        )
+        DefinitionNormalizer.normalize(def("http://old"))
+        val second = DefinitionNormalizer.normalize(def("http://new"))
+        assertEquals("http://new", (second.nodes.getValue("a") as TaskNode).action.request.url.value)
+    }
+
     // ── v1 (steps) normalization ──────────────────────────────────────────────
 
     @Test

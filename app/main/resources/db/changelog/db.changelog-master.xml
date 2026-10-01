@@ -151,4 +151,13 @@
         </sql>
     </changeSet>
 
+    <!-- The run payload, so POST /workflows/{id}/retry can re-render {{payload.*}} templates.
+         Nullable and additive: executions without a payload (or created before this column)
+         store NULL. ALTER on the partitioned parent propagates to every partition. -->
+    <changeSet id="008-execution-payload" author="trama">
+        <sql>
+            ALTER TABLE saga_execution ADD COLUMN IF NOT EXISTS payload jsonb;
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

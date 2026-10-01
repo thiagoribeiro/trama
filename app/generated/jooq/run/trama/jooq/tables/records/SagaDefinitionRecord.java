@@ -138,6 +138,6 @@ public class SagaDefinitionRecord extends UpdatableRecordImpl<SagaDefinitionReco
         setDefinition(definition);
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
-        resetChangedOnNotNull();
+        resetTouchedOnNotNull();
     }
 }

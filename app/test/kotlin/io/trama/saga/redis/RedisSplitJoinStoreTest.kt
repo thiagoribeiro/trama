@@ -1,6 +1,5 @@
 package run.trama.saga.redis
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -11,22 +10,11 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
-import org.testcontainers.DockerClientFactory
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
-import run.trama.config.DatabaseConfig
-import run.trama.config.DatabasePoolConfig
-import run.trama.config.RedisConfig
-import run.trama.config.RedisConsumerConfig
-import run.trama.config.RedisPoolConfig
-import run.trama.config.RedisQueueConfig
 import run.trama.saga.ExecutionState
 import run.trama.saga.FailureHandling
 import run.trama.saga.JoinBranchLink
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
-import run.trama.saga.store.DatabaseClient
 import run.trama.saga.store.SagaRepository
 
 /**
@@ -58,8 +46,8 @@ class RedisSplitJoinStoreTest {
     )
 
     @Test
-    fun `only one of N concurrent arrivals observes the barrier satisfied`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `only one of N concurrent arrivals observes the barrier satisfied`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
             val parent = testExecution()
             val branches = (1..5).map { i -> JoinBranchLink("branch-$i", UUID.randomUUID(), Instant.now()) }
@@ -79,8 +67,8 @@ class RedisSplitJoinStoreTest {
     }
 
     @Test
-    fun `redelivering the same child's arrival is a no-op, not a double count`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `redelivering the same child's arrival is a no-op, not a double count`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
             val parent = testExecution()
             val branches = (1..2).map { i -> JoinBranchLink("branch-$i", UUID.randomUUID(), Instant.now()) }
@@ -106,8 +94,8 @@ class RedisSplitJoinStoreTest {
     }
 
     @Test
-    fun `getJoinBranches returns what was registered`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `getJoinBranches returns what was registered`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
             val parent = testExecution()
             val branches = listOf(
@@ -123,8 +111,8 @@ class RedisSplitJoinStoreTest {
     }
 
     @Test
-    fun `waiting join round-trips exactly once`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `waiting join round-trips exactly once`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
             // Deliberately does NOT call store.upsertStart(parent) first — upsertStart only
             // writes to Redis, never to Postgres, so saveWaitingJoin must defensively create the
@@ -149,8 +137,8 @@ class RedisSplitJoinStoreTest {
     }
 
     @Test
-    fun `concurrent consume attempts on the same waiting join never both win`() = runBlocking {
-        if (!DockerClientFactory.instance().isDockerAvailable) return@runBlocking
+    fun `concurrent consume attempts on the same waiting join never both win`() = runBlocking<Unit> {
+        run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
             val parent = testExecution()
             store.saveWaitingJoin(parent)
@@ -166,39 +154,10 @@ class RedisSplitJoinStoreTest {
         }
     }
 
+    // Shared containers (dedicated ones per test intermittently failed to launch under load).
     private suspend fun withStores(block: suspend (RedisSagaExecutionStore) -> Unit) {
-        val postgres = PostgreSQLContainer("postgres:15-alpine")
-        val redisContainer = GenericContainer(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379)
-        postgres.start()
-        redisContainer.start()
-        try {
-            val db = DatabaseClient(
-                DatabaseConfig(
-                    host = postgres.host,
-                    port = postgres.firstMappedPort,
-                    database = postgres.databaseName,
-                    user = postgres.username,
-                    password = postgres.password,
-                    pool = DatabasePoolConfig(),
-                ),
-                SimpleMeterRegistry(),
-            )
-            val repository = SagaRepository(db)
-            val redisUrl = "redis://${redisContainer.host}:${redisContainer.getMappedPort(6379)}"
-            val redis = RedisClientProvider(
-                RedisConfig(url = redisUrl, pool = RedisPoolConfig(), queue = RedisQueueConfig(), consumer = RedisConsumerConfig()),
-            )
-            val keyspace = RedisShardKeyspace("saga:executions", 64)
-            val store = RedisSagaExecutionStore(redis, repository, keyspace)
-            try {
-                block(store)
-            } finally {
-                redis.close()
-                db.close()
-            }
-        } finally {
-            redisContainer.stop()
-            postgres.stop()
-        }
+        val repository = SagaRepository(run.trama.saga.store.IntegrationDb.client)
+        val keyspace = RedisShardKeyspace("it-splitjoin-${UUID.randomUUID()}", 64)
+        block(RedisSagaExecutionStore(run.trama.saga.store.IntegrationDb.redis, repository, keyspace))
     }
 }

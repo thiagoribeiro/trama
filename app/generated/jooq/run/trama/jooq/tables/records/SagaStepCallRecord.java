@@ -243,6 +243,6 @@ public class SagaStepCallRecord extends UpdatableRecordImpl<SagaStepCallRecord> 
         setStepStartedAt(stepStartedAt);
         setCreatedAt(createdAt);
         setStartedAt(startedAt);
-        resetChangedOnNotNull();
+        resetTouchedOnNotNull();
     }
 }
