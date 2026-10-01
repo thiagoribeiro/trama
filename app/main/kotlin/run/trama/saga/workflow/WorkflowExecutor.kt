@@ -24,6 +24,7 @@ import run.trama.saga.StepResult
 import run.trama.saga.SagaExecutor
 import run.trama.runtime.JoinResumer
 import run.trama.saga.TemplateContextBuilder
+import run.trama.saga.TemplateEscaping
 import run.trama.saga.TemplateRenderer
 import run.trama.saga.callback.CallbackTokenService
 import run.trama.saga.callback.CallbackUrlFactory
@@ -98,7 +99,11 @@ class WorkflowExecutor(
                     executeCompensating(execution, workflow, state)
                 }
                 is ExecutionState.Failed -> ExecutionOutcome.FailedFinal
-                is ExecutionState.Succeeded -> ExecutionOutcome.Succeeded
+                is ExecutionState.Succeeded -> {
+                    // Enqueued by CallbackReceiver when the callback of a terminal async node is
+                    // accepted: finish exactly as when the executor itself completes the last node.
+                    finishSuccess(execution, resolveWorkflow(execution), store.loadStepResults(execution.id))
+                }
                 is ExecutionState.WaitingCallback -> {
                     val workflow = resolveWorkflow(execution)
                     executeWaitingCallback(execution, workflow, state)
@@ -949,12 +954,12 @@ class WorkflowExecutor(
         call: HttpCall,
         context: Map<String, Any?>,
     ): RawCallResult {
-        val url = renderer.render(call.url, context)
+        val url = renderer.render(call.url, context, TemplateEscaping.NONE)
         return try {
             val response = httpClient.client.request(url) {
                 method = call.verb.toKtorMethod()
-                call.headers.forEach { (k, v) -> header(k, renderer.render(v, context)) }
-                call.body?.let { setBody(renderer.render(it, context)) }
+                call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
+                call.body?.let { setBody(renderer.render(it, context, TemplateEscaping.forBody(call))) }
             }
             RawCallResult(
                 success = response.status.value in call.successStatusCodes,

@@ -42,6 +42,8 @@ object ConfigLoader {
             ?: System.getenv("RUNTIME_EMPTYPOLLDELAYMILLIS")
         val virtualShardCount = System.getProperty("redis.sharding.virtualShardCount")
             ?: System.getenv("REDIS_SHARDING_VIRTUALSHARDCOUNT")
+        val definitionCacheTtlMillis = System.getProperty("database.pool.definitionCacheTtlMillis")
+            ?: System.getenv("DATABASE_POOL_DEFINITIONCACHETTLMILLIS")
 
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
@@ -85,6 +87,9 @@ object ConfigLoader {
         }
         virtualShardCount?.toIntOrNull()?.let {
             config = config.copy(redis = config.redis.copy(sharding = config.redis.sharding.copy(virtualShardCount = it)))
+        }
+        definitionCacheTtlMillis?.toLongOrNull()?.let {
+            config = config.copy(database = config.database.copy(pool = config.database.pool.copy(definitionCacheTtlMillis = it)))
         }
         return config
     }

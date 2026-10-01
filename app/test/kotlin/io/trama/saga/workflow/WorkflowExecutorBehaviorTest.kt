@@ -203,6 +203,20 @@ class WorkflowExecutorBehaviorTest {
     }
 
     @Test
+    fun `a Succeeded execution from a terminal async callback is finished with hooks`() = runBlocking<Unit> {
+        val store = RecordingStore()
+        val http = http()
+        val d = def(syncTask("a", "http://svc/a"), onSuccess = httpCall("http://hooks/success"))
+        val fromCallback = v2Execution(d, state = ExecutionState.Succeeded(Instant.now()))
+
+        val outcome = testExecutor(store, RecordingEnqueuer(), http.provider).execute(fromCallback)
+
+        assertEquals(ExecutionOutcome.Succeeded, outcome)
+        assertEquals("SUCCEEDED", store.finalStatus)
+        assertEquals(listOf("/success"), http.urls(), "only the hook runs; no node is re-executed")
+    }
+
+    @Test
     fun `failing onSuccessCallback records a warning but saga still succeeds`() = runBlocking<Unit> {
         val store = RecordingStore()
         val d = def(syncTask("a", "http://svc/a"), onSuccess = httpCall("http://hooks/fail"))

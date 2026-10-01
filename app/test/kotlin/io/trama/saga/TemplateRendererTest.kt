@@ -23,7 +23,8 @@ class TemplateRendererTest {
         payload: Map<String, PayloadValue> = emptyMap(),
     ) = TemplateContextBuilder.build(execution, "current", ExecutionPhase.UP, steps, payload)
 
-    private fun render(t: String, context: Map<String, Any?>) = renderer.render(TemplateString(t), context)
+    private fun render(t: String, context: Map<String, Any?>, escaping: TemplateEscaping = TemplateEscaping.JSON_STRING) =
+        renderer.render(TemplateString(t), context, escaping)
 
     @Test
     fun `saga metadata is available`() {
@@ -71,17 +72,58 @@ class TemplateRendererTest {
         assertEquals("a,b,", render("{{#steps}}{{name}},{{/steps}}", ctx(steps)))
     }
 
+    private val tricky = mapOf("v" to PayloadValue(JsonPrimitive("O'Brien & \"Co\" <x>\\path\nline")))
+
     @Test
-    fun `triple mustache does not html-escape`() {
-        val payload = mapOf("q" to PayloadValue(JsonPrimitive("a&b<c>")))
-        assertEquals("a&b<c>", render("{{{payload.q}}}", ctx(payload = payload)))
+    fun `JSON bodies escape values as JSON string content`() {
+        val out = render("""{"v":"{{payload.v}}"}""", ctx(payload = tricky), TemplateEscaping.JSON_STRING)
+        assertEquals("""{"v":"O'Brien & \"Co\" <x>\\path\nline"}""", out)
+        // Round-trips through a JSON parser to the original value.
+        assertEquals("O'Brien & \"Co\" <x>\\path\nline", Json.parseToJsonElement(out).let { (it as kotlinx.serialization.json.JsonObject)["v"]!!.let { v -> (v as JsonPrimitive).content } })
     }
 
     @Test
-    fun `double mustache html-escapes values`() {
-        // Documents current behavior: Mustache escapes by default, which matters when values
-        // are interpolated into JSON bodies (quotes become &quot;). Use {{{ }}} for raw values.
-        val payload = mapOf("q" to PayloadValue(JsonPrimitive("say \"hi\"")))
-        assertEquals("say &quot;hi&quot;", render("{{payload.q}}", ctx(payload = payload)))
+    fun `URLs get the literal value`() {
+        val payload = mapOf("q" to PayloadValue(JsonPrimitive("a&b=c")))
+        assertEquals("http://x/s?q=a&b=c", render("http://x/s?q={{payload.q}}", ctx(payload = payload), TemplateEscaping.NONE))
+    }
+
+    @Test
+    fun `header values are literal but can never contain line breaks`() {
+        val payload = mapOf("h" to PayloadValue(JsonPrimitive("t=1\r\nX-Injected: yes")))
+        assertEquals("t=1X-Injected: yes", render("{{payload.h}}", ctx(payload = payload), TemplateEscaping.HEADER_VALUE))
+    }
+
+    @Test
+    fun `XML bodies keep entity escaping`() {
+        assertEquals("<v>O&#39;Brien &amp; &quot;Co&quot; &lt;x&gt;\\path&#10;line</v>", render("<v>{{payload.v}}</v>", ctx(payload = tricky), TemplateEscaping.XML))
+    }
+
+    @Test
+    fun `form bodies url-encode values`() {
+        val payload = mapOf("q" to PayloadValue(JsonPrimitive("a b&c")))
+        assertEquals("q=a+b%26c", render("q={{payload.q}}", ctx(payload = payload), TemplateEscaping.FORM_URLENCODED))
+    }
+
+    @Test
+    fun `triple mustache is always raw`() {
+        val payload = mapOf("q" to PayloadValue(JsonPrimitive("a&\"b")))
+        TemplateEscaping.entries.forEach { escaping ->
+            assertEquals("a&\"b", render("{{{payload.q}}}", ctx(payload = payload), escaping), "escaping=$escaping")
+        }
+    }
+
+    @Test
+    fun `body escaping follows Content-Type, or the body shape when absent`() {
+        fun call(contentType: String?, body: String) =
+            httpCall("http://x", body = body, headers = contentType?.let { mapOf("content-type" to it) } ?: emptyMap())
+        assertEquals(TemplateEscaping.JSON_STRING, TemplateEscaping.forBody(call("application/json; charset=utf-8", "x")))
+        assertEquals(TemplateEscaping.JSON_STRING, TemplateEscaping.forBody(call("application/vnd.api+json", "x")))
+        assertEquals(TemplateEscaping.XML, TemplateEscaping.forBody(call("application/soap+xml", "x")))
+        assertEquals(TemplateEscaping.FORM_URLENCODED, TemplateEscaping.forBody(call("application/x-www-form-urlencoded", "x")))
+        assertEquals(TemplateEscaping.NONE, TemplateEscaping.forBody(call("text/plain", "{}")))
+        assertEquals(TemplateEscaping.JSON_STRING, TemplateEscaping.forBody(call(null, """  {"a":1}""")))
+        assertEquals(TemplateEscaping.JSON_STRING, TemplateEscaping.forBody(call(null, "[1]")))
+        assertEquals(TemplateEscaping.NONE, TemplateEscaping.forBody(call(null, "plain")))
     }
 }

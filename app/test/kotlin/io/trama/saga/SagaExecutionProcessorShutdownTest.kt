@@ -59,6 +59,42 @@ class SagaExecutionProcessorShutdownTest {
         assertEquals(1, consumer.ackCount.get())
     }
 
+    @Test
+    fun `a failed execution is released, not acked, so its claim can expire and be re-delivered`() = runBlocking<Unit> {
+        val consumer = TestConsumer(sampleExecution())
+        val processor = SagaExecutionProcessor(
+            consumer = consumer,
+            executor = object : SagaExecutor {
+                override suspend fun execute(execution: SagaExecution): ExecutionOutcome {
+                    consumer.executionStarted.complete(Unit)
+                    error("boom")
+                }
+            },
+            enqueuer = object : SagaEnqueuer {
+                override suspend fun enqueue(execution: SagaExecution, delayMillis: Long) = Unit
+            },
+            rateLimiter = object : SagaRateLimiter {
+                override suspend fun checkDelayMillis(sagaName: String): Long? = null
+                override suspend fun recordFailure(sagaName: String) = Unit
+            },
+            metrics = Metrics(SimpleMeterRegistry()),
+            bufferSize = 4,
+            emptyPollDelayMillis = 10,
+        )
+
+        val producerJob = launch { processor.runProducer() }
+        val workerJob = launch { processor.runWorker() }
+        consumer.executionStarted.await()
+        processor.stopPolling()
+        withTimeout(1_000) {
+            producerJob.join()
+            workerJob.join()
+        }
+
+        assertEquals(0, consumer.ackCount.get())
+        assertEquals(1, consumer.releaseCount.get())
+    }
+
     private fun sampleExecution(): SagaExecution =
         SagaExecution(
             definition = SagaDefinition(
@@ -86,6 +122,7 @@ class SagaExecutionProcessorShutdownTest {
         private val emitted = AtomicBoolean(false)
         val stopRequested = AtomicBoolean(false)
         val ackCount = AtomicInteger(0)
+        val releaseCount = AtomicInteger(0)
         val executionStarted = CompletableDeferred<Unit>()
 
         override suspend fun runProducer(
@@ -104,6 +141,10 @@ class SagaExecutionProcessorShutdownTest {
             if (inFlight == claim) {
                 ackCount.incrementAndGet()
             }
+        }
+
+        override fun release(inFlight: ClaimedExecution) {
+            if (inFlight == claim) releaseCount.incrementAndGet()
         }
 
         override fun stopPolling() {

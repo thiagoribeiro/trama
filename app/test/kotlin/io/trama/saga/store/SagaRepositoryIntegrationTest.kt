@@ -10,7 +10,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Disabled
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.JoinBranchLink
 import run.trama.saga.StepCallEntry
@@ -201,23 +200,20 @@ class SagaRepositoryIntegrationTest {
         assertNull(pgStore.consumeSleeping(id))
     }
 
-    @Disabled(
-        "BUG: SagaRepository keeps an unbounded per-instance definition cache that is only invalidated " +
-            "locally. With more than one pod, a definition deleted through pod B is still served (and runnable " +
-            "via /definitions/{name}/{version}/run) by pod A for the lifetime of the process.",
-    )
     @Test
-    fun `a definition deleted by another pod is not served from a stale cache`() = runBlocking<Unit> {
-        val podA = SagaRepository(IntegrationDb.client)
-        val podB = SagaRepository(IntegrationDb.client)
+    fun `a definition deleted by another pod stops being served once the cache TTL elapses`() = runBlocking<Unit> {
+        // The per-pod cache is only invalidated locally; its TTL bounds cross-pod staleness.
+        val podA = SagaRepository(IntegrationDb.client, definitionCacheTtlMillis = 200)
+        val podB = SagaRepository(IntegrationDb.client, definitionCacheTtlMillis = 200)
         val name = "stale-${UUID.randomUUID()}"
         val id = UUID.randomUUID()
         podA.insertDefinition(id, name, "1", defJson)
         assertNotNull(podA.getDefinition(id))
 
         assertTrue(podB.deleteDefinition(id))
+        kotlinx.coroutines.delay(300)
 
-        assertNull(podA.getDefinition(id), "pod A still serves the deleted definition from its cache")
+        assertNull(podA.getDefinition(id), "pod A still serves the deleted definition after the TTL")
         assertNull(podA.getDefinitionByNameVersion(name, "1"))
     }
 }

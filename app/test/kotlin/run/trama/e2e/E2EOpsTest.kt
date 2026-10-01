@@ -62,11 +62,6 @@ class E2EOpsTest {
         assertTrue(text.lines().any { it.startsWith("saga_dequeue") }, "dequeue counter missing")
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: Metrics.recordEnqueued is only called from SagaExecutionRedisWriter, which nothing instantiates " +
-            "(RuntimeBootstrap wires RedisSagaEnqueuer). saga_enqueue_total is never emitted, yet " +
-            "grafana/trama-saga-dashboard.json queries it.",
-    )
     @Test
     fun `metrics endpoint exposes the enqueue counter`() = e2eTest(props = mapOf("metrics.enabled" to "true")) {
         val id = client.runInline(v2DefinitionMap(uniqueName("metrics-enq"), listOf(taskNodeMap("a", "http://localhost:${wm.port()}/step/a"))))
