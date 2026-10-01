@@ -49,6 +49,83 @@
         }
       }
     },
+    "/workflows": {
+      "get": {
+        "summary": "List saga executions",
+        "description": "Newest first, limited to executions started in the last 30 days.",
+        "operationId": "listSagas",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by status, e.g. FAILED."
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by definition name."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "Clamped to 1..200."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Executions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SagaExecutionSummary"
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/workflows/{id}": {
       "get": {
         "summary": "Get saga execution status",
@@ -80,6 +157,118 @@
           },
           "400": {
             "description": "Invalid saga id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/workflows/{id}/steps": {
+      "get": {
+        "summary": "List step results of an execution",
+        "description": "Forward (UP), compensation (DOWN), CALLBACK, SWITCH, SPLIT and JOIN results in execution order.",
+        "operationId": "getSagaSteps",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Step results (empty when the execution is unknown)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SagaStepResultResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid saga id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/workflows/{id}/steps/calls": {
+      "get": {
+        "summary": "List outbound HTTP calls of an execution",
+        "description": "One entry per attempt, with the rendered request and the response.",
+        "operationId": "getSagaStepCalls",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Step calls (empty when the execution is unknown)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SagaStepCallResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid saga id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
             "content": {
               "application/json": {
                 "schema": {
@@ -206,6 +395,109 @@
           },
           "503": {
             "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/workflows/{executionId}/node/{nodeId}/callback": {
+      "post": {
+        "summary": "Deliver an async callback to a waiting node",
+        "description": "Called by the external service with the URL and token injected as {{runtime.callback.url}} / {{runtime.callback.token}}. The body is evaluated against the node's callback.successWhen / failureWhen (as callback.body).",
+        "operationId": "deliverCallback",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Callback-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Token received in {{runtime.callback.token}}."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnyJson"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Callback accepted (the saga resumes, or compensates when the callback signals failure)"
+          },
+          "400": {
+            "description": "Invalid executionId/nodeId or missing X-Callback-Token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Malformed token or invalid signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Replayed callback or attempt mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Token expired or execution no longer waiting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Async callbacks not configured",
             "content": {
               "application/json": {
                 "schema": {
@@ -533,6 +825,68 @@
         }
       }
     },
+    "/workflows/definitions/{name}/{version}": {
+      "get": {
+        "summary": "Get stored saga definition by name and version",
+        "operationId": "getDefinitionByNameVersion",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaDefinitionResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Definition not found"
+          },
+          "400": {
+            "description": "Invalid definition name/version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/workflows/definitions/{name}/{version}/run": {
       "post": {
         "summary": "Run a stored saga definition by name and version",
@@ -641,6 +995,164 @@
       }
     },
     "schemas": {
+      "SagaExecutionSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "status",
+          "startedAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "failureDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SagaStepResultResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "stepIndex",
+          "stepName",
+          "phase",
+          "success",
+          "startedAt",
+          "createdAt",
+          "latencyMs"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stepIndex": {
+            "type": "integer"
+          },
+          "stepName": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "description": "UP, DOWN, CALLBACK, SWITCH, SPLIT or JOIN."
+          },
+          "statusCode": {
+            "type": "integer",
+            "nullable": true
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "responseBody": {
+            "$ref": "#/components/schemas/AnyJson"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stepStartedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latencyMs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "createdAt - stepStartedAt."
+          }
+        }
+      },
+      "SagaStepCallResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "stepName",
+          "phase",
+          "attempt",
+          "stepStartedAt",
+          "createdAt",
+          "latencyMs"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stepName": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "requestUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestBody": {
+            "$ref": "#/components/schemas/AnyJson"
+          },
+          "statusCode": {
+            "type": "integer",
+            "nullable": true
+          },
+          "responseBody": {
+            "$ref": "#/components/schemas/AnyJson"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Transport error when no response was received."
+          },
+          "stepStartedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latencyMs": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ValidationErrorResponse": {
         "type": "object",
         "required": [
