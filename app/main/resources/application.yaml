@@ -13,8 +13,7 @@ redis:
     keyPrefix: "saga:executions"
   consumer:
     batchSize: 50
-    processingTimeoutMillis: 60000
-    requeueIntervalMillis: 5000
+    processingTimeoutMillis: 20000
   sharding:
     virtualShardCount: 1024
     membershipKey: "saga:runtime:pods"

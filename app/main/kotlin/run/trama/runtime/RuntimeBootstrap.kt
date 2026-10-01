@@ -58,7 +58,7 @@ class RuntimeBootstrap(
     private var callbackReceiver: CallbackReceiver? = null
     private var heartbeatJob: Job? = null
     private var refreshJob: Job? = null
-    private var requeueJob: Job? = null
+    private var claimHeartbeatJob: Job? = null
     private var producerJob: Job? = null
     private val workerJobs = mutableListOf<Job>()
     private var maintenanceJob: Job? = null
@@ -85,7 +85,7 @@ class RuntimeBootstrap(
             RuntimeStore.POSTGRES -> SagaRepositoryStore(repo)
         }
         this.store = store
-        val enq = RedisSagaEnqueuer(redis, keyspace)
+        val enq = RedisSagaEnqueuer(redis, keyspace, runtimeMetrics)
         enqueuer = enq
         val renderer = MustacheTemplateRenderer()
         val retryPolicy = DefaultRetryPolicy()
@@ -176,11 +176,7 @@ class RuntimeBootstrap(
 
         heartbeatJob = scope.launch { membershipRegistry.runHeartbeatLoop() }
         refreshJob = scope.launch { membershipRegistry.runRefreshLoop() }
-        requeueJob = scope.launch {
-            consumer.runExpiredRequeuePoller(
-                intervalMillis = config.redis.consumer.requeueIntervalMillis,
-            )
-        }
+        claimHeartbeatJob = scope.launch { consumer.runClaimHeartbeat() }
         producerJob = scope.launch { processor.runProducer() }
         repeat(config.runtime.workerCount) { workerJobs += scope.launch { processor.runWorker() } }
         maintenanceJob = scope.launch { maintenance.runLoop() }
@@ -242,9 +238,11 @@ class RuntimeBootstrap(
             processor?.stopPolling()
             runCatching { membership?.unregister() }
 
-            listOfNotNull(heartbeatJob, refreshJob, requeueJob, maintenanceJob, callbackScannerJob, joinScannerJob).forEach { it.cancel() }
+            listOfNotNull(heartbeatJob, refreshJob, maintenanceJob, callbackScannerJob, joinScannerJob).forEach { it.cancel() }
             producerJob?.join()
             workerJobs.joinAll()
+            // Only after the drain: claims still being processed must keep being renewed.
+            claimHeartbeatJob?.cancel()
             runtimeJob.cancelAndJoin()
         }
         redis.close()

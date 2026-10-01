@@ -48,11 +48,28 @@ class RendezvousShardAllocator(
             hash = hash xor (byte.toLong() and 0xff)
             hash *= FNV64_PRIME
         }
-        return hash
+        return fmix64(hash)
+    }
+
+    /**
+     * murmur3's 64-bit finalizer. Plain FNV-1a barely diffuses its last input bytes into the high
+     * bits, so pod ids differing only in a trailing character (StatefulSet `trama-0..2`, compose
+     * `trama-app-1..3`) produced badly skewed ownership (e.g. 255/255/514 of 1024 shards).
+     */
+    private fun fmix64(value: Long): Long {
+        var h = value
+        h = h xor (h ushr 33)
+        h *= FMIX64_C1
+        h = h xor (h ushr 33)
+        h *= FMIX64_C2
+        h = h xor (h ushr 33)
+        return h
     }
 
     private companion object {
         const val FNV64_OFFSET_BASIS = -3750763034362895579L
         const val FNV64_PRIME = 1099511628211L
+        const val FMIX64_C1 = -49064778989728563L // 0xff51afd7ed558ccd
+        const val FMIX64_C2 = -4265267296055464877L // 0xc4ceb9fe1a85ec53
     }
 }
