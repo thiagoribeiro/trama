@@ -32,6 +32,67 @@ class DryRunSimulatorTest {
         ),
     )
 
+    /** a → switch → (hit | miss), so the trace shows which branch a condition picked. */
+    private fun switchDefinition(condition: String) = SagaDefinitionV2(
+        name = "switch-parity",
+        version = "1",
+        failureHandling = FailureHandling.Retry(1, 0),
+        entrypoint = "a",
+        nodes = listOf(
+            NodeDefinition.Task("a", NodeActionDef(TaskMode.SYNC, httpCall("http://a")), next = "route"),
+            NodeDefinition.Switch(
+                id = "route",
+                cases = listOf(run.trama.saga.SwitchCaseDef("hit", kotlinx.serialization.json.Json.parseToJsonElement(condition), "hit")),
+                default = "miss",
+            ),
+            NodeDefinition.Task("hit", NodeActionDef(TaskMode.SYNC, httpCall("http://hit"))),
+            NodeDefinition.Task("miss", NodeActionDef(TaskMode.SYNC, httpCall("http://miss"))),
+        ),
+    )
+
+    @Test
+    fun `switch conditions see the same names in the dry-run as in production`() {
+        val conditions = listOf(
+            """{"==":[{"var":"payload.method"},"pix"]}""",
+            """{"==":[{"var":"input.method"},"pix"]}""",
+            """{"==":[{"var":"prev.body.status"},"ok"]}""",
+            """{"==":[{"var":"nodes.a.response.body.status"},"ok"]}""",
+            """{"==":[{"var":"step.a.body.status"},"ok"]}""",
+        )
+        val payload = mapOf("method" to JsonPrimitive("pix"))
+        val aBody = JsonObject(mapOf("status" to JsonPrimitive("ok")))
+
+        for (condition in conditions) {
+            val scenario = DryRunScenario(
+                payload = JsonObject(payload),
+                steps = mapOf(
+                    "a" to StepMock(status = 200, body = aBody),
+                    "hit" to StepMock(status = 200, body = JsonObject(emptyMap())),
+                    "miss" to StepMock(status = 200, body = JsonObject(emptyMap())),
+                ),
+            )
+            val simulated = DryRunSimulator().run(switchDefinition(condition), scenario)
+                .entries.filterIsInstance<TraceEntry.Switch>().single()
+
+            val runtime = run.trama.saga.workflow.SwitchNodeHandler.evaluate(
+                run.trama.saga.workflow.DefinitionNormalizer.normalize(switchDefinition(condition)).nodes.getValue("route")
+                    as run.trama.saga.workflow.SwitchNode,
+                execution = run.trama.saga.SagaExecution(
+                    definition = run.trama.saga.SagaDefinition("switch-parity", "1", FailureHandling.Retry(1, 0), steps = emptyList()),
+                    id = java.util.UUID.randomUUID(),
+                    startedAt = java.time.Instant.now(),
+                    currentStepIndex = 0,
+                    state = run.trama.saga.ExecutionState.InProgress(activeNodeId = "route"),
+                ),
+                payload = payload.mapValues { run.trama.saga.PayloadValue(it.value) },
+                stepResults = listOf(run.trama.saga.StepResult(0, "a", aBody, null)),
+            )
+
+            assertEquals("hit", runtime.targetNodeId, "production must match: $condition")
+            assertEquals(runtime.targetNodeId, simulated.targetNodeId, "dry-run must agree with production: $condition")
+        }
+    }
+
     @Test
     fun `simulates split branches and continues after join`() {
         val scenario = DryRunScenario(

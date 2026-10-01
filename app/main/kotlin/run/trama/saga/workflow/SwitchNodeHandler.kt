@@ -24,7 +24,7 @@ object SwitchNodeHandler {
         payload: Map<String, PayloadValue>,
         stepResults: List<StepResult>,
     ): EvaluationResult {
-        val data = buildEvaluationContext(payload, stepResults)
+        val data = evaluationContext(payload, stepResults)
 
         for (case in node.cases) {
             if (JsonLogicEvaluator.evaluateBool(case.whenExpression, data)) {
@@ -43,7 +43,13 @@ object SwitchNodeHandler {
         )
     }
 
-    private fun buildEvaluationContext(
+    /**
+     * The json-logic data a switch condition sees. Also used by the CLI dry-run, so a simulated
+     * run evaluates conditions against exactly the same names as production.
+     * `input` is an alias of `payload` (the name async callback conditions and the dry-run always
+     * used), so `{"var": "input.x"}` and `{"var": "payload.x"}` are equivalent.
+     */
+    fun evaluationContext(
         payload: Map<String, PayloadValue>,
         stepResults: List<StepResult>,
     ): Map<String, Any?> {
@@ -68,6 +74,7 @@ object SwitchNodeHandler {
         }
         return mapOf(
             "payload" to payloadMap,
+            "input"   to payloadMap,
             "nodes"   to nodesMap,
             "step"    to stepMap,
             "prev"    to prevMap,

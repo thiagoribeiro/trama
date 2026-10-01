@@ -123,6 +123,28 @@ class E2EAdvancedFlowTest {
         assertEquals(tricky, received["name"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `switch conditions on input route like payload`() = e2eTest {
+        val def = v2DefinitionMap(
+            uniqueName("switch-input"),
+            listOf(
+                mapOf(
+                    "kind" to "switch",
+                    "id" to "route",
+                    "cases" to listOf(mapOf("name" to "pix", "when" to mapOf("==" to listOf(mapOf("var" to "input.paymentMethod"), "pix")), "target" to "pix")),
+                    "default" to "fallback",
+                ),
+                taskNodeMap("pix", svc("/step/pix")),
+                taskNodeMap("fallback", svc("/step/fallback")),
+            ),
+        )
+        val id = client.runInline(def, mapOf("paymentMethod" to "pix"))
+
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, id)["status"]?.jsonPrimitive?.content)
+        assertEquals(1, wm.requestsTo("/step/pix").size, "input.paymentMethod must match the payload")
+        assertEquals(0, wm.requestsTo("/step/fallback").size)
+    }
+
     // ── Async successWhen ───────────────────────────────────────────────────
 
     private val approved = mapOf("==" to listOf(mapOf("var" to "callback.body.status"), "approved"))

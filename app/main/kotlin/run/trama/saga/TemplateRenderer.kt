@@ -118,6 +118,7 @@ object TemplateContextBuilder {
             "phase" to phase.name,
         )
         base["payload"] = payload.mapValues { it.value.value.toAny() }
+        base["input"] = base["payload"] // alias, as in switch and callback conditions
         fun stepEntry(step: StepResult): Map<String, Any?> = mapOf(
             "index" to step.index,
             "name"  to step.name,

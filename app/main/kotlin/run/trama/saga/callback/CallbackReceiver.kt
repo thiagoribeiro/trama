@@ -288,6 +288,8 @@ class CallbackReceiver(
         val inputMap = execution.payload.mapValues { (_, v) -> v.value.toAny() }
         return mapOf(
             "input" to inputMap,
+            // Same payload, under the name switch conditions use.
+            "payload" to inputMap,
             "callback" to mapOf("body" to bodyJson.toAny()),
         )
     }

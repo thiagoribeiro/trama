@@ -221,6 +221,46 @@ class CallbackReceiverTest {
     }
 
     @Test
+    fun `successWhen sees the payload as both payload and input`() = runBlocking<Unit> {
+        for (root in listOf("payload", "input")) {
+            val successWhen = kotlinx.serialization.json.Json.parseToJsonElement("""{"==":[{"var":"$root.tier"},"gold"]}""")
+            val defV2 = SagaDefinitionV2(
+                name = "order-success-alias-$root",
+                version = "1",
+                entrypoint = nodeId,
+                failureHandling = FailureHandling.Retry(maxAttempts = 0, delayMillis = 0),
+                nodes = listOf(
+                    NodeDefinition.Task(
+                        id = nodeId,
+                        action = NodeActionDef(
+                            mode = TaskMode.ASYNC,
+                            request = HttpCall(url = TemplateString("http://svc/pay"), verb = HttpVerb.POST),
+                            callback = CallbackConfigDef(timeoutMillis = 60_000, successWhen = successWhen),
+                        ),
+                    )
+                ),
+            )
+            val execution = SagaExecution(
+                definition = SagaDefinition("order-success-alias-$root", "1", FailureHandling.Retry(0, 0), steps = emptyList()),
+                definitionV2 = defV2,
+                id = executionId,
+                startedAt = Instant.now(),
+                currentStepIndex = 0,
+                state = ExecutionState.WaitingCallback(nodeId, 0, Instant.now().plusSeconds(60), "stub-nonce", emptyList(), emptyList()),
+                payload = mapOf("tier" to run.trama.saga.PayloadValue(JsonPrimitive("gold"))),
+            )
+            val meta = tokenService.generate(executionId, nodeId, attempt = 0, timeoutMillis = 60_000)
+            val store = FakeStore(execution = execution, meta = meta)
+            val receiver = CallbackReceiver(store, FakeEnqueuer(), tokenService, retryPolicy, metrics)
+
+            receiver.receive(executionId, nodeId, tokenService.tokenString(meta), "{}")
+
+            val step = store.stepResults.single { it.phase == ExecutionPhase.CALLBACK }
+            assert(step.success) { "successWhen on $root.tier should have matched the payload" }
+        }
+    }
+
+    @Test
     fun `failure-condition callback inserts CALLBACK step result with success=false`() = runBlocking {
         // Build a V2 execution with failureWhen={"===":[1,1]} (always true → every callback fails)
         val alwaysTrue = buildJsonObject {
