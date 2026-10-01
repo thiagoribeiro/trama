@@ -6,7 +6,6 @@ import io.lettuce.core.ScriptOutputType
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.InstantAsStringSerializer
-import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
 import run.trama.saga.SleepEntry
@@ -14,6 +13,8 @@ import run.trama.saga.StepResult
 import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.WaitingInfo
 import run.trama.saga.store.SagaRepository
+import run.trama.saga.store.persistedDefinitionJson
+import run.trama.saga.store.persistedPayloadJson
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -31,6 +32,13 @@ import org.slf4j.LoggerFactory
  * whether the fast path is used.
  */
 private const val JOIN_BARRIER_TTL_SECONDS = 86_400L
+
+/**
+ * How long past its expected resume time a parked execution's Redis state (sleep sentinel, meta,
+ * step history) is kept. Normally irrelevant — resuming consumes/refreshes it and finalization
+ * deletes it — it only bounds memory for abandoned executions and absorbs queue backlog.
+ */
+private const val PARKED_RETENTION_BUFFER_SECONDS = 86_400L
 
 class RedisSagaExecutionStore(
     private val redis: RedisCommandsProvider,
@@ -121,13 +129,14 @@ class RedisSagaExecutionStore(
             id = execution.id,
             name = execution.definition.name,
             version = execution.definition.version,
-            definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition),
+            definitionJson = execution.persistedDefinitionJson(),
             startedAt = execution.startedAt,
             status = "IN_PROGRESS",
             failureDescription = null,
             callbackWarning = null,
             lastFailedStepIndex = null,
             lastFailedPhase = null,
+            payloadJson = execution.persistedPayloadJson(),
         )
         writeMeta(meta)
     }
@@ -162,6 +171,7 @@ class RedisSagaExecutionStore(
             lastFailedPhase = meta.lastFailedPhase?.let { ExecutionPhase.valueOf(it) },
             callbackWarning = meta.callbackWarning,
             steps = steps,
+            payloadJson = meta.payloadJson,
         )
 
         deleteKeys(meta.id)
@@ -291,6 +301,19 @@ class RedisSagaExecutionStore(
         }
     }
 
+    override suspend fun retainUntil(executionId: UUID, until: Instant) {
+        retainFor(executionId, until.epochSecond - Instant.now().epochSecond + PARKED_RETENTION_BUFFER_SECONDS)
+    }
+
+    /** Extends meta + step history to [seconds] (never below the normal idle TTL), one round trip. */
+    private suspend fun retainFor(executionId: UUID, seconds: Long) {
+        val ttl = seconds.coerceAtLeast(ttlSeconds)
+        redis.withCommands { commands ->
+            commands.expire(metaKey(executionId).toByteArray(), ttl)
+            commands.expire(stepsKey(executionId).toByteArray(), ttl)
+        }
+    }
+
     private suspend fun touchMetaTtl(executionId: UUID) {
         val key = metaKey(executionId)
         redis.withCommands { commands ->
@@ -317,11 +340,11 @@ class RedisSagaExecutionStore(
             commands.set(key, value)
             commands.expire(key, ttl)
         }
+        retainUntil(execution.id, state.deadlineAt)
 
         // Write to Postgres so the status endpoint can surface WAITING_CALLBACK
         // and the callback timeout scanner can find timed-out executions.
-        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
-        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
+        repository.upsertExecutionStart(execution)
         repository.saveWaitingState(
             executionId = execution.id,
             nodeId = state.nodeId,
@@ -366,13 +389,19 @@ class RedisSagaExecutionStore(
         )
         val key = sleepKey(execution.id).toByteArray()
         val value = json.encodeToString(RedisSleepEntry.serializer(), entry).toByteArray()
-        // TTL: seconds until wakeAt + 2-hour buffer so the key outlives any re-enqueue chunks
-        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + 7200).coerceAtLeast(120)
+        // TTL: until wakeAt + buffer. The sentinel is what lets exactly one queue item claim the
+        // wake-up, so it must outlive any realistic queue backlog; it is deleted on consume, so the
+        // buffer only costs memory for abandoned sleeps.
+        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + PARKED_RETENTION_BUFFER_SECONDS).coerceAtLeast(120)
         redis.withCommands { commands ->
             commands.set(key, value)
             commands.expire(key, ttl)
         }
-        // Update Postgres so the status API surfaces SLEEPING
+        retainFor(execution.id, ttl)
+        // Update Postgres so the status API surfaces SLEEPING. Under this store the row otherwise
+        // only exists after finalization, so it must be upserted first (as saveWaiting does) —
+        // without it the UPDATE matches nothing and /wake cannot find the execution.
+        repository.upsertExecutionStart(execution)
         repository.updateStatus(execution.id, "SLEEPING")
     }
 
@@ -455,6 +484,8 @@ class RedisSagaExecutionStore(
         // writing a Redis mirror here would just be a wasted round trip that's never read back.
         val state = execution.state as? ExecutionState.WaitingJoin ?: return
         val executionJson = json.encodeToString(SagaExecution.serializer(), execution)
+        // No known deadline for a join: keep the parent's history as long as the barrier keys.
+        retainFor(execution.id, JOIN_BARRIER_TTL_SECONDS)
 
         // upsertStart only writes to Redis (the hot-path store), never Postgres — so under the
         // default REDIS store backend, the parent has no saga_execution row yet at this point.
@@ -462,8 +493,7 @@ class RedisSagaExecutionStore(
         // affect zero rows without this — permanently losing the join pointer with no error,
         // no trace in the status API, and no way for JoinCompletionScanner to ever find it.
         // Same defensive upsert saveWaiting (the WaitingCallback sibling) already does above.
-        val definitionJson = json.encodeToString(SagaDefinition.serializer(), execution.definition)
-        repository.upsertExecutionRecord(execution.id, execution.definition.name, execution.definition.version, definitionJson, execution.startedAt)
+        repository.upsertExecutionStart(execution)
         repository.saveWaitingJoinState(
             executionId = execution.id,
             splitNodeId = state.splitNodeId,
@@ -535,6 +565,8 @@ data class RedisExecutionMeta(
     val callbackWarning: String?,
     val lastFailedStepIndex: Int?,
     val lastFailedPhase: String?,
+    /** Default keeps metas written by a previous version (still in Redis during a deploy) readable. */
+    val payloadJson: String? = null,
 )
 
 @Serializable

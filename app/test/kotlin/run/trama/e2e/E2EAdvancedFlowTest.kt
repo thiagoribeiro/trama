@@ -7,7 +7,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -113,19 +112,21 @@ class E2EAdvancedFlowTest {
         assertEquals("7", body["prev"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `JSON bodies carry values with quotes, backslashes and newlines intact`() = e2eTest {
+        val tricky = "O'Brien & \"Co\" <x> \\path\nline"
+        val def = v2DefinitionMap(uniqueName("escape"), listOf(taskNodeMap("a", svc("/step/a"), body = mapOf("name" to "{{payload.name}}"))))
+        val id = client.runInline(def, mapOf("name" to tricky))
+
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, id)["status"]?.jsonPrimitive?.content)
+        val received = testJson.parseToJsonElement(wm.requestsTo("/step/a").single().bodyAsString).jsonObject
+        assertEquals(tricky, received["name"]?.jsonPrimitive?.content)
+    }
+
     // ── Async successWhen ───────────────────────────────────────────────────
 
     private val approved = mapOf("==" to listOf(mapOf("var" to "callback.body.status"), "approved"))
 
-    private companion object {
-        const val SUCCESS_WHEN_BUG =
-            "BUG: any v2 async node with callback.successWhen/failureWhen makes POST /workflows/run return 500. " +
-                "CallbackConfigDef declares them as plain JsonElement (switch `when` uses JsonElementFlexSerializer), " +
-                "and the MsgPack queue encoder rejects JsonElement's JSON-only serializer. The feature is only " +
-                "reachable in unit tests today."
-    }
-
-    @Disabled(SUCCESS_WHEN_BUG)
     @Test
     fun `async callback matching successWhen resumes the saga`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/auth")
@@ -139,7 +140,6 @@ class E2EAdvancedFlowTest {
         assertEquals(1, wm.requestsTo("/step/done").size)
     }
 
-    @Disabled(SUCCESS_WHEN_BUG)
     @Test
     fun `async callback not matching successWhen fails the saga`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/auth")
@@ -229,12 +229,6 @@ class E2EAdvancedFlowTest {
         assertEquals(1, wm.requestsTo("/step/end").size)
     }
 
-    @Disabled(
-        "BUG: when the async node is the LAST node of a branch, CallbackReceiver finalizes the child with a bare " +
-            "store.updateFinal(SUCCEEDED) instead of WorkflowExecutor.finalizeAndNotifyParent. The join barrier " +
-            "never counts the arrival, so the parent stays WAITING_JOIN forever (JoinCompletionScanner only resumes " +
-            "barriers whose arrivals were already counted).",
-    )
     @Test
     fun `join fires when a branch ends with an async node`() = e2eTest(wmPort = wm.port()) {
         wm.stubAsyncStep("/async/ext")

@@ -204,6 +204,20 @@ public class SagaExecutionRecord extends UpdatableRecordImpl<SagaExecutionRecord
         return (JSONB) get(12);
     }
 
+    /**
+     * Setter for <code>public.saga_execution.payload</code>.
+     */
+    public void setPayload(JSONB value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.saga_execution.payload</code>.
+     */
+    public JSONB getPayload() {
+        return (JSONB) get(13);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -227,7 +241,7 @@ public class SagaExecutionRecord extends UpdatableRecordImpl<SagaExecutionRecord
     /**
      * Create a detached, initialised SagaExecutionRecord
      */
-    public SagaExecutionRecord(UUID id, String name, String version, JSONB definition, String status, String failureDescription, String callbackWarning, Integer lastFailedStepIndex, String lastFailedPhase, OffsetDateTime startedAt, OffsetDateTime completedAt, OffsetDateTime updatedAt, JSONB waitingState) {
+    public SagaExecutionRecord(UUID id, String name, String version, JSONB definition, String status, String failureDescription, String callbackWarning, Integer lastFailedStepIndex, String lastFailedPhase, OffsetDateTime startedAt, OffsetDateTime completedAt, OffsetDateTime updatedAt, JSONB waitingState, JSONB payload) {
         super(SagaExecution.SAGA_EXECUTION);
 
         setId(id);
@@ -243,6 +257,7 @@ public class SagaExecutionRecord extends UpdatableRecordImpl<SagaExecutionRecord
         setCompletedAt(completedAt);
         setUpdatedAt(updatedAt);
         setWaitingState(waitingState);
-        resetChangedOnNotNull();
+        setPayload(payload);
+        resetTouchedOnNotNull();
     }
 }

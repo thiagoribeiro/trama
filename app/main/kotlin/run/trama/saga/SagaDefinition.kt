@@ -186,7 +186,11 @@ data class SwitchCaseDef(
 @Serializable
 data class CallbackConfigDef(
     val timeoutMillis: Long,
+    // Flex serializer (as for SwitchCaseDef.whenExpression): executions carrying the v2 definition
+    // are MsgPack-encoded on the queue, and plain JsonElement serialization is JSON-format only.
+    @Serializable(with = JsonElementFlexSerializer::class)
     val successWhen: JsonElement? = null,
+    @Serializable(with = JsonElementFlexSerializer::class)
     val failureWhen: JsonElement? = null,
 )
 

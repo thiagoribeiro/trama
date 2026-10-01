@@ -199,14 +199,11 @@ class CallbackReceiver(
 
         val nextNodeId = node.next
         if (nextNodeId == null) {
-            // Terminal node — finalize the saga
-            store.updateFinal(execution.id, "SUCCEEDED")
-            metrics.recordSagaDuration(
-                sagaName = execution.definition.name,
-                sagaVersion = execution.definition.version,
-                finalStatus = "SUCCEEDED",
-                startedAt = execution.startedAt,
-            )
+            // Terminal node — hand finalization to the executor, like any other last node: it runs
+            // onSuccessCallback, notifies the parent's join barrier (for split branches) and records
+            // metrics. Finalizing here with a bare updateFinal skipped all of that, and running the
+            // hook inline would block the caller's callback request on a third-party HTTP call.
+            enqueuer.enqueue(execution.copy(state = ExecutionState.Succeeded(completedAt = Instant.now())), 0)
             logger.info(
                 "saga succeeded via async callback",
                 kv("executionId", execution.id.toString()),

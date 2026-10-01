@@ -7,7 +7,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -99,10 +98,6 @@ class E2EPostgresStoreTest {
         assertEquals("SUCCEEDED", awaitSagaTerminal(client, id, timeoutMs = 20_000)["status"]?.jsonPrimitive?.content)
     }
 
-    @Disabled(
-        "BUG: under runtime.store=POSTGRES, SagaRepositoryStore.consumeSleeping always returns null, so " +
-            "POST /workflows/{id}/wake answers 200 (AlreadyWaking) and nothing is woken.",
-    )
     @Test
     fun `wake cuts a long sleep short`() = e2eTest(props = pg) {
         val def = v2DefinitionMap(

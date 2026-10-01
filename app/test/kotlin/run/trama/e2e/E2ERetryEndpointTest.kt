@@ -7,7 +7,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -70,10 +69,6 @@ class E2ERetryEndpointTest {
         assertEquals(2, wm.requestsTo("/step/charge").size)
     }
 
-    @Disabled(
-        "BUG: POST /workflows/{id}/retry rebuilds the execution with payload = emptyMap(), since the payload is " +
-            "never persisted. Every {{payload.*}} template renders empty on the retried run.",
-    )
     @Test
     fun `retry keeps the original payload`() = e2eTest {
         val id = client.failedSaga(uniqueName("retry-payload"))
@@ -86,10 +81,6 @@ class E2ERetryEndpointTest {
         assertEquals("ord-7", order)
     }
 
-    @Disabled(
-        "BUG: POST /workflows/{id}/retry does not check the current status. A SUCCEEDED (or still IN_PROGRESS) " +
-            "saga is re-queued and every step runs again, including non-idempotent side effects.",
-    )
     @Test
     fun `retry refuses sagas that did not fail`() = e2eTest {
         wm.stubPath("/undo/reserve", 200)
@@ -100,11 +91,6 @@ class E2ERetryEndpointTest {
         assertEquals(409, resp.status.value)
     }
 
-    @Disabled(
-        "BUG: v2 retry is documented as 422, but returns 500. saga_execution.definition stores the v1 *stub* " +
-            "(execution.definition, steps = []), not the v2 graph, so the containsKey(\"nodes\") check never matches " +
-            "and definition.steps.last() throws NoSuchElementException.",
-    )
     @Test
     fun `retry of a v2 saga is rejected as unsupported`() = e2eTest {
         wm.stubPath("/step/b", 500)
