@@ -14,7 +14,7 @@ class ConfigLoaderTest {
         "runtime.enabled", "metrics.enabled", "telemetry.enabled", "redis.url",
         "database.host", "database.port", "database.database", "database.user", "database.password",
         "runtime.callback.baseUrl", "runtime.callback.hmacSecret", "runtime.callback.hmacKid",
-        "runtime.emptyPollDelayMillis", "redis.sharding.virtualShardCount", "database.pool.definitionCacheTtlMillis",
+        "runtime.emptyPollDelayMillis", "redis.sharding.virtualShardCount", "database.pool.definitionCacheTtlMillis", "redis.topology", "redis.cluster.nodes",
     )
     private val saved = mutableMapOf<String, String?>()
 
@@ -80,6 +80,23 @@ class ConfigLoaderTest {
         System.setProperty("runtime.callback.hmacKid", "k2")
         val cb = ConfigLoader.load().runtime.callback
         assertEquals("k2", cb.hmacKid)
+    }
+
+    @Test
+    fun `redis cluster can be configured through overrides`() {
+        System.setProperty("redis.topology", "cluster")
+        System.setProperty("redis.cluster.nodes", " redis://a:6379, redis://b:6379 ,,")
+
+        val redis = ConfigLoader.load().redis
+
+        assertEquals(RedisTopology.CLUSTER, redis.topology)
+        assertEquals(listOf("redis://a:6379", "redis://b:6379"), redis.cluster.nodes)
+    }
+
+    @Test
+    fun `invalid redis topology is ignored`() {
+        System.setProperty("redis.topology", "mesh")
+        if (System.getenv("REDIS_TOPOLOGY") == null) assertEquals(RedisTopology.STANDALONE, ConfigLoader.load().redis.topology)
     }
 
     @Test
