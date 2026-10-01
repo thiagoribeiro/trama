@@ -14,7 +14,7 @@ class ConfigLoaderTest {
         "runtime.enabled", "metrics.enabled", "telemetry.enabled", "redis.url",
         "database.host", "database.port", "database.database", "database.user", "database.password",
         "runtime.callback.baseUrl", "runtime.callback.hmacSecret", "runtime.callback.hmacKid",
-        "runtime.emptyPollDelayMillis", "redis.sharding.virtualShardCount",
+        "runtime.emptyPollDelayMillis", "redis.sharding.virtualShardCount", "database.pool.definitionCacheTtlMillis",
     )
     private val saved = mutableMapOf<String, String?>()
 
@@ -48,6 +48,7 @@ class ConfigLoaderTest {
         System.setProperty("runtime.callback.hmacSecret", "s3cret")
         System.setProperty("runtime.emptyPollDelayMillis", "7")
         System.setProperty("redis.sharding.virtualShardCount", "64")
+        System.setProperty("database.pool.definitionCacheTtlMillis", "1500")
 
         val config = ConfigLoader.load()
 
@@ -59,6 +60,7 @@ class ConfigLoaderTest {
         assertEquals("s3cret", config.runtime.callback.hmacSecret)
         assertEquals(7, config.runtime.emptyPollDelayMillis)
         assertEquals(64, config.redis.sharding.virtualShardCount)
+        assertEquals(1500, config.database.pool.definitionCacheTtlMillis)
     }
 
     @Test

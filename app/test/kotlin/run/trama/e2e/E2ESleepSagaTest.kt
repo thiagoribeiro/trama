@@ -5,7 +5,6 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -71,10 +70,6 @@ class E2ESleepSagaTest {
         awaitSagaStatus(client, id, "SLEEPING", timeoutMs = 10_000)
     }
 
-    @Disabled(
-        "BUG: same root cause as the SLEEPING status bug. wakeExecution looks the saga up in Postgres first, finds " +
-            "no row, and answers 404, so POST /workflows/{id}/wake never works under the default REDIS store.",
-    )
     @Test
     fun `wake endpoint cuts a long sleep short`() = e2eTest {
         val id = client.runInline(sleepDef(uniqueName("wake"), sleepMillis = 10 * 60_000))
@@ -103,12 +98,6 @@ class E2ESleepSagaTest {
         assertEquals("SUCCEEDED", final["status"]?.jsonPrimitive?.content)
     }
 
-    @Disabled(
-        "BUG (masked today by the 404 above): RuntimeBootstrap.wakeExecution builds " +
-            "InProgress(activeNodeId = Sleeping.nextNodeId), which is null when the sleep is the terminal node. " +
-            "WorkflowExecutor then takes the legacy v1 path (resolveActiveNodeId → definition.steps), which is " +
-            "empty for v2 → coerceIn(0, -1) throws and the execution never finishes.",
-    )
     @Test
     fun `waking a terminal sleep finishes the saga`() = e2eTest {
         val id = client.runInline(sleepDef(uniqueName("wake-last"), sleepMillis = 10 * 60_000, terminal = true))

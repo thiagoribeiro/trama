@@ -34,8 +34,6 @@ class E2EExecutionQueryTest {
 
     private fun svc(path: String) = "http://localhost:${wm.port()}$path"
 
-    // Distinct versions per variant: the normalizer caches graphs by name:version (see the
-    // @Disabled cache test below), so reusing name+version with different content is unsafe.
     private fun def(name: String, failing: Boolean, maxAttempts: Int = 0) = v2DefinitionMap(
         name,
         listOf(
@@ -43,13 +41,8 @@ class E2EExecutionQueryTest {
             taskNodeMap("b", svc(if (failing) "/fail/b" else "/step/b")),
         ),
         failureHandling = mapOf("type" to "retry", "maxAttempts" to maxAttempts, "delayMillis" to 10),
-        version = if (failing) "fail-$maxAttempts" else "ok-$maxAttempts",
     )
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: DefinitionNormalizer caches the normalized graph by name:version for the life of the JVM. A second " +
-            "inline POST /workflows/run with the same name/version but a different graph executes the first one.",
-    )
     @Test
     fun `inline runs with the same name and version execute their own graph`() = e2eTest {
         wm.stubPath("/fail/b", 500)
@@ -109,11 +102,6 @@ class E2EExecutionQueryTest {
         assertTrue(steps.all { it["latencyMs"]!!.jsonPrimitive.long >= 0 })
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: under the REDIS store, step results are flushed at finalization by SagaRepository.insertStepResults " +
-            "in one multi-row INSERT that stamps every row with the same created_at. getStepResults orders by " +
-            "created_at, so the timeline comes back in arbitrary order (observed reversed).",
-    )
     @Test
     fun `steps endpoint returns steps in execution order`() = e2eTest {
         wm.stubPath("/fail/b", 500)
@@ -123,10 +111,6 @@ class E2EExecutionQueryTest {
         assertEquals(listOf("a:UP:true", "b:UP:false", "a:DOWN:true"), stepKeys(steps))
     }
 
-    @org.junit.jupiter.api.Disabled(
-        "BUG: /workflows/{id}/steps computes latencyMs = created_at - step_started_at. With the REDIS store every " +
-            "created_at is the finalization time, so a step's latency includes all later steps and sleeps.",
-    )
     @Test
     fun `step latency reflects the step itself, not the rest of the saga`() = e2eTest {
         val def = v2DefinitionMap(

@@ -33,6 +33,13 @@ import org.slf4j.LoggerFactory
  */
 private const val JOIN_BARRIER_TTL_SECONDS = 86_400L
 
+/**
+ * How long past its expected resume time a parked execution's Redis state (sleep sentinel, meta,
+ * step history) is kept. Normally irrelevant — resuming consumes/refreshes it and finalization
+ * deletes it — it only bounds memory for abandoned executions and absorbs queue backlog.
+ */
+private const val PARKED_RETENTION_BUFFER_SECONDS = 86_400L
+
 class RedisSagaExecutionStore(
     private val redis: RedisCommandsProvider,
     private val repository: SagaRepository,
@@ -294,6 +301,19 @@ class RedisSagaExecutionStore(
         }
     }
 
+    override suspend fun retainUntil(executionId: UUID, until: Instant) {
+        retainFor(executionId, until.epochSecond - Instant.now().epochSecond + PARKED_RETENTION_BUFFER_SECONDS)
+    }
+
+    /** Extends meta + step history to [seconds] (never below the normal idle TTL), one round trip. */
+    private suspend fun retainFor(executionId: UUID, seconds: Long) {
+        val ttl = seconds.coerceAtLeast(ttlSeconds)
+        redis.withCommands { commands ->
+            commands.expire(metaKey(executionId).toByteArray(), ttl)
+            commands.expire(stepsKey(executionId).toByteArray(), ttl)
+        }
+    }
+
     private suspend fun touchMetaTtl(executionId: UUID) {
         val key = metaKey(executionId)
         redis.withCommands { commands ->
@@ -320,6 +340,7 @@ class RedisSagaExecutionStore(
             commands.set(key, value)
             commands.expire(key, ttl)
         }
+        retainUntil(execution.id, state.deadlineAt)
 
         // Write to Postgres so the status endpoint can surface WAITING_CALLBACK
         // and the callback timeout scanner can find timed-out executions.
@@ -368,12 +389,15 @@ class RedisSagaExecutionStore(
         )
         val key = sleepKey(execution.id).toByteArray()
         val value = json.encodeToString(RedisSleepEntry.serializer(), entry).toByteArray()
-        // TTL: seconds until wakeAt + 2-hour buffer so the key outlives any re-enqueue chunks
-        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + 7200).coerceAtLeast(120)
+        // TTL: until wakeAt + buffer. The sentinel is what lets exactly one queue item claim the
+        // wake-up, so it must outlive any realistic queue backlog; it is deleted on consume, so the
+        // buffer only costs memory for abandoned sleeps.
+        val ttl = (wakeAt.epochSecond - Instant.now().epochSecond + PARKED_RETENTION_BUFFER_SECONDS).coerceAtLeast(120)
         redis.withCommands { commands ->
             commands.set(key, value)
             commands.expire(key, ttl)
         }
+        retainFor(execution.id, ttl)
         // Update Postgres so the status API surfaces SLEEPING. Under this store the row otherwise
         // only exists after finalization, so it must be upserted first (as saveWaiting does) —
         // without it the UPDATE matches nothing and /wake cannot find the execution.
@@ -460,6 +484,8 @@ class RedisSagaExecutionStore(
         // writing a Redis mirror here would just be a wasted round trip that's never read back.
         val state = execution.state as? ExecutionState.WaitingJoin ?: return
         val executionJson = json.encodeToString(SagaExecution.serializer(), execution)
+        // No known deadline for a join: keep the parent's history as long as the barrier keys.
+        retainFor(execution.id, JOIN_BARRIER_TTL_SECONDS)
 
         // upsertStart only writes to Redis (the hot-path store), never Postgres — so under the
         // default REDIS store backend, the parent has no saga_execution row yet at this point.

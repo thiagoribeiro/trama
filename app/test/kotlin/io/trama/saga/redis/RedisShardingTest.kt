@@ -6,7 +6,6 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
-import org.junit.jupiter.api.Disabled
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import run.trama.saga.ExecutionPhase
@@ -54,11 +53,6 @@ class RedisShardingTest {
         owned.forEach { assertTrue(it.size in 150..370, "distribution too skewed: ${owned.map { o -> o.size }}") }
     }
 
-    @Disabled(
-        "BUG: RendezvousShardAllocator scores with plain FNV-1a and no final mixing, so pod ids that differ " +
-            "only in the last character (StatefulSet trama-0..2, compose trama-app-1..3) split shards unevenly: " +
-            "3 pods get [255, 255, 514]. Fix: run the FNV result through a finalizer (e.g. murmur3 fmix64).",
-    )
     @Test
     fun `sequentially named pods get a balanced share of shards`() {
         val pods = listOf("trama-0", "trama-1", "trama-2")
