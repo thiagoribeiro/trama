@@ -109,7 +109,8 @@ class SagaExecutionProcessor(
                 } catch (_: Exception) {
                     // ignore
                 }
-                // Leave in-flight for retry by requeue poller.
+                // Leave it in flight: stop renewing the claim so it expires and is re-delivered.
+                consumer.release(item)
             }
         }
     }
