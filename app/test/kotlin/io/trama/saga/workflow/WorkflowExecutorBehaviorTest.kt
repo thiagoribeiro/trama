@@ -182,6 +182,26 @@ class WorkflowExecutorBehaviorTest {
         assertNull(store.sleeping[asleep.id], "the wake-up consumes the sentinel")
     }
 
+    // ── Node duration metric ────────────────────────────────────────────────
+
+    @Test
+    fun `node durations are recorded per node kind and mode`() = runBlocking<Unit> {
+        val registry = io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+        val d = def(
+            syncTask("a", "http://svc/a", next = "route"),
+            NodeDefinition.Switch("route", listOf(run.trama.saga.SwitchCaseDef("c", JsonPrimitive(true), "nap")), default = "nap"),
+            NodeDefinition.Sleep("nap", 60_000, next = null),
+        )
+
+        testExecutor(RecordingStore(), RecordingEnqueuer(), http().provider, metrics = run.trama.telemetry.Metrics(registry)).execute(v2Execution(d))
+
+        fun count(kind: String, mode: String) =
+            registry.find("saga.node.duration").tags("node_kind", kind, "mode", mode, "saga_name", d.name).timer()?.count() ?: 0L
+        assertEquals(1, count("task", "sync"))
+        assertEquals(1, count("switch", "none"))
+        assertEquals(1, count("sleep", "none"))
+    }
+
     // ── Success / failure hooks ─────────────────────────────────────────────
 
     @Test

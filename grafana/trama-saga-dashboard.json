@@ -720,7 +720,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (saga_name, saga_version, result) (rate(saga_switch_evaluations_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
+          "expr": "sum by (saga_name, saga_version, result) (rate(saga_switch_evaluated_total{saga_name=~\"$saga_name\", saga_version=~\"$saga_version\"}[$__rate_interval]))",
           "legendFormat": "{{saga_name}}/{{saga_version}} result={{result}}",
           "range": true,
           "refId": "A"
