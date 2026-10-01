@@ -18,6 +18,7 @@ import run.trama.saga.SagaExecution
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.TemplateContextBuilder
+import run.trama.saga.TemplateEscaping
 import run.trama.saga.TemplateRenderer
 import run.trama.saga.callback.CallbackTokenService
 import run.trama.saga.callback.CallbackUrlFactory
@@ -146,8 +147,8 @@ class TaskNodeHandler(
         context: Map<String, Any?>,
         execution: SagaExecution,
     ): TaskHttpResult {
-        val url = renderer.render(call.url, context)
-        val renderedBody = call.body?.let { renderer.render(it, context) }
+        val url = renderer.render(call.url, context, TemplateEscaping.NONE)
+        val renderedBody = call.body?.let { renderer.render(it, context, TemplateEscaping.forBody(call)) }
         val stepStartedAt = Instant.now()
         return Tracing.withSpan(
             tracer = tracer,
@@ -175,7 +176,7 @@ class TaskNodeHandler(
                 val response = httpClient.client.request(url) {
                     method = call.verb.toKtorMethod()
                     Tracing.injectHeaders { k, v -> header(k, v) }
-                    call.headers.forEach { (k, v) -> header(k, renderer.render(v, context)) }
+                    call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
                     renderedBody?.let { setBody(it) }
                 }
                 val body = response.bodyAsText()
