@@ -4,6 +4,22 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] - 2026-10-01
+
+### Fixed
+- Switch conditions written as `{"var": "input.x"}` always fell through to the `default` branch in
+  production, although `trama validate` (dry-run) accepted them. Switch, async callback and template
+  contexts now all accept both `payload` and `input` (aliases), and the dry-run uses the exact switch
+  context of the runtime, `prev` and `step` included.
+- `REDIS_TOPOLOGY` and `REDIS_CLUSTER_NODES` environment overrides were documented but ignored, so
+  Redis Cluster could not be enabled through the environment. `REDIS_CLUSTER_NODES` is comma-separated.
+- The Grafana dashboard queried two series the runtime never emitted:
+  - `saga_node_duration_seconds` (labels `node_kind`, `mode`) is now recorded;
+  - the switch panel now uses the real series name, `saga_switch_evaluated_total`.
+- `openapi.json` now documents every route: `GET /workflows`, `GET /workflows/{id}/steps`,
+  `GET /workflows/{id}/steps/calls`, `GET /workflows/definitions/{name}/{version}` and the async callback
+  `POST /workflows/{executionId}/node/{nodeId}/callback`.
+
 ## [2.0.0] - 2026-10-01
 
 ### ⚠️ Breaking changes
@@ -93,5 +109,6 @@ All notable changes to Trama are documented here. The format follows
 First public release: v2 workflow node graph with async calls and callbacks, the visual definition
 editor, and the sleep node. See the [release notes](https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0).
 
+[2.0.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.1
 [2.0.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.0
 [1.0.0]: https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0
