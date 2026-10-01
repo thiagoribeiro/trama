@@ -47,7 +47,12 @@ data class RedisQueueConfig(
 
 data class RedisConsumerConfig(
     val batchSize: Int = 50,
-    val processingTimeoutMillis: Long = 60_000,
+    /**
+     * In-flight claim lease. Live claims are renewed every third of it (claim heartbeat), so it
+     * only bounds how long work claimed by a dead pod waits before being re-delivered.
+     */
+    val processingTimeoutMillis: Long = 20_000,
+    /** Obsolete and ignored: expired claims are now recovered by the claim script itself. */
     val requeueIntervalMillis: Long = 5_000,
 )
 
