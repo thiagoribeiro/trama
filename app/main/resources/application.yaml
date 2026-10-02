@@ -3,12 +3,7 @@ redis:
   url: "redis://localhost:6379"
   cluster:
     nodes: []
-  pool:
-    maxTotal: 16
-    maxIdle: 16
-    minIdle: 0
-    testOnBorrow: true
-    testWhileIdle: true
+  commandTimeoutMillis: 5000
   queue:
     keyPrefix: "saga:executions"
   consumer:
@@ -35,8 +30,9 @@ database:
 runtime:
   enabled: true
   workerCount: 4
-  bufferSize: 200
   emptyPollDelayMillis: 50
+  fullSweepIntervalMillis: 5000
+  livenessStallMillis: 120000
   maxStepsPerExecution: 25
   store: "REDIS"
   callback:
@@ -70,3 +66,9 @@ rateLimit:
 
 metrics:
   enabled: true
+
+reconciler:
+  enabled: true
+  intervalMillis: 30000
+  staleAfterMillis: 120000
+  batchSize: 200

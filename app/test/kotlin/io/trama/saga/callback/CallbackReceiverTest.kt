@@ -349,7 +349,6 @@ class CallbackReceiverTest {
         }
 
         override suspend fun saveWaiting(execution: SagaExecution, signature: String) {}
-        override suspend fun upsertStart(execution: SagaExecution) {}
         override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) { finalStatus = status }
         override suspend fun updateFailure(executionId: UUID, failureDescription: String, failedStepIndex: Int?, failedPhase: ExecutionPhase?) {}
         override suspend fun updateCallbackWarning(executionId: UUID, warning: String) {}
@@ -361,7 +360,6 @@ class CallbackReceiverTest {
         override suspend fun saveSleeping(execution: SagaExecution, wakeAt: java.time.Instant) {}
         override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
         override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
-        override suspend fun updateStatus(executionId: UUID, status: String) {}
         override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
         override suspend fun markChildArrived(parentId: UUID, parentStartedAt: java.time.Instant, splitNodeId: String, childId: UUID): run.trama.saga.JoinArrival? = null
         override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> = emptyMap()

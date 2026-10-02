@@ -114,15 +114,9 @@ class RedisSplitJoinStoreTest {
     fun `waiting join round-trips exactly once`() = runBlocking<Unit> {
         run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
-            // Deliberately does NOT call store.upsertStart(parent) first — upsertStart only
-            // writes to Redis, never to Postgres, so saveWaitingJoin must defensively create the
-            // saga_execution row itself (same as saveWaiting does for WaitingCallback). This is
-            // exactly the sequence the real SplitNode handler exercises: a freshly split parent
-            // has never had its Postgres row written when it parks itself as WaitingJoin. A live
-            // r2d2 E2E run (2026-09-21) caught this as a real bug: without the defensive upsert,
-            // this saveWaitingJoin call is a silent no-op (UPDATE against a nonexistent row) and
-            // the join hangs forever with no trace in the status API.
+            // Every execution's row exists from admission on, so parking only updates it.
             val parent = testExecution()
+            store.admit(listOf(parent))
             store.saveWaitingJoin(parent)
 
             val consumed = store.consumeWaitingJoin(parent.id)
@@ -141,6 +135,7 @@ class RedisSplitJoinStoreTest {
         run.trama.saga.store.IntegrationDb.assumeDocker()
         withStores { store ->
             val parent = testExecution()
+            store.admit(listOf(parent))
             store.saveWaitingJoin(parent)
 
             // Simulates the winning branch's finalizeAndNotifyParent racing against

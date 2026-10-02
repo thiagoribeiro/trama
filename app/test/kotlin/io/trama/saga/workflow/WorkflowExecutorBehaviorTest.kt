@@ -135,7 +135,7 @@ class WorkflowExecutorBehaviorTest {
         assertEquals(listOf("/b"), http.urls())
         assertEquals("SUCCEEDED", store.finalStatus)
         assertNull(store.sleeping[exec.id])
-        assertIs<ExecutionState.InProgress>(store.upserts.last().state, "status goes back to IN_PROGRESS on wake")
+        assertIs<ExecutionState.InProgress>(store.checkpoints.first().state, "status goes back to IN_PROGRESS on wake")
     }
 
     @Test
@@ -353,15 +353,17 @@ class WorkflowExecutorBehaviorTest {
     }
 
     @Test
-    fun `a delayed retry asks the store to retain transient state until it fires`() = runBlocking<Unit> {
+    fun `a delayed retry checkpoints the time it is due`() = runBlocking<Unit> {
         val store = RecordingStore()
         val d = def(syncTask("a", "http://svc/fail-a"), failureHandling = FailureHandling.Retry(maxAttempts = 1, delayMillis = 60_000))
         val before = Instant.now()
 
         testExecutor(store, RecordingEnqueuer(), http().provider).execute(v2Execution(d))
 
-        val until = store.retainedUntil.single()
-        assertTrue(!until.isBefore(before.plusMillis(60_000)), "retained until $until, retry fires 60s after $before")
+        // The reconciler leaves an execution alone until then: re-sending it earlier would run
+        // the retry before its delay.
+        val due = store.resumeAts.single()
+        assertTrue(!due.isBefore(before.plusMillis(60_000)), "due at $due, retry fires 60s after $before")
     }
 
     @Test

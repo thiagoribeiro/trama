@@ -40,6 +40,13 @@ data class SagaExecution(
     val parentJoinNodeId: String? = null,
     /** This branch's stable identifier — equal to its entry node id in the split's `branches` list. */
     val branchId: String? = null,
+    /**
+     * The execution's checkpoint sequence in Postgres when this copy was produced. Every
+     * checkpoint is a compare-and-set from this value, so a copy that fell behind (a redelivered
+     * or zombie queue item) can never overwrite newer progress. The default keeps queue items
+     * written by older versions readable.
+     */
+    val checkpointSeq: Long = 0,
 )
 
 @Serializable

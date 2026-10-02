@@ -127,6 +127,26 @@ public class SagaExecution extends TableImpl<SagaExecutionRecord> {
      */
     public final TableField<SagaExecutionRecord, JSONB> PAYLOAD = createField(DSL.name("payload"), SQLDataType.JSONB, this, "");
 
+    /**
+     * The column <code>public.saga_execution.checkpoint</code>.
+     */
+    public final TableField<SagaExecutionRecord, JSONB> CHECKPOINT = createField(DSL.name("checkpoint"), SQLDataType.JSONB, this, "");
+
+    /**
+     * The column <code>public.saga_execution.checkpoint_seq</code>.
+     */
+    public final TableField<SagaExecutionRecord, Long> CHECKPOINT_SEQ = createField(DSL.name("checkpoint_seq"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
+
+    /**
+     * The column <code>public.saga_execution.checkpoint_carrier</code>.
+     */
+    public final TableField<SagaExecutionRecord, Long> CHECKPOINT_CARRIER = createField(DSL.name("checkpoint_carrier"), SQLDataType.BIGINT, this, "");
+
+    /**
+     * The column <code>public.saga_execution.resume_at</code>.
+     */
+    public final TableField<SagaExecutionRecord, OffsetDateTime> RESUME_AT = createField(DSL.name("resume_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+
     private SagaExecution(Name alias, Table<SagaExecutionRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -163,7 +183,7 @@ public class SagaExecution extends TableImpl<SagaExecutionRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_SAGA_EXECUTION_NAME_STARTED_AT, Indexes.IDX_SAGA_EXECUTION_STARTED_AT, Indexes.IDX_SAGA_EXECUTION_STATUS_STARTED_AT);
+        return Arrays.asList(Indexes.IDX_SAGA_EXECUTION_NAME_STARTED_AT, Indexes.IDX_SAGA_EXECUTION_RESUME, Indexes.IDX_SAGA_EXECUTION_STARTED_AT, Indexes.IDX_SAGA_EXECUTION_STATUS_STARTED_AT);
     }
 
     @Override

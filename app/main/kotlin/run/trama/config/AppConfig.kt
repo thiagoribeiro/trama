@@ -12,13 +12,20 @@ data class AppConfig(
     val callbackTimeoutScanner: CallbackTimeoutScannerConfig = CallbackTimeoutScannerConfig(),
     val joinCompletionScanner: JoinCompletionScannerConfig = JoinCompletionScannerConfig(),
     val sleep: SleepConfig = SleepConfig(),
+    val reconciler: ReconcilerConfig = ReconcilerConfig(),
 )
 
 data class RedisConfig(
     val topology: RedisTopology = RedisTopology.STANDALONE,
     val url: String = "redis://localhost:6379",
     val cluster: RedisClusterConfig = RedisClusterConfig(),
-    val pool: RedisPoolConfig,
+    /**
+     * Upper bound for any single Redis command. Commands are also rejected immediately while the
+     * connection is down (instead of queueing until it returns), so callers see the outage at once.
+     */
+    val commandTimeoutMillis: Long = 5_000,
+    /** Obsolete and ignored: Trama now uses one multiplexed connection (see RedisClientProvider). */
+    val pool: RedisPoolConfig = RedisPoolConfig(),
     val queue: RedisQueueConfig,
     val consumer: RedisConsumerConfig,
     val sharding: RedisShardingConfig = RedisShardingConfig(),
@@ -90,10 +97,30 @@ data class DatabasePoolConfig(
 )
 
 data class RuntimeConfig(
+    /**
+     * Runs workers (claiming and executing work) in this process. With false the process only
+     * serves the API: it still accepts runs and callbacks and enqueues them for worker processes.
+     */
     val enabled: Boolean = true,
     val workerCount: Int = 4,
+    /**
+     * Executions claimed ahead of a free worker. A process holds at most workerCount + prefetch
+     * claimed executions; null means workerCount.
+     */
+    val prefetch: Int? = null,
+    /** Obsolete and ignored: claims are bounded by workerCount + prefetch instead. */
     val bufferSize: Int = 200,
     val emptyPollDelayMillis: Long = 50,
+    /**
+     * How often each claimer visits every owned shard instead of only those the due index points
+     * to. A safety net for index entries lost to a crash or a Redis data loss.
+     */
+    val fullSweepIntervalMillis: Long = 5_000,
+    /**
+     * /healthz fails once the consumer has made no progress for this long (Redis unreachable or a
+     * stuck process), so an orchestrator restarts the process. /readyz reacts much sooner.
+     */
+    val livenessStallMillis: Long = 120_000,
     val maxStepsPerExecution: Int = 25,
     val store: RuntimeStore = RuntimeStore.REDIS,
     val callback: CallbackConfig = CallbackConfig(),
@@ -112,6 +139,11 @@ enum class RuntimeStore {
     POSTGRES,
 }
 
+/**
+ * Per-workflow breaker: after [maxFailures] *worker failures* (exceptions while processing, i.e.
+ * the runtime or its dependencies misbehaving) within [windowMillis], executions of that workflow
+ * are delayed for [blockMillis]. Executions that end FAILED by their own logic do not count.
+ */
 data class RateLimitConfig(
     val enabled: Boolean = true,
     val maxFailures: Long = 5,
@@ -155,9 +187,21 @@ data class CallbackTimeoutScannerConfig(
 data class JoinCompletionScannerConfig(
     val enabled: Boolean = true,
     /** How often the scanner runs, in milliseconds. */
-    val intervalMillis: Long = 300_000,
+    val intervalMillis: Long = 30_000,
     /** Maximum barriers processed per scanner run. */
     val batchSize: Int = 100,
+)
+
+/**
+ * [run.trama.runtime.ExecutionReconciler]: re-sends running or sleeping executions that should
+ * have moved more than [staleAfterMillis] ago but did not (their queue item was lost, e.g. to a
+ * Redis data loss). Must stay well above the longest single node (the HTTP request timeout).
+ */
+data class ReconcilerConfig(
+    val enabled: Boolean = true,
+    val intervalMillis: Long = 30_000,
+    val staleAfterMillis: Long = 120_000,
+    val batchSize: Int = 200,
 )
 
 data class HttpConfig(

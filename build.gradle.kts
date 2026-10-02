@@ -41,7 +41,6 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.lettuce:lettuce-core:6.8.2.RELEASE")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.11.0")
-    implementation("org.apache.commons:commons-pool2:2.13.1")
     implementation("com.ensarsarajcic.kotlinx:serialization-msgpack:$msgpackVersion")
     implementation("com.github.spullara.mustache.java:compiler:0.9.14")
     implementation("io.micrometer:micrometer-registry-prometheus:1.17.0")

@@ -218,6 +218,62 @@ public class SagaExecutionRecord extends UpdatableRecordImpl<SagaExecutionRecord
         return (JSONB) get(13);
     }
 
+    /**
+     * Setter for <code>public.saga_execution.checkpoint</code>.
+     */
+    public void setCheckpoint(JSONB value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.saga_execution.checkpoint</code>.
+     */
+    public JSONB getCheckpoint() {
+        return (JSONB) get(14);
+    }
+
+    /**
+     * Setter for <code>public.saga_execution.checkpoint_seq</code>.
+     */
+    public void setCheckpointSeq(Long value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.saga_execution.checkpoint_seq</code>.
+     */
+    public Long getCheckpointSeq() {
+        return (Long) get(15);
+    }
+
+    /**
+     * Setter for <code>public.saga_execution.checkpoint_carrier</code>.
+     */
+    public void setCheckpointCarrier(Long value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for <code>public.saga_execution.checkpoint_carrier</code>.
+     */
+    public Long getCheckpointCarrier() {
+        return (Long) get(16);
+    }
+
+    /**
+     * Setter for <code>public.saga_execution.resume_at</code>.
+     */
+    public void setResumeAt(OffsetDateTime value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for <code>public.saga_execution.resume_at</code>.
+     */
+    public OffsetDateTime getResumeAt() {
+        return (OffsetDateTime) get(17);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -241,7 +297,7 @@ public class SagaExecutionRecord extends UpdatableRecordImpl<SagaExecutionRecord
     /**
      * Create a detached, initialised SagaExecutionRecord
      */
-    public SagaExecutionRecord(UUID id, String name, String version, JSONB definition, String status, String failureDescription, String callbackWarning, Integer lastFailedStepIndex, String lastFailedPhase, OffsetDateTime startedAt, OffsetDateTime completedAt, OffsetDateTime updatedAt, JSONB waitingState, JSONB payload) {
+    public SagaExecutionRecord(UUID id, String name, String version, JSONB definition, String status, String failureDescription, String callbackWarning, Integer lastFailedStepIndex, String lastFailedPhase, OffsetDateTime startedAt, OffsetDateTime completedAt, OffsetDateTime updatedAt, JSONB waitingState, JSONB payload, JSONB checkpoint, Long checkpointSeq, Long checkpointCarrier, OffsetDateTime resumeAt) {
         super(SagaExecution.SAGA_EXECUTION);
 
         setId(id);
@@ -258,6 +314,10 @@ public class SagaExecutionRecord extends UpdatableRecordImpl<SagaExecutionRecord
         setUpdatedAt(updatedAt);
         setWaitingState(waitingState);
         setPayload(payload);
+        setCheckpoint(checkpoint);
+        setCheckpointSeq(checkpointSeq);
+        setCheckpointCarrier(checkpointCarrier);
+        setResumeAt(resumeAt);
         resetTouchedOnNotNull();
     }
 }

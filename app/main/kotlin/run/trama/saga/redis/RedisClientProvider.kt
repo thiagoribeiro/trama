@@ -2,31 +2,34 @@
 
 package run.trama.saga.redis
 
+import io.lettuce.core.ClientOptions
 import io.lettuce.core.Limit
 import io.lettuce.core.Range
 import io.lettuce.core.RedisClient
 import io.lettuce.core.SetArgs
+import io.lettuce.core.TimeoutOptions
 import io.lettuce.core.RedisURI
 import io.lettuce.core.ScriptOutputType
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.coroutines as standaloneCoroutines
 import io.lettuce.core.api.coroutines.RedisCoroutinesCommands
+import io.lettuce.core.cluster.ClusterClientOptions
 import io.lettuce.core.cluster.RedisClusterClient
 import io.lettuce.core.cluster.api.StatefulRedisClusterConnection
 import io.lettuce.core.cluster.api.coroutines as clusterCoroutines
 import io.lettuce.core.cluster.api.coroutines.RedisClusterCoroutinesCommands
 import io.lettuce.core.codec.ByteArrayCodec
-import io.lettuce.core.support.ConnectionPoolSupport
+import java.time.Duration
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.toList
-import org.apache.commons.pool2.impl.GenericObjectPool
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig
 import run.trama.config.RedisConfig
 import run.trama.config.RedisTopology
 
 interface RedisBinaryCommands {
     suspend fun zadd(key: ByteArray, score: Double, member: ByteArray): Long?
     suspend fun zrem(key: ByteArray, member: ByteArray): Long?
+    suspend fun zrem(key: ByteArray, members: List<ByteArray>): Long? =
+        members.sumOf { zrem(key, it) ?: 0L }
     suspend fun zremrangebyscore(key: ByteArray, min: Double, max: Double): Long?
     suspend fun zrangebyscore(key: ByteArray, min: Double, max: Double, limit: Int? = null): List<ByteArray>
     suspend fun <T> eval(
@@ -88,96 +91,58 @@ private interface RedisBackend : AutoCloseable {
     suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T
 }
 
+/**
+ * One multiplexed connection per process. Lettuce connections are thread-safe for the commands
+ * Trama uses (no MULTI/WATCH, no blocking pops), so concurrent callers pipeline over it instead
+ * of each borrowing a pooled connection: a blocking pool borrow on coroutine threads deadlocked
+ * the process once more callers suspended inside withCommands than the pool held.
+ */
 private class StandaloneBackend(
     config: RedisConfig,
 ) : RedisBackend {
-    private val client: RedisClient
-    private val pool: GenericObjectPool<StatefulRedisConnection<ByteArray, ByteArray>>
-
-    init {
-        val redisUri = RedisURI.create(config.url)
-        val redisClient = RedisClient.create(redisUri)
-        val poolConfig = GenericObjectPoolConfig<StatefulRedisConnection<ByteArray, ByteArray>>().apply {
-            maxTotal = config.pool.maxTotal
-            maxIdle = config.pool.maxIdle
-            minIdle = config.pool.minIdle
-            testOnBorrow = config.pool.testOnBorrow
-            testWhileIdle = config.pool.testWhileIdle
-        }
-        val redisPool =
-            ConnectionPoolSupport.createGenericObjectPool(
-                { redisClient.connect(ByteArrayCodec.INSTANCE) },
-                poolConfig,
-            )
-
-        client = redisClient
-        pool = redisPool
-
-        val connection = pool.borrowObject()
-        pool.returnObject(connection)
+    private val client: RedisClient = RedisClient.create(RedisURI.create(config.url)).apply {
+        options = ClientOptions.builder()
+            .timeoutOptions(TimeoutOptions.enabled(Duration.ofMillis(config.commandTimeoutMillis)))
+            .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+            .build()
     }
+    private val connection: StatefulRedisConnection<ByteArray, ByteArray> = client.connect(ByteArrayCodec.INSTANCE)
+    private val commands = StandaloneBinaryCommands(connection.standaloneCoroutines())
 
-    override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T {
-        val connection = pool.borrowObject()
-        try {
-            val commands = connection.standaloneCoroutines()
-            return block(StandaloneBinaryCommands(commands))
-        } finally {
-            pool.returnObject(connection)
-        }
-    }
+    override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T = block(commands)
 
     override fun close() {
-        pool.close()
+        connection.close()
         client.shutdown()
     }
 }
 
+/** Cluster counterpart of [StandaloneBackend]: one multiplexed, slot-routing connection. */
 private class ClusterBackend(
     config: RedisConfig,
 ) : RedisBackend {
     private val client: RedisClusterClient
-    private val pool: GenericObjectPool<StatefulRedisClusterConnection<ByteArray, ByteArray>>
+    private val connection: StatefulRedisClusterConnection<ByteArray, ByteArray>
+    private val commands: ClusterBinaryCommands
 
     init {
-        val nodes = if (config.cluster.nodes.isNotEmpty()) {
-            config.cluster.nodes
-        } else {
-            listOf(config.url)
+        val nodes = config.cluster.nodes.ifEmpty { listOf(config.url) }
+        client = RedisClusterClient.create(nodes.map(RedisURI::create)).apply {
+            setOptions(
+                ClusterClientOptions.builder()
+                    .timeoutOptions(TimeoutOptions.enabled(Duration.ofMillis(config.commandTimeoutMillis)))
+                    .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                    .build()
+            )
         }
-        val uris = nodes.map(RedisURI::create)
-        val clusterClient = RedisClusterClient.create(uris)
-        val poolConfig = GenericObjectPoolConfig<StatefulRedisClusterConnection<ByteArray, ByteArray>>().apply {
-            maxTotal = config.pool.maxTotal
-            maxIdle = config.pool.maxIdle
-            minIdle = config.pool.minIdle
-            testOnBorrow = config.pool.testOnBorrow
-            testWhileIdle = config.pool.testWhileIdle
-        }
-        val clusterPool = ConnectionPoolSupport.createGenericObjectPool(
-            { clusterClient.connect(ByteArrayCodec.INSTANCE) },
-            poolConfig,
-        )
-
-        client = clusterClient
-        pool = clusterPool
-
-        val connection = pool.borrowObject()
-        pool.returnObject(connection)
+        connection = client.connect(ByteArrayCodec.INSTANCE)
+        commands = ClusterBinaryCommands(connection.clusterCoroutines())
     }
 
-    override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T {
-        val connection = pool.borrowObject()
-        try {
-            val commands = connection.clusterCoroutines()
-            return block(ClusterBinaryCommands(commands))
-        } finally {
-            pool.returnObject(connection)
-        }
-    }
+    override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T = block(commands)
 
     override fun close() {
-        pool.close()
+        connection.close()
         client.shutdown()
     }
 }
@@ -190,6 +155,9 @@ private class StandaloneBinaryCommands(
 
     override suspend fun zrem(key: ByteArray, member: ByteArray): Long? =
         delegate.zrem(key, member)
+
+    override suspend fun zrem(key: ByteArray, members: List<ByteArray>): Long? =
+        if (members.isEmpty()) 0L else delegate.zrem(key, *members.toTypedArray())
 
     override suspend fun zremrangebyscore(key: ByteArray, min: Double, max: Double): Long? =
         delegate.zremrangebyscore(key, Range.create(min, max))
@@ -268,6 +236,9 @@ private class ClusterBinaryCommands(
 
     override suspend fun zrem(key: ByteArray, member: ByteArray): Long? =
         delegate.zrem(key, member)
+
+    override suspend fun zrem(key: ByteArray, members: List<ByteArray>): Long? =
+        if (members.isEmpty()) 0L else delegate.zrem(key, *members.toTypedArray())
 
     override suspend fun zremrangebyscore(key: ByteArray, min: Double, max: Double): Long? =
         delegate.zremrangebyscore(key, Range.create(min, max))

@@ -5,9 +5,18 @@ import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.LoggerFactory
 import run.trama.config.CallbackTimeoutScannerConfig
 import run.trama.saga.SagaEnqueuer
-import run.trama.saga.WaitingInfo
+import run.trama.saga.ExecutionState
+import run.trama.saga.SagaExecution
 import run.trama.telemetry.Metrics
-import java.util.UUID
+
+/** Minimal repository surface needed by [CallbackTimeoutScanner]. */
+interface CallbackTimeoutRepository {
+    /**
+     * Claims executions still WAITING_CALLBACK [bufferSeconds] after their deadline, at a new
+     * checkpoint seq (so a sentinel that is still around becomes a stale copy).
+     */
+    suspend fun claimExpiredCallbackWaits(bufferSeconds: Long, limit: Int): List<SagaExecution>
+}
 
 /**
  * Postgres fallback scanner that re-enqueues WAITING_CALLBACK executions whose
@@ -21,11 +30,6 @@ import java.util.UUID
  * A [bufferSeconds] grace period prevents double-processing items whose sentinel is
  * still in-flight inside the Redis ZSET.
  */
-/** Minimal repository surface needed by [CallbackTimeoutScanner]. */
-interface CallbackTimeoutRepository {
-    suspend fun findExpiredWaitingExecutions(bufferSeconds: Long = 120, limit: Int = 100): List<UUID>
-    suspend fun consumeWaitingState(executionId: UUID): WaitingInfo?
-}
 
 class CallbackTimeoutScanner(
     private val repository: CallbackTimeoutRepository,
@@ -53,17 +57,13 @@ class CallbackTimeoutScanner(
 
     /** Visible for testing. */
     suspend fun scan(): Int {
-        val ids = repository.findExpiredWaitingExecutions(
+        val expired = repository.claimExpiredCallbackWaits(
             bufferSeconds = config.bufferSeconds,
             limit = config.batchSize,
         )
-        if (ids.isEmpty()) return 0
-
         var requeued = 0
-        for (executionId in ids) {
+        for (execution in expired) {
             try {
-                val waiting = repository.consumeWaitingState(executionId) ?: continue
-                val execution = waiting.execution
                 // Re-enqueue with score = now so the consumer picks it up immediately.
                 // WorkflowExecutor will see WaitingCallback state with an expired deadline
                 // and trigger the normal timeout/retry/compensation path.
@@ -71,13 +71,13 @@ class CallbackTimeoutScanner(
                 requeued++
                 logger.info(
                     "callback timeout fallback: re-enqueued",
-                    kv("executionId", executionId.toString()),
-                    kv("nodeId", waiting.nodeId),
+                    kv("executionId", execution.id.toString()),
+                    kv("nodeId", (execution.state as? ExecutionState.WaitingCallback)?.nodeId),
                 )
             } catch (ex: Exception) {
                 logger.warn(
                     "callback timeout fallback: failed to re-enqueue",
-                    kv("executionId", executionId.toString()),
+                    kv("executionId", execution.id.toString()),
                     ex,
                 )
             }

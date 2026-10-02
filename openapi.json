@@ -14,6 +14,7 @@
     "/healthz": {
       "get": {
         "summary": "Liveness probe",
+        "description": "Fails only when this process's work consumer has made no progress for runtime.livenessStallMillis (default 2 min), so an orchestrator restarts a stuck process.",
         "operationId": "getHealthz",
         "responses": {
           "200": {
@@ -23,6 +24,16 @@
                 "schema": {
                   "type": "string",
                   "example": "ok"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The work consumer is stalled (consumer_stalled)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
                 }
               }
             }
@@ -42,6 +53,16 @@
                 "schema": {
                   "type": "string",
                   "example": "ready"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready: shutting_down, redis_unreachable, consumer_stalled (no claim progress for 3x the claim lease), or a membership problem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
                 }
               }
             }

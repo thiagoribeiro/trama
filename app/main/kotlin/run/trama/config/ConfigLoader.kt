@@ -49,6 +49,21 @@ object ConfigLoader {
         val redisClusterNodes = System.getProperty("redis.cluster.nodes")
             ?: System.getenv("REDIS_CLUSTER_NODES")
 
+        val redisCommandTimeoutMillis = System.getProperty("redis.commandTimeoutMillis")
+            ?: System.getenv("REDIS_COMMANDTIMEOUTMILLIS")
+        val runtimePrefetch = System.getProperty("runtime.prefetch")
+            ?: System.getenv("RUNTIME_PREFETCH")
+        val runtimeWorkerCount = System.getProperty("runtime.workerCount")
+            ?: System.getenv("RUNTIME_WORKERCOUNT")
+        val reconcilerEnabled = System.getProperty("reconciler.enabled")
+            ?: System.getenv("RECONCILER_ENABLED")
+        val reconcilerStaleAfterMillis = System.getProperty("reconciler.staleAfterMillis")
+            ?: System.getenv("RECONCILER_STALEAFTERMILLIS")
+        val reconcilerIntervalMillis = System.getProperty("reconciler.intervalMillis")
+            ?: System.getenv("RECONCILER_INTERVALMILLIS")
+        val rateLimitEnabled = System.getProperty("rateLimit.enabled")
+            ?: System.getenv("RATELIMIT_ENABLED")
+
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
             config = config.copy(runtime = config.runtime.copy(enabled = it))
@@ -101,6 +116,27 @@ object ConfigLoader {
             ?.let { config = config.copy(redis = config.redis.copy(cluster = config.redis.cluster.copy(nodes = it))) }
         definitionCacheTtlMillis?.toLongOrNull()?.let {
             config = config.copy(database = config.database.copy(pool = config.database.pool.copy(definitionCacheTtlMillis = it)))
+        }
+        redisCommandTimeoutMillis?.toLongOrNull()?.let {
+            config = config.copy(redis = config.redis.copy(commandTimeoutMillis = it))
+        }
+        runtimePrefetch?.toIntOrNull()?.let {
+            config = config.copy(runtime = config.runtime.copy(prefetch = it))
+        }
+        runtimeWorkerCount?.toIntOrNull()?.let {
+            config = config.copy(runtime = config.runtime.copy(workerCount = it))
+        }
+        reconcilerEnabled?.toBooleanStrictOrNull()?.let {
+            config = config.copy(reconciler = config.reconciler.copy(enabled = it))
+        }
+        reconcilerStaleAfterMillis?.toLongOrNull()?.let {
+            config = config.copy(reconciler = config.reconciler.copy(staleAfterMillis = it))
+        }
+        reconcilerIntervalMillis?.toLongOrNull()?.let {
+            config = config.copy(reconciler = config.reconciler.copy(intervalMillis = it))
+        }
+        rateLimitEnabled?.toBooleanStrictOrNull()?.let {
+            config = config.copy(rateLimit = config.rateLimit.copy(enabled = it))
         }
         return config
     }

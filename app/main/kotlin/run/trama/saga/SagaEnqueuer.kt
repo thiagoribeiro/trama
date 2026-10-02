@@ -3,6 +3,7 @@
 package run.trama.saga
 
 import com.ensarsarajcic.kotlinx.serialization.msgpack.MsgPack
+import run.trama.saga.redis.DueIndex
 import run.trama.saga.redis.RedisCommandsProvider
 import run.trama.saga.redis.RedisShardKeyspace
 import run.trama.telemetry.Metrics
@@ -19,6 +20,7 @@ class RedisSagaEnqueuer(
     private val metrics: Metrics? = null,
 ) : SagaEnqueuer {
     private val msgPack = MsgPack()
+    private val dueKey = keyspace.queueDueKey().encodeToByteArray()
 
     override suspend fun enqueue(execution: SagaExecution, delayMillis: Long) {
         val score = System.currentTimeMillis() + delayMillis
@@ -27,6 +29,9 @@ class RedisSagaEnqueuer(
         val redisKey = keyspace.queueReadyKey(shardId).encodeToByteArray()
         redis.withCommands { commands ->
             commands.zadd(redisKey, score.toDouble(), payload)
+            // After the ZADD: a claimer that drops this mark first still finds the item when it
+            // claims. A crash in between leaves the item for the claimers' periodic full sweep.
+            DueIndex.mark(commands, dueKey, listOf(shardId.toString(), score.toString()))
         }
         metrics?.recordEnqueued(execution)
     }

@@ -15,7 +15,6 @@ import run.trama.saga.SagaEnqueuer
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaStep
 import run.trama.saga.TemplateString
-import run.trama.saga.WaitingInfo
 import run.trama.telemetry.Metrics
 import java.time.Instant
 import java.util.UUID
@@ -57,14 +56,12 @@ class CallbackTimeoutScannerTest {
 
     @Test
     fun `scan re-enqueues expired waiting executions`() = runBlocking {
-        val id1 = UUID.randomUUID()
-        val id2 = UUID.randomUUID()
-        val execution1 = makeExecution(id1, "pay")
-        val execution2 = makeExecution(id2, "notify")
+        val execution1 = makeExecution(nodeId = "pay")
+        val execution2 = makeExecution(nodeId = "notify")
         val enqueued = mutableListOf<SagaExecution>()
 
         val scanner = CallbackTimeoutScanner(
-            repository = FakeRepository(expiredIds = listOf(id1, id2), executions = mapOf(id1 to execution1, id2 to execution2)),
+            repository = FakeRepository(listOf(execution1, execution2)),
             enqueuer = FakeEnqueuer(enqueued),
             metrics = metrics,
             config = CallbackTimeoutScannerConfig(enabled = true),
@@ -73,7 +70,7 @@ class CallbackTimeoutScannerTest {
         val count = scanner.scan()
 
         assertEquals(2, count)
-        assertEquals(setOf(id1, id2), enqueued.map { it.id }.toSet())
+        assertEquals(setOf(execution1.id, execution2.id), enqueued.map { it.id }.toSet())
     }
 
     @Test
@@ -81,7 +78,7 @@ class CallbackTimeoutScannerTest {
         val enqueued = mutableListOf<SagaExecution>()
 
         val scanner = CallbackTimeoutScanner(
-            repository = FakeRepository(expiredIds = emptyList(), executions = emptyMap()),
+            repository = FakeRepository(emptyList()),
             enqueuer = FakeEnqueuer(enqueued),
             metrics = metrics,
             config = CallbackTimeoutScannerConfig(enabled = true),
@@ -94,42 +91,26 @@ class CallbackTimeoutScannerTest {
     }
 
     @Test
-    fun `scan skips execution when consumeWaitingState returns null (already handled)`() = runBlocking {
-        val id = UUID.randomUUID()
-        val enqueued = mutableListOf<SagaExecution>()
-
-        val scanner = CallbackTimeoutScanner(
-            repository = FakeRepository(expiredIds = listOf(id), executions = emptyMap()), // null consumeWaiting
-            enqueuer = FakeEnqueuer(enqueued),
+    fun `scan claims with the configured grace period and batch size`() = runBlocking {
+        val repository = FakeRepository(emptyList())
+        CallbackTimeoutScanner(
+            repository = repository,
+            enqueuer = FakeEnqueuer(mutableListOf()),
             metrics = metrics,
-            config = CallbackTimeoutScannerConfig(enabled = true),
-        )
+            config = CallbackTimeoutScannerConfig(enabled = true, bufferSeconds = 42, batchSize = 7),
+        ).scan()
 
-        val count = scanner.scan()
-
-        assertEquals(0, count) // skipped since consumeWaitingState returned null
-        assertEquals(0, enqueued.size)
+        assertEquals(42L to 7, repository.lastCall)
     }
 
     // ── Fakes ────────────────────────────────────────────────────────────────
 
-    private class FakeRepository(
-        private val expiredIds: List<UUID>,
-        private val executions: Map<UUID, SagaExecution>,
-    ) : CallbackTimeoutRepository {
-        override suspend fun findExpiredWaitingExecutions(bufferSeconds: Long, limit: Int): List<UUID> = expiredIds
+    private class FakeRepository(private val expired: List<SagaExecution>) : CallbackTimeoutRepository {
+        var lastCall: Pair<Long, Int>? = null
 
-        override suspend fun consumeWaitingState(executionId: UUID): WaitingInfo? {
-            val exec = executions[executionId] ?: return null
-            val state = exec.state as? ExecutionState.WaitingCallback ?: return null
-            return WaitingInfo(
-                nodeId = state.nodeId,
-                attempt = state.attempt,
-                nonce = state.nonce,
-                signature = "fake-sig",
-                expiresAt = state.deadlineAt,
-                execution = exec,
-            )
+        override suspend fun claimExpiredCallbackWaits(bufferSeconds: Long, limit: Int): List<SagaExecution> {
+            lastCall = bufferSeconds to limit
+            return expired
         }
     }
 
