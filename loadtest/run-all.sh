@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Runs every validation scenario in sequence (~2h on an 8-core machine). Results: results/<scenario>/.
-cd "$(dirname "$0")"
+# Runs every validation scenario in sequence (~2h on an 8-core machine).
+# Results: results/$RESULTS_SET/<scenario>/ (RESULTS_SET defaults to the version under test, see lib.sh).
+self="$(readlink -f "$0")"
+cd "$(dirname "$self")"
 # Re-exec under a sleep inhibitor: a suspend freezes every process at once and corrupts results.
-[ -z "${LT_INHIBITED:-}" ] && exec env LT_INHIBITED=1 systemd-inhibit --what=sleep:idle:handle-lid-switch --why="trama validation run" bash "$0" "$@"
+[ -z "${LT_INHIBITED:-}" ] && exec env LT_INHIBITED=1 systemd-inhibit --what=sleep:idle:handle-lid-switch --why="trama validation run" bash "$self" "$@"
 for s in "smoke" \
          "s1a-redis-restart none" "s1a-redis-restart rdb" "s1a-redis-restart aof" \
          "s1a2-redis-restart-persistence none" "s1a2-redis-restart-persistence rdb" "s1a2-redis-restart-persistence aof" \

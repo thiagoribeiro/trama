@@ -7,8 +7,8 @@
 #   trama.sh pause I | resume I     SIGSTOP / SIGCONT process I
 #   trama.sh stop                   stop all processes
 #   trama.sh mock-start | mock-stop
-# Extra JVM options for every process can be passed in TRAMA_EXTRA_OPTS; REDIS_POOL sets the Redis pool size;
-# RATE_LIMIT=true re-enables the per-definition failure breaker.
+# Extra JVM options for every process can be passed in TRAMA_EXTRA_OPTS; RATE_LIMIT=true|false
+# overrides the per-definition failure breaker (Trama's default otherwise).
 source "$(dirname "$0")/lib.sh"
 PIDS="$RUN_DIR/pids"
 
@@ -18,11 +18,8 @@ start_one() {
   # readiness probe below in place of the new process.
   fuser -k -9 "$port/tcp" >/dev/null 2>&1 || true
   while ss -ltn "sport = :$port" | grep -q LISTEN; do sleep 0.2; done
-  # REDIS_POOL: the default (16) deadlocks the process under concurrency, see
-  # scenarios/s3x-pool-deadlock.sh; the other scenarios raise it so they can measure anything else.
-  # RATE_LIMIT: the per-definition failure breaker pauses a whole workflow type after 5 failures
-  # (scenarios/s3y-rate-limit.sh); it is off elsewhere so business failures don't skew measurements.
-  JAVA_OPTS="-Xmx512m -Dconfig.override.runtime.workerCount=$workers -Dconfig.override.redis.pool.maxTotal=${REDIS_POOL:-256} -Dconfig.override.redis.pool.maxIdle=${REDIS_POOL:-256} -Dconfig.override.rateLimit.enabled=${RATE_LIMIT:-false} ${TRAMA_EXTRA_OPTS:-}" \
+  # Every setting is Trama's default except the worker count (and RATE_LIMIT when a scenario sets it).
+  JAVA_OPTS="-Xmx512m -Dconfig.override.runtime.workerCount=$workers ${RATE_LIMIT:+-Dconfig.override.rateLimit.enabled=$RATE_LIMIT} ${TRAMA_EXTRA_OPTS:-}" \
   PORT=$port HOSTNAME="lt-worker-$i" \
   DATABASE_HOST=127.0.0.1 DATABASE_PORT=$PG_PROXY_PORT DATABASE_DATABASE=saga DATABASE_USER=saga DATABASE_PASSWORD=saga \
   REDIS_URL="redis://127.0.0.1:$REDIS_PROXY_PORT" \

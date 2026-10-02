@@ -1,0 +1,20 @@
+process	level	count	message
+trama-0	ERROR	4	Unhandled exception while processing request
+trama-0	WARN	2	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-0	WARN	6	callback nonce check skipped: Redis unavailable
+trama-0	WARN	29	callback timeout
+trama-0	WARN	4	claim poll failed; retrying
+trama-0	WARN	8	processing failed
+trama-0	WARN	2	reconciler re-sent stalled executions
+trama-0	WARN	9	run accepted but not queued; the reconciler will deliver it
+trama-1	WARN	2	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-1	WARN	25	callback timeout
+trama-1	WARN	4	claim poll failed; retrying
+trama-1	WARN	7	processing failed
+trama-1	WARN	2	reconciler re-sent stalled executions
+trama-2	WARN	1	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection closed prematurely
+trama-2	WARN	2	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-2	WARN	19	callback timeout
+trama-2	WARN	4	claim poll failed; retrying
+trama-2	WARN	8	processing failed
+trama-2	WARN	2	reconciler re-sent stalled executions

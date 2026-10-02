@@ -28,7 +28,8 @@ say() { echo "[$(ts)] $*"; }
 # Fresh stack + mock + processes + background collector; results go to results/<name>/.
 scenario_begin() {
   SCENARIO="$1"
-  RESULTS="$LT_DIR/results/$SCENARIO"
+  # RESULTS_SET groups a full run (one per Trama version); results/v2.0.1 holds the first one.
+  RESULTS="$LT_DIR/results/${RESULTS_SET:-v2.1.0}/$SCENARIO"
   export RUN_DIR="$LT_DIR/run/$SCENARIO"
   rm -rf "$RESULTS" "$RUN_DIR"; mkdir -p "$RESULTS" "$RUN_DIR"
   "$LT_DIR/trama.sh" stop >/dev/null 2>&1 || true

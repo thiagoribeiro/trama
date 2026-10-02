@@ -1,0 +1,5 @@
+cut_at_s=20
+restore_at_s=50
+healthz_after_restore trama-0=200
+healthz_after_restore trama-1=200
+healthz_after_restore trama-2=200

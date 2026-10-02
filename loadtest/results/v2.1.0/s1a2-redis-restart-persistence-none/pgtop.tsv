@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+12931	5345.9	0.413	12931	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+5284	1854.1	0.351	5284	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+9315	1696.2	0.182	6877	select "public"."saga_step_result"."step_index", "public"."saga_step_result"."step_name", "public"."saga_step_result"."phase", "public"."sag
+10331	1687.5	0.163	10331	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+5284	1322.9	0.250	5284	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+1321	883.2	0.669	1321	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+1321	779.7	0.590	1321	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+1321	760.4	0.576	1321	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND status = $3 AND waiting_state IS NOT 
+6673	610.2	0.091	6673	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+3963	436.0	0.110	3963	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+3963	435.6	0.110	3963	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+1321	277.2	0.210	3963	select "public"."saga_execution"."id", "public"."saga_execution"."status", "public"."saga_execution"."failure_description" from "public"."sa
+98	225.5	2.301	132000	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+347	192.5	0.555	347	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+1321	184.8	0.140	3963	SELECT DISTINCT ON (saga_id) saga_id, response_body FROM saga_step_result WHERE saga_id = ANY($1) AND started_at >= $2 ORDER BY saga_id, cre

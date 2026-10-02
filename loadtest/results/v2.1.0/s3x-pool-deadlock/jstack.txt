@@ -1,0 +1,1098 @@
+2026-10-02 17:36:33
+Full thread dump OpenJDK 64-Bit Server VM (25.0.4.1 mixed mode, sharing):
+
+Threads class SMR info:
+_java_thread_list=0x00007f0fcc377d70, length=89, elements={
+0x00007f0ff401bdd0, 0x00007f0ff40e2690, 0x00007f0ff40e3880, 0x00007f0ff40e5150,
+0x00007f0ff40e6a80, 0x00007f0ff40e8310, 0x00007f0ff40ea560, 0x00007f0ff40ec090,
+0x00007f0ff40f8960, 0x00007f0ff40fbc50, 0x00007f0ff4aeffe0, 0x00007f0ff4f2b640,
+0x00007f0ff4f475c0, 0x00007f0fc8014c80, 0x00007f0ff529c680, 0x00007f0ff537b070,
+0x00007f0ff5570670, 0x00007f0ff54da290, 0x00007f0ff54db630, 0x00007f0fcc66ff50,
+0x00007f0ff558ccc0, 0x00007f0ff5590870, 0x00007f0ff5591520, 0x000056366dd0a1d0,
+0x00007f0ff55929c0, 0x00007f0ff59b0750, 0x00007f0fd4020a80, 0x00007f0ff5fb0220,
+0x00007f0fd40235e0, 0x00007f0fd40243a0, 0x00007f0fd4025230, 0x00007f0fd40265b0,
+0x00007f0fd0714440, 0x00007f0ff55f9580, 0x00007f0fbcd6e920, 0x00007f0fbcd6fdf0,
+0x00007f0fc401a540, 0x00007f0fc802dd30, 0x00007f0ff57abcb0, 0x000056366e38f060,
+0x00007f0fcc45fcc0, 0x00007f0ff5a14c20, 0x00007f0fd402fe10, 0x00007f0fc402efe0,
+0x00007f0fd4031400, 0x00007f0fc4030280, 0x00007f0ff5a15d20, 0x00007f0ff5a12da0,
+0x00007f0fbcdbb1c0, 0x00007f0ff58ac630, 0x000056366dfe8310, 0x00007f0fc8048660,
+0x00007f0fc804cc20, 0x00007f0fbcdbdad0, 0x000056366dff3d90, 0x00007f0fbcdc23b0,
+0x00007f0fc804f6d0, 0x00007f0fd40371d0, 0x00007f0fcc461920, 0x000056366dff5210,
+0x000056366dff7100, 0x00007f0fd40385b0, 0x00007f0ff58ae820, 0x00007f0fc8052dc0,
+0x00007f0fc40333a0, 0x00007f0fd0971180, 0x00007f0fc8054780, 0x000056366ddca4a0,
+0x000056366ddcbf80, 0x00007f0fd0971de0, 0x00007f0fbcdcbe30, 0x00007f0fc80568d0,
+0x00007f0fbcdd0600, 0x00007f0fd404ddb0, 0x00007f0fc8058120, 0x00007f0ff58b0c20,
+0x00007f0ff58b29f0, 0x00007f0fcc7db040, 0x00007f0fd404f1b0, 0x00007f0fc40356c0,
+0x000056366dd7ac20, 0x000056366df262f0, 0x00007f0fc8059eb0, 0x00007f0fbcde6b00,
+0x00007f0fbcde8680, 0x000056366df28340, 0x00007f0fd40533c0, 0x00007f0fbcdeafb0,
+0x00007f0fccd7aa30
+}
+
+"main" #3 [2045378] prio=5 os_prio=0 cpu=2022,77ms elapsed=5,86s tid=0x00007f0ff401bdd0 nid=2045378 in Object.wait()  [0x00007f0ff93d1000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait0(java.base@25.0.4.1/Native Method)
+	- waiting on <0x00000000e1074290> (a io.netty.channel.AbstractChannel$CloseFuture)
+	at java.lang.Object.wait(java.base@25.0.4.1/Object.java:389)
+	at java.lang.Object.wait(java.base@25.0.4.1/Object.java:351)
+	at io.netty.util.concurrent.DefaultPromise.await(DefaultPromise.java:268)
+	- locked <0x00000000e1074290> (a io.netty.channel.AbstractChannel$CloseFuture)
+	at io.netty.channel.DefaultChannelPromise.await(DefaultChannelPromise.java:131)
+	at io.netty.channel.DefaultChannelPromise.await(DefaultChannelPromise.java:30)
+	at io.netty.util.concurrent.DefaultPromise.sync(DefaultPromise.java:419)
+	at io.netty.channel.DefaultChannelPromise.sync(DefaultChannelPromise.java:119)
+	at io.netty.channel.DefaultChannelPromise.sync(DefaultChannelPromise.java:30)
+	at io.ktor.server.netty.NettyApplicationEngine.start(NettyApplicationEngine.kt:278)
+	at io.ktor.server.netty.NettyApplicationEngine.start(NettyApplicationEngine.kt:38)
+	at io.ktor.server.engine.EmbeddedServer.start(EmbeddedServerJvm.kt:396)
+	at io.ktor.server.netty.EngineMain.main(EngineMain.kt:25)
+	at run.trama.app.ApplicationKt.main(Application.kt:67)
+
+"Reference Handler" #14 [2045389] daemon prio=10 os_prio=0 cpu=0,97ms elapsed=5,86s tid=0x00007f0ff40e2690 nid=2045389 waiting on condition  [0x00007f0fd8df4000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.ref.Reference.waitForReferencePendingList(java.base@25.0.4.1/Native Method)
+	at java.lang.ref.Reference.processPendingReferences(java.base@25.0.4.1/Reference.java:246)
+	at java.lang.ref.Reference$ReferenceHandler.run(java.base@25.0.4.1/Reference.java:208)
+
+"Finalizer" #15 [2045390] daemon prio=8 os_prio=0 cpu=0,07ms elapsed=5,86s tid=0x00007f0ff40e3880 nid=2045390 in Object.wait()  [0x00007f0fd89fe000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait0(java.base@25.0.4.1/Native Method)
+	- waiting on <0x00000000ffd03880> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.Object.wait(java.base@25.0.4.1/Object.java:389)
+	at java.lang.Object.wait(java.base@25.0.4.1/Object.java:351)
+	at java.lang.ref.ReferenceQueue.remove0(java.base@25.0.4.1/ReferenceQueue.java:137)
+	at java.lang.ref.ReferenceQueue.remove(java.base@25.0.4.1/ReferenceQueue.java:215)
+	- locked <0x00000000ffd03880> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.Finalizer$FinalizerThread.run(java.base@25.0.4.1/Finalizer.java:165)
+
+"Signal Dispatcher" #16 [2045391] daemon prio=9 os_prio=0 cpu=0,21ms elapsed=5,86s tid=0x00007f0ff40e5150 nid=2045391 waiting on condition  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Service Thread" #17 [2045392] daemon prio=9 os_prio=0 cpu=35,08ms elapsed=5,86s tid=0x00007f0ff40e6a80 nid=2045392 runnable  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Monitor Deflation Thread" #18 [2045393] daemon prio=9 os_prio=0 cpu=0,27ms elapsed=5,86s tid=0x00007f0ff40e8310 nid=2045393 runnable  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"C2 CompilerThread0" #19 [2045394] daemon prio=9 os_prio=0 cpu=2040,08ms elapsed=5,86s tid=0x00007f0ff40ea560 nid=2045394 runnable  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+   Compiling: 8579       4       java.lang.invoke.MethodType::methodType (69 bytes)
+
+"C1 CompilerThread0" #22 [2045395] daemon prio=9 os_prio=0 cpu=1437,69ms elapsed=5,86s tid=0x00007f0ff40ec090 nid=2045395 runnable  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+   Compiling: 8611  s    3       java.lang.invoke.MethodTypeForm::setCachedLambdaForm (28 bytes)
+
+"Notification Thread" #23 [2045396] daemon prio=9 os_prio=0 cpu=20,99ms elapsed=5,85s tid=0x00007f0ff40f8960 nid=2045396 runnable  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Common-Cleaner" #24 [2045397] daemon prio=8 os_prio=0 cpu=0,21ms elapsed=5,85s tid=0x00007f0ff40fbc50 nid=2045397 in Object.wait()  [0x00007f0fd82f7000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait0(java.base@25.0.4.1/Native Method)
+	- waiting on <0x00000000ffd00118> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.Object.wait(java.base@25.0.4.1/Object.java:389)
+	at java.lang.ref.ReferenceQueue.remove0(java.base@25.0.4.1/ReferenceQueue.java:123)
+	at java.lang.ref.ReferenceQueue.remove(java.base@25.0.4.1/ReferenceQueue.java:201)
+	- locked <0x00000000ffd00118> (a java.lang.ref.ReferenceQueue$Lock)
+	at jdk.internal.ref.CleanerImpl.run(java.base@25.0.4.1/CleanerImpl.java:146)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+	at jdk.internal.misc.InnocuousThread.run(java.base@25.0.4.1/InnocuousThread.java:148)
+
+"kotlinx.coroutines.DefaultExecutor" #32 [2045419] daemon prio=5 os_prio=0 cpu=7,28ms elapsed=5,45s tid=0x00007f0ff4aeffe0 nid=2045419 runnable  [0x00007f0fc38f6000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.ClassLoader.defineClass1(java.base@25.0.4.1/Native Method)
+	at java.lang.ClassLoader.defineClass(java.base@25.0.4.1/ClassLoader.java:962)
+	at java.security.SecureClassLoader.defineClass(java.base@25.0.4.1/SecureClassLoader.java:144)
+	at jdk.internal.loader.BuiltinClassLoader.defineClass(java.base@25.0.4.1/BuiltinClassLoader.java:776)
+	at jdk.internal.loader.BuiltinClassLoader.findClassOnClassPathOrNull(java.base@25.0.4.1/BuiltinClassLoader.java:691)
+	at jdk.internal.loader.BuiltinClassLoader.loadClassOrNull(java.base@25.0.4.1/BuiltinClassLoader.java:620)
+	- locked <0x00000000ecbc9628> (a java.lang.Object)
+	at jdk.internal.loader.BuiltinClassLoader.loadClass(java.base@25.0.4.1/BuiltinClassLoader.java:578)
+	at java.lang.ClassLoader.loadClass(java.base@25.0.4.1/ClassLoader.java:490)
+	at kotlinx.coroutines.CancellableContinuationImpl.cancel(CancellableContinuationImpl.kt:205)
+	at kotlinx.coroutines.CancellableContinuationImpl.parentCancelled$kotlinx_coroutines_core(CancellableContinuationImpl.kt:221)
+	at kotlinx.coroutines.ChildContinuation.invoke(CancellableContinuationImpl.kt:698)
+	at kotlinx.coroutines.JobSupport.notifyCancelling(JobSupport.kt:1603)
+	at kotlinx.coroutines.JobSupport.tryMakeCancelling(JobSupport.kt:826)
+	at kotlinx.coroutines.JobSupport.makeCancelling(JobSupport.kt:786)
+	at kotlinx.coroutines.JobSupport.cancelImpl$kotlinx_coroutines_core(JobSupport.kt:702)
+	at kotlinx.coroutines.JobSupport.cancelCoroutine(JobSupport.kt:689)
+	at kotlinx.coroutines.TimeoutCoroutine.run(Timeout.kt:243)
+	at kotlinx.coroutines.EventLoopImplBase$DelayedRunnableTask.run(EventLoop.common.kt:498)
+	at kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:256)
+	at kotlinx.coroutines.DefaultExecutor.run(DefaultExecutor.kt:105)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"Cleaner-0" #38 [2045428] daemon prio=8 os_prio=0 cpu=0,08ms elapsed=5,02s tid=0x00007f0ff4f2b640 nid=2045428 in Object.wait()  [0x00007f0fc34f3000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait0(java.base@25.0.4.1/Native Method)
+	- waiting on <0x00000000ff70e1e8> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.Object.wait(java.base@25.0.4.1/Object.java:389)
+	at java.lang.ref.ReferenceQueue.remove0(java.base@25.0.4.1/ReferenceQueue.java:123)
+	at java.lang.ref.ReferenceQueue.remove(java.base@25.0.4.1/ReferenceQueue.java:201)
+	- locked <0x00000000ff70e1e8> (a java.lang.ref.ReferenceQueue$Lock)
+	at jdk.internal.ref.CleanerImpl.run(java.base@25.0.4.1/CleanerImpl.java:146)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+	at jdk.internal.misc.InnocuousThread.run(java.base@25.0.4.1/InnocuousThread.java:148)
+
+"saga-db-pool housekeeper" #39 [2045429] daemon prio=5 os_prio=0 cpu=0,96ms elapsed=5,01s tid=0x00007f0ff4f475c0 nid=2045429 waiting on condition  [0x00007f0fc35f4000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	- parking to wait for  <0x00000000ff70e2a0> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:271)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(java.base@25.0.4.1/AbstractQueuedSynchronizer.java:1803)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(java.base@25.0.4.1/ScheduledThreadPoolExecutor.java:1166)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(java.base@25.0.4.1/ScheduledThreadPoolExecutor.java:883)
+	at java.util.concurrent.ThreadPoolExecutor.getTask(java.base@25.0.4.1/ThreadPoolExecutor.java:1016)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@25.0.4.1/ThreadPoolExecutor.java:1076)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@25.0.4.1/ThreadPoolExecutor.java:614)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"saga-db-pool connection adder" #40 [2045430] daemon prio=5 os_prio=0 cpu=17,60ms elapsed=4,91s tid=0x00007f0fc8014c80 nid=2045430 waiting on condition  [0x00007f0fc33f2000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	- parking to wait for  <0x00000000ff70e598> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:271)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(java.base@25.0.4.1/AbstractQueuedSynchronizer.java:1803)
+	at java.util.concurrent.LinkedBlockingQueue.poll(java.base@25.0.4.1/LinkedBlockingQueue.java:460)
+	at java.util.concurrent.ThreadPoolExecutor.getTask(java.base@25.0.4.1/ThreadPoolExecutor.java:1015)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@25.0.4.1/ThreadPoolExecutor.java:1076)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@25.0.4.1/ThreadPoolExecutor.java:614)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"Keep-Alive-Timer" #43 [2045485] daemon prio=8 os_prio=0 cpu=0,08ms elapsed=2,95s tid=0x00007f0ff529c680 nid=2045485 waiting on condition  [0x00007f0fc32f1000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleepNanos0(java.base@25.0.4.1/Native Method)
+	at java.lang.Thread.sleepNanos(java.base@25.0.4.1/Thread.java:509)
+	at java.lang.Thread.sleep(java.base@25.0.4.1/Thread.java:540)
+	at sun.net.www.http.KeepAliveCache.run(java.base@25.0.4.1/KeepAliveCache.java:224)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+	at jdk.internal.misc.InnocuousThread.run(java.base@25.0.4.1/InnocuousThread.java:148)
+
+"lettuce-timer-3-1" #44 [2045488] daemon prio=5 os_prio=0 cpu=2,28ms elapsed=2,82s tid=0x00007f0ff537b070 nid=2045488 waiting on condition  [0x00007f0fc31f0000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleepNanos0(java.base@25.0.4.1/Native Method)
+	at java.lang.Thread.sleepNanos(java.base@25.0.4.1/Thread.java:509)
+	at java.lang.Thread.sleep(java.base@25.0.4.1/Thread.java:540)
+	at io.netty.util.HashedWheelTimer$Worker.waitForNextTick(HashedWheelTimer.java:598)
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:494)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"lettuce-nioEventLoop-4-1" #45 [2045489] daemon prio=5 os_prio=0 cpu=341,07ms elapsed=2,62s tid=0x00007f0ff5570670 nid=2045489 runnable  [0x00007f0fc30ef000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e0d846d8> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e0d83c50> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"DefaultDispatcher-worker-1" #46 [2045490] daemon prio=5 os_prio=0 cpu=12,78ms elapsed=2,55s tid=0x00007f0ff54da290 nid=2045490 waiting on condition  [0x00007f0fc2fee000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-2" #47 [2045491] daemon prio=5 os_prio=0 cpu=6,85ms elapsed=2,55s tid=0x00007f0ff54db630 nid=2045491 waiting on condition  [0x00007f0fc2eed000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-3" #48 [2045492] daemon prio=5 os_prio=0 cpu=65,12ms elapsed=2,55s tid=0x00007f0fcc66ff50 nid=2045492 waiting on condition  [0x00007f0fc2dec000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-4" #49 [2045493] daemon prio=5 os_prio=0 cpu=64,28ms elapsed=2,49s tid=0x00007f0ff558ccc0 nid=2045493 waiting on condition  [0x00007f0fc2ceb000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-5" #50 [2045494] daemon prio=5 os_prio=0 cpu=1,19ms elapsed=2,49s tid=0x00007f0ff5590870 nid=2045494 waiting on condition  [0x00007f0fc2bea000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-6" #51 [2045495] daemon prio=5 os_prio=0 cpu=69,94ms elapsed=2,49s tid=0x00007f0ff5591520 nid=2045495 waiting on condition  [0x00007f0fc2ae9000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-7" #52 [2045496] daemon prio=5 os_prio=0 cpu=7,18ms elapsed=2,49s tid=0x000056366dd0a1d0 nid=2045496 waiting on condition  [0x00007f0fc29e8000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-8" #53 [2045497] daemon prio=5 os_prio=0 cpu=101,94ms elapsed=2,49s tid=0x00007f0ff55929c0 nid=2045497 waiting on condition  [0x00007f0fc28e7000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"eventLoopGroupProxy-5-1" #55 [2045512] daemon prio=5 os_prio=0 cpu=29,04ms elapsed=2,41s tid=0x00007f0ff59b0750 nid=2045512 runnable  [0x00007f0fc27e6000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e1090930> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10908e0> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-6-1" #56 [2045514] daemon prio=5 os_prio=0 cpu=113,25ms elapsed=2,32s tid=0x00007f0fd4020a80 nid=2045514 runnable  [0x00007f0fc23fe000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10743e0> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10aed88> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-1" #57 [2045515] daemon prio=5 os_prio=0 cpu=150,39ms elapsed=2,26s tid=0x00007f0ff5fb0220 nid=2045515 runnable  [0x00007f0fc22fd000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10db268> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10db160> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-6-2" #58 [2045667] daemon prio=5 os_prio=0 cpu=63,03ms elapsed=1,36s tid=0x00007f0fd40235e0 nid=2045667 runnable  [0x00007f0fc3ffe000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e1074838> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10747e8> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-6-3" #59 [2045668] daemon prio=5 os_prio=0 cpu=61,29ms elapsed=1,36s tid=0x00007f0fd40243a0 nid=2045668 runnable  [0x00007f0fd81f6000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10dffa0> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10dfcd8> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-6-4" #60 [2045670] daemon prio=5 os_prio=0 cpu=59,21ms elapsed=1,36s tid=0x00007f0fd4025230 nid=2045670 runnable  [0x00007f0fc21fc000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e1080558> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10799e0> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-6-5" #61 [2045672] daemon prio=5 os_prio=0 cpu=56,26ms elapsed=1,36s tid=0x00007f0fd40265b0 nid=2045672 runnable  [0x00007f0fc20fb000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10f0190> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e109f190> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-3" #63 [2045711] daemon prio=5 os_prio=0 cpu=100,18ms elapsed=1,31s tid=0x00007f0fd0714440 nid=2045711 runnable  [0x00007f0fc1ffa000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10e4d28> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10e4c20> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-2" #62 [2045713] daemon prio=5 os_prio=0 cpu=105,63ms elapsed=1,31s tid=0x00007f0ff55f9580 nid=2045713 runnable  [0x00007f0fc1ef9000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10e6558> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10e6460> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-4" #64 [2045716] daemon prio=5 os_prio=0 cpu=114,61ms elapsed=1,31s tid=0x00007f0fbcd6e920 nid=2045716 runnable  [0x00007f0fc1df8000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e107d558> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e107d450> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-7" #67 [2045717] daemon prio=5 os_prio=0 cpu=112,62ms elapsed=1,31s tid=0x00007f0fbcd6fdf0 nid=2045717 runnable  [0x00007f0fc1cf7000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10ecfe8> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10ecee0> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-6" #66 [2045718] daemon prio=5 os_prio=0 cpu=112,47ms elapsed=1,31s tid=0x00007f0fc401a540 nid=2045718 runnable  [0x00007f0fc1bf6000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e1085090> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e1084f98> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-5" #65 [2045719] daemon prio=5 os_prio=0 cpu=133,15ms elapsed=1,31s tid=0x00007f0fc802dd30 nid=2045719 runnable  [0x00007f0fc1af5000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e10eff70> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e10efe68> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"eventLoopGroupProxy-7-8" #68 [2045720] daemon prio=5 os_prio=0 cpu=96,97ms elapsed=1,30s tid=0x00007f0ff57abcb0 nid=2045720 runnable  [0x00007f0fc19f4000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.EPoll.wait(java.base@25.0.4.1/Native Method)
+	at sun.nio.ch.EPollSelectorImpl.doSelect(java.base@25.0.4.1/EPollSelectorImpl.java:117)
+	at sun.nio.ch.SelectorImpl.lockAndDoSelect(java.base@25.0.4.1/SelectorImpl.java:130)
+	- locked <0x00000000e1080338> (a sun.nio.ch.Util$2)
+	- locked <0x00000000e1080230> (a sun.nio.ch.EPollSelectorImpl)
+	at sun.nio.ch.SelectorImpl.select(java.base@25.0.4.1/SelectorImpl.java:142)
+	at io.netty.channel.nio.NioIoHandler.select(NioIoHandler.java:668)
+	at io.netty.channel.nio.NioIoHandler.run(NioIoHandler.java:434)
+	at io.netty.channel.SingleThreadIoEventLoop.runIo(SingleThreadIoEventLoop.java:225)
+	at io.netty.channel.SingleThreadIoEventLoop.run(SingleThreadIoEventLoop.java:196)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:1204)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@25.0.4.1/Thread.java:1487)
+	at java.lang.Thread.run(java.base@25.0.4.1/Thread.java:1474)
+
+"C2 CompilerThread1" #20 [2045721] daemon prio=9 os_prio=0 cpu=348,59ms elapsed=1,29s tid=0x000056366e38f060 nid=2045721 runnable  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+   Compiling: 8604       4       jdk.internal.util.StrongReferenceKey::equals (28 bytes)
+
+"DefaultDispatcher-worker-9" #69 [2045729] daemon prio=5 os_prio=0 cpu=1,08ms elapsed=1,22s tid=0x00007f0fcc45fcc0 nid=2045729 waiting on condition  [0x00007f0fc16f1000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-10" #70 [2045730] daemon prio=5 os_prio=0 cpu=1,26ms elapsed=1,22s tid=0x00007f0ff5a14c20 nid=2045730 waiting on condition  [0x00007f0fc15f0000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-11" #71 [2045731] daemon prio=5 os_prio=0 cpu=19,66ms elapsed=1,22s tid=0x00007f0fd402fe10 nid=2045731 waiting on condition  [0x00007f0fc14ef000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-12" #72 [2045732] daemon prio=5 os_prio=0 cpu=6,36ms elapsed=1,22s tid=0x00007f0fc402efe0 nid=2045732 waiting on condition  [0x00007f0fc13ee000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-13" #73 [2045733] daemon prio=5 os_prio=0 cpu=1,05ms elapsed=1,22s tid=0x00007f0fd4031400 nid=2045733 waiting on condition  [0x00007f0fc12ed000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-14" #74 [2045734] daemon prio=5 os_prio=0 cpu=1,15ms elapsed=1,22s tid=0x00007f0fc4030280 nid=2045734 waiting on condition  [0x00007f0fc11ec000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-15" #75 [2045735] daemon prio=5 os_prio=0 cpu=1,11ms elapsed=1,22s tid=0x00007f0ff5a15d20 nid=2045735 waiting on condition  [0x00007f0fc10eb000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-16" #76 [2045736] daemon prio=5 os_prio=0 cpu=0,87ms elapsed=1,22s tid=0x00007f0ff5a12da0 nid=2045736 waiting on condition  [0x00007f0fc0fea000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-18" #78 [2045737] daemon prio=5 os_prio=0 cpu=1,22ms elapsed=1,21s tid=0x00007f0fbcdbb1c0 nid=2045737 waiting on condition  [0x00007f0fc0ee9000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-24" #84 [2045738] daemon prio=5 os_prio=0 cpu=1,26ms elapsed=1,21s tid=0x00007f0ff58ac630 nid=2045738 waiting on condition  [0x00007f0fc0de8000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-20" #80 [2045739] daemon prio=5 os_prio=0 cpu=2,11ms elapsed=1,21s tid=0x000056366dfe8310 nid=2045739 waiting on condition  [0x00007f0fc0ce7000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-17" #77 [2045740] daemon prio=5 os_prio=0 cpu=9,86ms elapsed=1,21s tid=0x00007f0fc8048660 nid=2045740 waiting on condition  [0x00007f0fc0be6000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-27" #87 [2045741] daemon prio=5 os_prio=0 cpu=26,50ms elapsed=1,21s tid=0x00007f0fc804cc20 nid=2045741 waiting on condition  [0x00007f0fc0ae5000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-30" #90 [2045742] daemon prio=5 os_prio=0 cpu=1,43ms elapsed=1,21s tid=0x00007f0fbcdbdad0 nid=2045742 waiting on condition  [0x00007f0fc09e4000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-23" #83 [2045743] daemon prio=5 os_prio=0 cpu=0,92ms elapsed=1,21s tid=0x000056366dff3d90 nid=2045743 waiting on condition  [0x00007f0fc08e3000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-33" #93 [2045744] daemon prio=5 os_prio=0 cpu=1,18ms elapsed=1,21s tid=0x00007f0fbcdc23b0 nid=2045744 waiting on condition  [0x00007f0fc07e2000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-19" #79 [2045745] daemon prio=5 os_prio=0 cpu=1,31ms elapsed=1,21s tid=0x00007f0fc804f6d0 nid=2045745 waiting on condition  [0x00007f0fc06e1000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-26" #86 [2045746] daemon prio=5 os_prio=0 cpu=0,96ms elapsed=1,21s tid=0x00007f0fd40371d0 nid=2045746 waiting on condition  [0x00007f0fc05e0000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-21" #81 [2045747] daemon prio=5 os_prio=0 cpu=1,72ms elapsed=1,21s tid=0x00007f0fcc461920 nid=2045747 waiting on condition  [0x00007f0fc04df000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-28" #88 [2045748] daemon prio=5 os_prio=0 cpu=34,04ms elapsed=1,21s tid=0x000056366dff5210 nid=2045748 runnable  [0x00007f0fc03db000]
+   java.lang.Thread.State: RUNNABLE
+	at java.util.zip.Inflater.inflateBytesBytes(java.base@25.0.4.1/Native Method)
+	at java.util.zip.Inflater.inflate(java.base@25.0.4.1/Inflater.java:354)
+	- locked <0x00000000ffcfa478> (a java.util.zip.Inflater$InflaterZStreamRef)
+	at java.util.zip.InflaterInputStream.read(java.base@25.0.4.1/InflaterInputStream.java:210)
+	at jdk.internal.loader.Resource.getBytes(java.base@25.0.4.1/Resource.java:106)
+	at jdk.internal.loader.URLClassPath$JarLoader$1.getBytes(java.base@25.0.4.1/URLClassPath.java:730)
+	at jdk.internal.loader.BuiltinClassLoader.defineClass(java.base@25.0.4.1/BuiltinClassLoader.java:773)
+	at jdk.internal.loader.BuiltinClassLoader.findClassOnClassPathOrNull(java.base@25.0.4.1/BuiltinClassLoader.java:691)
+	at jdk.internal.loader.BuiltinClassLoader.loadClassOrNull(java.base@25.0.4.1/BuiltinClassLoader.java:620)
+	- locked <0x00000000ecbec2b0> (a java.lang.Object)
+	at jdk.internal.loader.BuiltinClassLoader.loadClass(java.base@25.0.4.1/BuiltinClassLoader.java:578)
+	at java.lang.ClassLoader.loadClass(java.base@25.0.4.1/ClassLoader.java:490)
+	at java.lang.ClassLoader.defineClass1(java.base@25.0.4.1/Native Method)
+	at java.lang.ClassLoader.defineClass(java.base@25.0.4.1/ClassLoader.java:962)
+	at java.security.SecureClassLoader.defineClass(java.base@25.0.4.1/SecureClassLoader.java:144)
+	at jdk.internal.loader.BuiltinClassLoader.defineClass(java.base@25.0.4.1/BuiltinClassLoader.java:776)
+	at jdk.internal.loader.BuiltinClassLoader.findClassOnClassPathOrNull(java.base@25.0.4.1/BuiltinClassLoader.java:691)
+	at jdk.internal.loader.BuiltinClassLoader.loadClassOrNull(java.base@25.0.4.1/BuiltinClassLoader.java:620)
+	- locked <0x00000000ecbd6d10> (a java.lang.Object)
+	at jdk.internal.loader.BuiltinClassLoader.loadClass(java.base@25.0.4.1/BuiltinClassLoader.java:578)
+	at java.lang.ClassLoader.loadClass(java.base@25.0.4.1/ClassLoader.java:490)
+	at org.jooq.impl.DefaultExecuteContext.wrap(DefaultExecuteContext.java:809)
+	at org.jooq.impl.DefaultExecuteContext.connection(DefaultExecuteContext.java:779)
+	at org.jooq.impl.DefaultExecuteContext.connection0(DefaultExecuteContext.java:721)
+	at org.jooq.impl.DefaultExecuteContext.connection(DefaultExecuteContext.java:709)
+	at org.jooq.impl.AbstractQuery.connection(AbstractQuery.java:397)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:317)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:268)
+	at org.jooq.impl.AbstractResultQuery.fetch(AbstractResultQuery.java:285)
+	at org.jooq.impl.SelectImpl.fetch(SelectImpl.java:3219)
+	at run.trama.saga.store.SagaRepository.loadStepResultsForTemplate$lambda$0(SagaRepository.kt:275)
+	at run.trama.saga.store.SagaRepository$$Lambda/0x000000005c7abb58.invoke(Unknown Source)
+	at run.trama.saga.store.DatabaseClient$withConnection$2.invokeSuspend(DatabaseClient.kt:59)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:124)
+	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:89)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:586)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:798)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:717)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-35" #95 [2045749] daemon prio=5 os_prio=0 cpu=1,38ms elapsed=1,21s tid=0x000056366dff7100 nid=2045749 waiting on condition  [0x00007f0fc02dd000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-29" #89 [2045750] daemon prio=5 os_prio=0 cpu=1,11ms elapsed=1,20s tid=0x00007f0fd40385b0 nid=2045750 waiting on condition  [0x00007f0fc01dc000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-31" #91 [2045751] daemon prio=5 os_prio=0 cpu=1,13ms elapsed=1,20s tid=0x00007f0ff58ae820 nid=2045751 waiting on condition  [0x00007f0fb7ffe000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-32" #92 [2045752] daemon prio=5 os_prio=0 cpu=184,88ms elapsed=1,20s tid=0x00007f0fc8052dc0 nid=2045752 runnable  [0x00007f0fb7efc000]
+   java.lang.Thread.State: RUNNABLE
+	at org.jooq.tools.JooqLogger.warn(JooqLogger.java:471)
+	at org.jooq.impl.DefaultExecuteContext.logVersionSupport(DefaultExecuteContext.java:785)
+	at org.jooq.impl.DefaultExecuteContext.connection(DefaultExecuteContext.java:763)
+	at org.jooq.impl.DefaultExecuteContext.connection0(DefaultExecuteContext.java:721)
+	at org.jooq.impl.DefaultExecuteContext.connection(DefaultExecuteContext.java:709)
+	at org.jooq.impl.AbstractQuery.connection(AbstractQuery.java:397)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:317)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:268)
+	at org.jooq.impl.AbstractResultQuery.fetch(AbstractResultQuery.java:285)
+	at org.jooq.impl.SelectImpl.fetch(SelectImpl.java:3219)
+	at run.trama.saga.store.SagaRepository.loadStepResultsForTemplate$lambda$0(SagaRepository.kt:275)
+	at run.trama.saga.store.SagaRepository$$Lambda/0x000000005c7abb58.invoke(Unknown Source)
+	at run.trama.saga.store.DatabaseClient$withConnection$2.invokeSuspend(DatabaseClient.kt:59)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:124)
+	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:89)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:586)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:798)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:717)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-22" #82 [2045753] daemon prio=5 os_prio=0 cpu=4,86ms elapsed=1,20s tid=0x00007f0fc40333a0 nid=2045753 waiting on condition  [0x00007f0fb7dfc000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-36" #96 [2045754] daemon prio=5 os_prio=0 cpu=1,68ms elapsed=1,20s tid=0x00007f0fd0971180 nid=2045754 waiting on condition  [0x00007f0fb7cfb000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-37" #97 [2045755] daemon prio=5 os_prio=0 cpu=15,38ms elapsed=1,20s tid=0x00007f0fc8054780 nid=2045755 waiting on condition  [0x00007f0fb7bfa000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-25" #85 [2045756] daemon prio=5 os_prio=0 cpu=9,79ms elapsed=1,20s tid=0x000056366ddca4a0 nid=2045756 waiting on condition  [0x00007f0fb7af9000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-34" #94 [2045757] daemon prio=5 os_prio=0 cpu=1,37ms elapsed=1,20s tid=0x000056366ddcbf80 nid=2045757 waiting on condition  [0x00007f0fb79f8000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-39" #99 [2045758] daemon prio=5 os_prio=0 cpu=1,13ms elapsed=1,20s tid=0x00007f0fd0971de0 nid=2045758 waiting on condition  [0x00007f0fb78f7000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-43" #103 [2045759] daemon prio=5 os_prio=0 cpu=1,04ms elapsed=1,20s tid=0x00007f0fbcdcbe30 nid=2045759 waiting on condition  [0x00007f0fb77f6000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-40" #100 [2045760] daemon prio=5 os_prio=0 cpu=1,12ms elapsed=1,20s tid=0x00007f0fc80568d0 nid=2045760 waiting on condition  [0x00007f0fb76f5000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-50" #110 [2045761] daemon prio=5 os_prio=0 cpu=1,20ms elapsed=1,20s tid=0x00007f0fbcdd0600 nid=2045761 waiting on condition  [0x00007f0fb75f4000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-38" #98 [2045762] daemon prio=5 os_prio=0 cpu=1,04ms elapsed=1,19s tid=0x00007f0fd404ddb0 nid=2045762 waiting on condition  [0x00007f0fb74f3000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-47" #107 [2045765] daemon prio=5 os_prio=0 cpu=0,83ms elapsed=1,18s tid=0x00007f0fc8058120 nid=2045765 waiting on condition  [0x00007f0fb73f2000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-41" #101 [2045766] daemon prio=5 os_prio=0 cpu=5,10ms elapsed=1,18s tid=0x00007f0ff58b0c20 nid=2045766 waiting on condition  [0x00007f0fb72f1000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-54" #114 [2045767] daemon prio=5 os_prio=0 cpu=1,42ms elapsed=1,18s tid=0x00007f0ff58b29f0 nid=2045767 waiting on condition  [0x00007f0fb71f0000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-48" #108 [2045768] daemon prio=5 os_prio=0 cpu=7,25ms elapsed=1,18s tid=0x00007f0fcc7db040 nid=2045768 waiting on condition  [0x00007f0fb70ef000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-45" #105 [2045769] daemon prio=5 os_prio=0 cpu=2,23ms elapsed=1,18s tid=0x00007f0fd404f1b0 nid=2045769 waiting on condition  [0x00007f0fb6fee000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-46" #106 [2045770] daemon prio=5 os_prio=0 cpu=0,80ms elapsed=1,17s tid=0x00007f0fc40356c0 nid=2045770 waiting on condition  [0x00007f0fb6eed000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-42" #102 [2045771] daemon prio=5 os_prio=0 cpu=13,88ms elapsed=1,17s tid=0x000056366dd7ac20 nid=2045771 waiting on condition  [0x00007f0fb6dec000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-51" #111 [2045772] daemon prio=5 os_prio=0 cpu=262,07ms elapsed=1,17s tid=0x000056366df262f0 nid=2045772 runnable  [0x00007f0fb6ce9000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.ClassLoader.defineClass0(java.base@25.0.4.1/Native Method)
+	at java.lang.System$1.defineClass(java.base@25.0.4.1/System.java:2051)
+	at java.lang.invoke.MethodHandles$Lookup$ClassDefiner.defineClass(java.base@25.0.4.1/MethodHandles.java:2354)
+	at java.lang.invoke.InnerClassLambdaMetafactory.generateInnerClass(java.base@25.0.4.1/InnerClassLambdaMetafactory.java:355)
+	at java.lang.invoke.InnerClassLambdaMetafactory.spinInnerClass(java.base@25.0.4.1/InnerClassLambdaMetafactory.java:282)
+	at java.lang.invoke.InnerClassLambdaMetafactory.buildCallSite(java.base@25.0.4.1/InnerClassLambdaMetafactory.java:214)
+	at java.lang.invoke.LambdaMetafactory.metafactory(java.base@25.0.4.1/LambdaMetafactory.java:354)
+	at java.lang.invoke.DirectMethodHandle$Holder.invokeStatic(java.base@25.0.4.1/DirectMethodHandle$Holder)
+	at java.lang.invoke.BootstrapMethodInvoker.invoke(java.base@25.0.4.1/BootstrapMethodInvoker.java:134)
+	at java.lang.invoke.CallSite.makeSite(java.base@25.0.4.1/CallSite.java:310)
+	at java.lang.invoke.MethodHandleNatives.linkCallSiteImpl(java.base@25.0.4.1/MethodHandleNatives.java:250)
+	at java.lang.invoke.MethodHandleNatives.linkCallSite(java.base@25.0.4.1/MethodHandleNatives.java:240)
+	at org.jooq.impl.SelectQueryImpl.toSQLOrderBy(SelectQueryImpl.java:3612)
+	at org.jooq.impl.SelectQueryImpl.toSQLReference0(SelectQueryImpl.java:2875)
+	at org.jooq.impl.SelectQueryImpl.lambda$toSQLReferenceLimitDefault$11(SelectQueryImpl.java:2210)
+	at org.jooq.impl.SelectQueryImpl$$Lambda/0x000000005c9048f0.accept(Unknown Source)
+	at org.jooq.impl.AbstractContext.data(AbstractContext.java:446)
+	at org.jooq.impl.SelectQueryImpl.toSQLReferenceLimitDefault(SelectQueryImpl.java:2210)
+	at org.jooq.impl.SelectQueryImpl.accept0(SelectQueryImpl.java:2061)
+	at org.jooq.impl.SelectQueryImpl.accept(SelectQueryImpl.java:1679)
+	at org.jooq.impl.DefaultRenderContext.visit0(DefaultRenderContext.java:814)
+	at org.jooq.impl.AbstractContext.visit(AbstractContext.java:389)
+	at org.jooq.impl.DefaultRenderContext$Rendered.rendered(DefaultRenderContext.java:1041)
+	at org.jooq.impl.AbstractQuery.getSQL0(AbstractQuery.java:536)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:312)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:268)
+	at org.jooq.impl.AbstractResultQuery.fetch(AbstractResultQuery.java:285)
+	at org.jooq.impl.SelectImpl.fetch(SelectImpl.java:3219)
+	at run.trama.saga.store.SagaRepository.loadStepResultsForTemplate$lambda$0(SagaRepository.kt:275)
+	at run.trama.saga.store.SagaRepository$$Lambda/0x000000005c7abb58.invoke(Unknown Source)
+	at run.trama.saga.store.DatabaseClient$withConnection$2.invokeSuspend(DatabaseClient.kt:59)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:124)
+	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:89)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:586)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:798)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:717)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-52" #112 [2045773] daemon prio=5 os_prio=0 cpu=6,44ms elapsed=1,17s tid=0x00007f0fc8059eb0 nid=2045773 waiting on condition  [0x00007f0fb6bea000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-44" #104 [2045774] daemon prio=5 os_prio=0 cpu=1,19ms elapsed=1,17s tid=0x00007f0fbcde6b00 nid=2045774 waiting on condition  [0x00007f0fb6ae9000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-53" #113 [2045775] daemon prio=5 os_prio=0 cpu=0,07ms elapsed=1,17s tid=0x00007f0fbcde8680 nid=2045775 waiting on condition  [0x00007f0fb69e8000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-49" #109 [2045776] daemon prio=5 os_prio=0 cpu=0,11ms elapsed=1,17s tid=0x000056366df28340 nid=2045776 waiting on condition  [0x00007f0fb68e7000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-55" #115 [2045777] daemon prio=5 os_prio=0 cpu=142,84ms elapsed=1,17s tid=0x00007f0fd40533c0 nid=2045777 runnable  [0x00007f0fb67e5000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.ThreadLocal$ThreadLocalMap.set(java.base@25.0.4.1/ThreadLocal.java:553)
+	at java.lang.ThreadLocal.set(java.base@25.0.4.1/ThreadLocal.java:243)
+	at java.lang.ThreadLocal.set(java.base@25.0.4.1/ThreadLocal.java:229)
+	at org.jooq.impl.DefaultExecuteContext.connection(DefaultExecuteContext.java:777)
+	at org.jooq.impl.DefaultExecuteContext.connection0(DefaultExecuteContext.java:721)
+	at org.jooq.impl.DefaultExecuteContext.connection(DefaultExecuteContext.java:709)
+	at org.jooq.impl.AbstractQuery.connection(AbstractQuery.java:397)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:317)
+	at org.jooq.impl.AbstractQuery.execute(AbstractQuery.java:268)
+	at org.jooq.impl.AbstractResultQuery.fetch(AbstractResultQuery.java:285)
+	at org.jooq.impl.SelectImpl.fetch(SelectImpl.java:3219)
+	at run.trama.saga.store.SagaRepository.loadStepResultsForTemplate$lambda$0(SagaRepository.kt:275)
+	at run.trama.saga.store.SagaRepository$$Lambda/0x000000005c7abb58.invoke(Unknown Source)
+	at run.trama.saga.store.DatabaseClient$withConnection$2.invokeSuspend(DatabaseClient.kt:59)
+	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:100)
+	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:124)
+	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:89)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:586)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:798)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:717)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"DefaultDispatcher-worker-56" #116 [2045778] daemon prio=5 os_prio=0 cpu=0,11ms elapsed=1,16s tid=0x00007f0fbcdeafb0 nid=2045778 waiting on condition  [0x00007f0fb66e5000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@25.0.4.1/Native Method)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@25.0.4.1/LockSupport.java:408)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.park(CoroutineScheduler.kt:833)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.tryPark(CoroutineScheduler.kt:781)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:751)
+	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:704)
+
+"Attach Listener" #117 [2045843] daemon prio=9 os_prio=0 cpu=0,29ms elapsed=0,12s tid=0x00007f0fccd7aa30 nid=2045843 waiting on condition  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"G1 Conc#1" os_prio=0 cpu=49,24ms elapsed=5,22s tid=0x00007f0fcc2828c0 nid=2045424 runnable  
+
+"GC Thread#7" os_prio=0 cpu=34,20ms elapsed=5,23s tid=0x00007f0fc8012c90 nid=2045423 runnable  
+
+"GC Thread#6" os_prio=0 cpu=23,30ms elapsed=5,47s tid=0x00007f0fc8010e10 nid=2045418 runnable  
+
+"GC Thread#5" os_prio=0 cpu=12,60ms elapsed=5,47s tid=0x00007f0fc800fc70 nid=2045417 runnable  
+
+"GC Thread#4" os_prio=0 cpu=17,79ms elapsed=5,48s tid=0x00007f0fc800ae90 nid=2045416 runnable  
+
+"GC Thread#3" os_prio=0 cpu=15,93ms elapsed=5,48s tid=0x00007f0fc800a140 nid=2045415 runnable  
+
+"GC Thread#2" os_prio=0 cpu=27,66ms elapsed=5,48s tid=0x00007f0fc80093f0 nid=2045414 runnable  
+
+"GC Thread#1" os_prio=0 cpu=20,00ms elapsed=5,48s tid=0x00007f0fc80086a0 nid=2045413 runnable  
+
+"VM Thread" os_prio=0 cpu=13,12ms elapsed=5,87s tid=0x00007f0ff40d78f0 nid=2045388 runnable  
+
+"VM Periodic Task Thread" os_prio=0 cpu=0,28ms elapsed=5,87s tid=0x00007f0ff40c75d0 nid=2045387 waiting on condition  
+
+"G1 Service" os_prio=0 cpu=1,32ms elapsed=5,87s tid=0x00007f0ff40b22b0 nid=2045383 runnable  
+
+"G1 Refine#0" os_prio=0 cpu=3,23ms elapsed=5,87s tid=0x00007f0ff40b1180 nid=2045382 runnable  
+
+"G1 Conc#0" os_prio=0 cpu=52,45ms elapsed=5,87s tid=0x00007f0ff4058330 nid=2045381 runnable  
+
+"G1 Main Marker" os_prio=0 cpu=0,85ms elapsed=5,87s tid=0x00007f0ff4057220 nid=2045380 runnable  
+
+"GC Thread#0" os_prio=0 cpu=21,33ms elapsed=5,87s tid=0x00007f0ff404fa40 nid=2045379 runnable  
+
+JNI global refs: 34, weak refs: 1
+

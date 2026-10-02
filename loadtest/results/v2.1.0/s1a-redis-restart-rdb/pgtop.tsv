@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+14869	6451.5	0.434	14869	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+6000	2232.1	0.372	6000	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+10579	2029.0	0.192	7816	select "public"."saga_step_result"."step_index", "public"."saga_step_result"."step_name", "public"."saga_step_result"."phase", "public"."sag
+11429	1906.9	0.167	11429	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+6000	1602.5	0.267	6000	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+1500	1084.2	0.723	1500	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+1500	972.5	0.648	1500	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND status = $3 AND waiting_state IS NOT 
+1502	896.3	0.597	1500	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+7579	714.0	0.094	7579	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+4500	519.4	0.115	4500	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+4500	511.9	0.114	4500	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+1500	325.2	0.217	4500	select "public"."saga_execution"."id", "public"."saga_execution"."status", "public"."saga_execution"."failure_description" from "public"."sa
+1500	210.3	0.140	4500	SELECT DISTINCT ON (saga_id) saga_id, response_body FROM saga_step_result WHERE saga_id = ANY($1) AND started_at >= $2 ORDER BY saga_id, cre
+14	196.1	14.006	2	SELECT b.parent_id FROM saga_join_barrier b JOIN saga_execution e ON e.id = b.parent_id AND e.started_at = b.parent_started_at WHERE e.statu
+1500	133.5	0.089	1500	INSERT INTO saga_join_barrier (parent_id, parent_started_at, split_node_id, join_node_id, expected_count, arrived_count, created_at) VALUES 

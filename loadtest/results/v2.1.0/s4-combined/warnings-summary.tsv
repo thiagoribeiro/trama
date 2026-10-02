@@ -1,0 +1,33 @@
+process	level	count	message
+trama-0	WARN	1	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379
+trama-0	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-0	WARN	63	callback applied but not queued; the reconciler will deliver it
+trama-0	WARN	64	callback nonce check skipped: Redis unavailable
+trama-0	WARN	4	claim poll failed; retrying
+trama-0	WARN	3	processing failed
+trama-0	WARN	64	run accepted but not queued; the reconciler will deliver it
+trama-1	WARN	2	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379
+trama-1	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-1	WARN	8	claim poll failed; retrying
+trama-1	WARN	3	processing failed
+trama-1	WARN	1	reconciler re-sent stalled executions
+trama-1	WARN	1	saga-db-pool - Connection org.postgresql.jdbc.PgConnection@3650d4fc marked as broken because of SQLSTATE(08006), ErrorCo
+trama-1	WARN	1	saga-db-pool - Connection org.postgresql.jdbc.PgConnection@497be282 marked as broken because of SQLSTATE(08006), ErrorCo
+trama-1	WARN	1	saga-db-pool - Connection org.postgresql.jdbc.PgConnection@6181d8 marked as broken because of SQLSTATE(08006), ErrorCode
+trama-1	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@459991cd (This connection has been closed.
+trama-1	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@496d206f (This connection has been closed.
+trama-1	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@5cedc850 (This connection has been closed.
+trama-2	WARN	2	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-2	WARN	1	reconciler re-sent stalled executions
+trama-3	WARN	2	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379
+trama-3	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-3	WARN	8	claim poll failed; retrying
+trama-3	WARN	3	processing failed
+trama-3	WARN	1	reconciler re-sent stalled executions
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@300a0c8c (This connection has been closed.
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@577a90c4 (This connection has been closed.
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@5cca58e7 (This connection has been closed.
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@688faa8b (This connection has been closed.
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@6b70eb91 (This connection has been closed.
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@78949db5 (This connection has been closed.
+trama-3	WARN	1	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@aaa0f76 (This connection has been closed.)

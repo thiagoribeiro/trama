@@ -14,7 +14,7 @@ Results feed [`docs/validation-report.md`](../docs/validation-report.md).
 | `stack.sh` | Postgres (with `pg_stat_statements`), Redis (`none`/`rdb`/`aof` persistence) and Toxiproxy in front of both. Fault commands: `redis-restart`, `redis-flush`, `cut`/`restore redis\|pg`, `latency redis\|pg MS`. |
 | `trama.sh` | Builds (`installDist`) and runs N Trama processes on ports 9100+i, all reaching Redis/Postgres **through Toxiproxy**. Process 0 receives runs and callbacks and is never killed by scenarios. `kill`, `pause`/`resume` (SIGSTOP/SIGCONT), `add`. |
 | `app/loadtest/kotlin` | The JVM tools, run through `lib.sh`'s `harness` function: `mock` (downstream service that counts every effect per run/node/phase), `drive` (submits workflows), `collect` (process/Redis/Postgres/queue metrics every 5s), `check` (outcomes and invariants), `park` (executions parked in each state), `pgtop`. |
-| `scenarios/*.sh` | One script per validation scenario (see header comments). Each one starts a fresh stack and writes `results/<scenario>/`. |
+| `scenarios/*.sh` | One script per validation scenario (see header comments). Each one starts a fresh stack and writes `results/$RESULTS_SET/<scenario>/` (`RESULTS_SET` defaults to `v2.1.0`; `results/v2.0.1/` holds the first run). |
 
 ## Run
 ```bash
@@ -24,11 +24,9 @@ loadtest/scenarios/s2a-kill-inflight.sh
 loadtest/run-all.sh                  # everything, ~2h (runs under systemd-inhibit)
 ```
 
-## Harness defaults that differ from Trama's
-- **`redis.pool.maxTotal=256`** (`REDIS_POOL`). Trama's default of 16 deadlocks a process under concurrency, see `s3x-pool-deadlock.sh`.
-- **`rateLimit.enabled=false`** (`RATE_LIMIT`). The default per-definition failure breaker pauses a whole workflow type after 5 business failures, see `s3y-rate-limit.sh`.
-
-Every other setting is Trama's default (claim lease 20s, 1024 virtual shards, REDIS store).
+## Settings
+Every Trama setting is its default except `runtime.workerCount`, which each scenario sets. `RATE_LIMIT=true|false` overrides the failure breaker (used by `s3y-rate-limit.sh`).
+The v2.0.1 run raised the Redis pool to 256 and turned the rate limiter off, because those defaults were themselves findings (G3, G6); both are fixed in v2.1.0.
 
 ## Workflows used
 - **chain**: `t1 → t2 → t3`. `t3` fails when `payload.fail`, which compensates `t1` and `t2`.
@@ -36,7 +34,7 @@ Every other setting is Trama's default (claim lease 20s, 1024 virtual shards, RE
 - `failureHandling` allows no retries, so every node should hit the mock exactly once per phase. Any extra call the mock records is an effect duplicated by a fault.
 
 ## Reading results
-`results/<scenario>/summary.json` (from `check`):
+`results/<set>/<scenario>/summary.json` (from `check`):
 
 | Field | Meaning |
 |---|---|

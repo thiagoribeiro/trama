@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+6004	1528.6	0.255	6004	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+2400	504.6	0.210	2400	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+4250	496.7	0.117	4250	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+4250	465.5	0.110	3200	select "public"."saga_step_result"."step_index", "public"."saga_step_result"."step_name", "public"."saga_step_result"."phase", "public"."sag
+600	365.0	0.608	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+2400	359.3	0.150	2400	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+600	355.2	0.592	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND status = $3 AND waiting_state IS NOT 
+600	331.7	0.553	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+3050	216.9	0.071	3050	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+4	124.8	31.209	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+1800	106.6	0.059	1800	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+1800	72.1	0.040	1800	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+600	67.8	0.113	1800	select "public"."saga_execution"."id", "public"."saga_execution"."status", "public"."saga_execution"."failure_description" from "public"."sa
+600	43.7	0.073	1800	SELECT DISTINCT ON (saga_id) saga_id, response_body FROM saga_step_result WHERE saga_id = ANY($1) AND started_at >= $2 ORDER BY saga_id, cre
+1	36.1	36.100	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:

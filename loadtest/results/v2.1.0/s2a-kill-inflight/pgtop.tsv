@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+6	134.8	22.459	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+180	54.4	0.302	180	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+60	23.0	0.383	60	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+3	16.0	5.335	132	select c.relname, (regexp_match(pg_get_expr(c.relpartbound, c.oid), $1))[$2]::timestamptz as lo, (regexp_match(pg_get_expr(c.relpartbound, c
+1	13.8	13.781	0	CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at ON saga_step_call (saga_id, started_at, step_started_at ASC)
+60	12.1	0.202	60	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+1	12.1	12.058	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_resume ON saga_execution (status, resume_at) WHERE status IN ('IN_PROGRESS', 'SLEEPING', 'WAIT
+60	11.2	0.187	180	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+1	11.0	10.992	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+68	10.7	0.158	68	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+68	10.2	0.151	0	select "public"."saga_step_result"."step_index", "public"."saga_step_result"."step_name", "public"."saga_step_result"."phase", "public"."sag
+1	9.8	9.810	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+1	7.3	7.333	0	CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+1	6.8	6.779	0	create table if not exists saga_step_call_202711 partition of saga_step_call for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	6.6	6.589	0	create table if not exists saga_step_result_202711 partition of saga_step_result for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00

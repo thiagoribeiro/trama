@@ -1,0 +1,15 @@
+calls	total_ms	mean_ms	rows	query
+9000	3017.6	0.335	9000	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+3000	1003.6	0.335	3000	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+3000	695.8	0.232	3000	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+3000	454.9	0.152	0	select "public"."saga_step_result"."step_index", "public"."saga_step_result"."step_name", "public"."saga_step_result"."phase", "public"."sag
+3000	414.0	0.138	9000	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+3000	405.5	0.135	3000	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+6	29.4	4.901	18000	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+1	2.6	2.582	0	SELECT saga_id, step_name, phase, count(*) FROM saga_step_result WHERE saga_id = ANY($1) GROUP BY 1,2,3 HAVING count(*) > $2
+1	0.7	0.690	0	UPDATE saga_execution se SET checkpoint_seq = se.checkpoint_seq + $4, checkpoint_carrier = se.checkpoint_seq + $5, resume_at = now(), update
+5	0.4	0.078	5	SELECT xact_commit, tup_inserted, tup_updated, numbackends FROM pg_stat_database WHERE datname = $1
+21	0.3	0.016	0	SET application_name = 'PostgreSQL JDBC Driver'
+1	0.1	0.086	1	SELECT pg_stat_statements_reset()
+1	0.1	0.071	0	SELECT b.parent_id FROM saga_join_barrier b JOIN saga_execution e ON e.id = b.parent_id AND e.started_at = b.parent_started_at WHERE e.statu
+1	0.0	0.005	0	SELECT parent_id, child_id FROM saga_join_branch WHERE parent_id = ANY($1)
