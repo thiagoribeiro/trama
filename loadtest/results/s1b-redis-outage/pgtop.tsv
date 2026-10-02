@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+570	164.8	0.289	570	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "failure_description", "started_at", "completed_at",
+6	149.8	24.968	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+570	96.2	0.169	1710	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+570	80.0	0.140	1710	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+101	72.4	0.717	36562	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+3	28.5	9.499	132	select c.relname, (regexp_match(pg_get_expr(c.relpartbound, c.oid), $1))[$2]::timestamptz as lo, (regexp_match(pg_get_expr(c.relpartbound, c
+1	11.2	11.179	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	10.1	10.067	0	CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at ON saga_step_call (saga_id, started_at, step_started_at ASC)
+1	9.5	9.527	0	create table if not exists saga_step_call_202711 partition of saga_step_call for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	9.5	9.468	0	CREATE TABLE public.databasechangelog (ID VARCHAR(255) NOT NULL, AUTHOR VARCHAR(255) NOT NULL, FILENAME VARCHAR(255) NOT NULL, DATEEXECUTED 
+1	9.3	9.341	0	CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+1	9.0	9.032	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+1	6.5	6.468	0	create table if not exists saga_step_result_202711 partition of saga_step_result for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00
+74	4.1	0.056	74	SELECT xact_commit, tup_inserted, tup_updated, numbackends FROM pg_stat_database WHERE datname = $1
+1	2.8	2.801	0	CREATE TABLE IF NOT EXISTS saga_join_barrier ( parent_id uuid NOT NULL, parent_started_at timestamptz NOT NULL, split_node_id text NOT NULL,

@@ -1,0 +1,34 @@
+{
+    "runs": 600,
+    "submitFailed": 0,
+    "status": {
+        "FAILED": 43,
+        "IN_PROGRESS": 21,
+        "SUCCEEDED": 530,
+        "WAITING_JOIN": 6
+    },
+    "statusByDef": {
+        "mixed": {
+            "FAILED": 43,
+            "IN_PROGRESS": 21,
+            "SUCCEEDED": 530,
+            "WAITING_JOIN": 6
+        }
+    },
+    "stuck": 27,
+    "lost": 0,
+    "wrongOutcome": 0,
+    "childExecutions": 1800,
+    "childrenNotTerminal": 6,
+    "extraExternalCalls": 0,
+    "runsWithDuplicateCalls": 0,
+    "missingEffectsOnCorrectOutcome": 0,
+    "duplicateStepRows": 0,
+    "throughputPerSec": 1.3,
+    "latencyMs": {
+        "p50": 86082,
+        "p95": 403620,
+        "p99": 427109,
+        "max": 433122
+    }
+}

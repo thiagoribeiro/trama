@@ -1,0 +1,5 @@
+count	level	message	root cause
+29	WARN	claims expired before renewal	
+20	WARN	missing redis meta on finalization for sagaId=<id>	
+20	WARN	callback arrived but no waiting entry found	
+2	WARN	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Co	

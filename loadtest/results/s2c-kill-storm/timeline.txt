@@ -1,0 +1,5 @@
+kill trama-2 at_s=10
+kill trama-3 at_s=20
+kill trama-1 at_s=30
+kill trama-2 at_s=40
+kill trama-3 at_s=50

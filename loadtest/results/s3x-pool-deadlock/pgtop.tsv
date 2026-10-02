@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+2	134.0	67.012	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+1	10.3	10.255	0	CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at ON saga_step_call (saga_id, started_at, step_started_at ASC)
+1	9.7	9.720	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	8.5	8.499	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+1	8.4	8.433	0	CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+1	7.2	7.171	0	create table if not exists saga_step_result_202711 partition of saga_step_result for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00
+1	6.7	6.693	0	create table if not exists saga_step_call_202711 partition of saga_step_call for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	4.1	4.142	42	select c.relname, (regexp_match(pg_get_expr(c.relpartbound, c.oid), $1))[$2]::timestamptz as lo, (regexp_match(pg_get_expr(c.relpartbound, c
+1	2.3	2.267	0	create table if not exists saga_definition ( id uuid primary key, name text not null, version text not null, definition jsonb not null, crea
+1	2.3	2.261	0	CREATE TABLE IF NOT EXISTS saga_join_branch ( id bigserial NOT NULL PRIMARY KEY, parent_id uuid NOT NULL, parent_started_at timestamptz NOT 
+1	2.2	2.173	0	CREATE TABLE IF NOT EXISTS saga_join_barrier ( parent_id uuid NOT NULL, parent_started_at timestamptz NOT NULL, split_node_id text NOT NULL,
+1	1.8	1.764	0	CREATE TABLE public.databasechangelog (ID VARCHAR(255) NOT NULL, AUTHOR VARCHAR(255) NOT NULL, FILENAME VARCHAR(255) NOT NULL, DATEEXECUTED 
+1	1.7	1.707	0	CREATE TABLE public.databasechangeloglock (ID INTEGER NOT NULL, LOCKED BOOLEAN NOT NULL, LOCKGRANTED TIMESTAMP WITHOUT TIME ZONE, LOCKEDBY V
+1	1.5	1.534	0	ALTER TABLE saga_step_result ADD COLUMN IF NOT EXISTS step_started_at timestamptz
+1	1.5	1.501	0	create table if not exists saga_step_result ( id bigserial not null, saga_id uuid not null, step_index integer not null, step_name text not 

@@ -1,0 +1,4 @@
+count	level	message	root cause
+3	WARN	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Co	
+3	WARN	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379	
+2	WARN	processing failed	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379

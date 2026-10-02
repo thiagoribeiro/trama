@@ -1,0 +1,2 @@
+pause_at_s=3
+resume_at_s=45

@@ -123,6 +123,32 @@ application {
     mainClass.set("run.trama.app.ApplicationKt")
 }
 
+// Validation harness (loadtest/README.md): load generator, downstream mock, metrics collector
+// and checker. Not part of `test`/CI; run with ./gradlew loadtest --args="<command> ...".
+val loadtest: SourceSet by sourceSets.creating {
+    kotlin.srcDir("app/loadtest/kotlin")
+    compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
+    runtimeClasspath += output + compileClasspath + sourceSets.main.get().runtimeClasspath
+}
+
+tasks.register<JavaExec>("loadtest") {
+    group       = "verification"
+    description = "Validation harness: mock | drive | collect | check (see loadtest/README.md)"
+    classpath   = loadtest.runtimeClasspath
+    mainClass.set("run.trama.loadtest.MainKt")
+    workingDir  = rootDir
+}
+
+// Writes the harness classpath so the loadtest shell scripts can start several JVMs quickly with `java -cp`.
+tasks.register("loadtestClasspath") {
+    group       = "verification"
+    description = "Compile the validation harness and write its classpath to build/loadtest.classpath"
+    dependsOn(loadtest.classesTaskName, "installDist")
+    val out = layout.buildDirectory.file("loadtest.classpath")
+    outputs.file(out)
+    doLast { out.get().asFile.writeText(loadtest.runtimeClasspath.asPath) }
+}
+
 tasks.register<JavaExec>("trama-validate") {
     group       = "application"
     description = "Validate a v2 saga definition offline (no orchestrator required)"

@@ -1,0 +1,18 @@
+count	level	message	root cause
+198	ERROR	Unhandled exception while processing request	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379
+11	WARN	callback timeout	
+5	WARN	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Co	
+3	WARN	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379	
+3	WARN	processing failed	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379
+2	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@7412ed6b (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@ab0cdae (This connection has bee	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@62ef0b09 (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@4aaee130 (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@6e3e6747 (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@3f214702 (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@6e128fdc (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@459fe952 (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@394f934a (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@233882 (This connection has been	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@77faf7a9 (This connection has be	
+1	WARN	saga-db-pool - Failed to validate connection org.postgresql.jdbc.PgConnection@7ab52b35 (This connection has be	

@@ -1,0 +1,22 @@
+{
+    "runs": 200,
+    "submitFailed": 200,
+    "status": {},
+    "statusByDef": {},
+    "stuck": 0,
+    "lost": 0,
+    "wrongOutcome": 0,
+    "childExecutions": 0,
+    "childrenNotTerminal": 0,
+    "extraExternalCalls": 0,
+    "runsWithDuplicateCalls": 0,
+    "missingEffectsOnCorrectOutcome": 0,
+    "duplicateStepRows": 0,
+    "throughputPerSec": 0.0,
+    "latencyMs": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+    }
+}

@@ -1,0 +1,4 @@
+run/
+discarded/
+results/**/trama-*-warnings.log
+results/**/runs.csv
