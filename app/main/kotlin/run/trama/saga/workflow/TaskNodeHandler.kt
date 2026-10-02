@@ -162,8 +162,10 @@ class TaskNodeHandler(
                 "http.url" to url,
             ),
         ) { span ->
-            Tracing.withTraceMdc(span, execution.id.toString()) {
-                logger.info(
+            // Per-node trace at DEBUG: /steps, metrics and spans already record every node, and
+            // two INFO lines per node were a measurable share of the CPU per execution.
+            if (logger.isDebugEnabled) Tracing.withTraceMdc(span, execution.id.toString()) {
+                logger.debug(
                     "executing node",
                     kv("nodeId", nodeName),
                     kv("phase", phase.name),
@@ -189,13 +191,9 @@ class TaskNodeHandler(
                         durationNanos = System.nanoTime() - startNanos,
                     )
                 }
-                Tracing.withTraceMdc(span, execution.id.toString()) {
-                    logger.info(
-                        "node completed",
-                        kv("nodeId", nodeName),
-                        kv("phase", phase.name),
-                        kv("status", response.status.value),
-                    )
+                if (!success || logger.isDebugEnabled) Tracing.withTraceMdc(span, execution.id.toString()) {
+                    val fields = arrayOf(kv("nodeId", nodeName), kv("phase", phase.name), kv("status", response.status.value))
+                    if (success) logger.debug("node completed", *fields) else logger.info("node completed", *fields)
                 }
                 val nodeResult = if (success) {
                     NodeResult.Advanced(null)  // caller sets next

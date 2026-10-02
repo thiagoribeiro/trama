@@ -258,33 +258,31 @@ class SagaRepository(
         }
     }
 
+    /** Hot path (once per execution slice): plain JDBC, no query rendering. */
     suspend fun loadStepResultsForTemplate(sagaId: UUID): List<StepResult> {
         return db.withConnection { connection ->
-            val dsl = DSL.using(connection)
-            val records = dsl.select(
-                SAGA_STEP_RESULT.STEP_INDEX,
-                SAGA_STEP_RESULT.STEP_NAME,
-                SAGA_STEP_RESULT.PHASE,
-                SAGA_STEP_RESULT.RESPONSE_BODY,
-                SAGA_STEP_RESULT.CREATED_AT,
-            )
-                .from(SAGA_STEP_RESULT)
-                .where(SAGA_STEP_RESULT.SAGA_ID.eq(sagaId))
-                .and(SAGA_STEP_RESULT.STARTED_AT.ge(cutoff()))
-                .orderBy(SAGA_STEP_RESULT.STEP_INDEX.asc(), SAGA_STEP_RESULT.CREATED_AT.asc())
-                .fetch()
-
+            val sql = """
+                SELECT step_index, step_name, phase, response_body FROM saga_step_result
+                WHERE saga_id = ? AND started_at >= ?
+                ORDER BY step_index ASC, created_at ASC
+            """.trimIndent()
             val latestByIndex = linkedMapOf<Int, StepResult>()
-            for (record in records) {
-                val index = record.get(SAGA_STEP_RESULT.STEP_INDEX) ?: continue
-                val name = record.get(SAGA_STEP_RESULT.STEP_NAME) ?: ""
-                val phase = record.get(SAGA_STEP_RESULT.PHASE) ?: ExecutionPhase.UP.name
-                val body = record.get(SAGA_STEP_RESULT.RESPONSE_BODY)?.data()?.let { parseJson(it) }
-                val current = latestByIndex[index] ?: StepResult(index = index, name = name, upBody = null, downBody = null)
-                latestByIndex[index] = when (phase) {
-                    ExecutionPhase.UP.name   -> current.copy(upBody = body)
-                    ExecutionPhase.DOWN.name -> current.copy(downBody = body)
-                    else -> current
+            connection.prepareStatement(sql).use { ps ->
+                ps.setObject(1, sagaId)
+                ps.setObject(2, cutoff())
+                ps.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val index = rs.getInt(1).takeUnless { rs.wasNull() } ?: continue
+                        val name = rs.getString(2) ?: ""
+                        val phase = rs.getString(3) ?: ExecutionPhase.UP.name
+                        val body = rs.getString(4)?.let { parseJson(it) }
+                        val current = latestByIndex[index] ?: StepResult(index = index, name = name, upBody = null, downBody = null)
+                        latestByIndex[index] = when (phase) {
+                            ExecutionPhase.UP.name -> current.copy(upBody = body)
+                            ExecutionPhase.DOWN.name -> current.copy(downBody = body)
+                            else -> current
+                        }
+                    }
                 }
             }
             latestByIndex.values.toList()
@@ -968,43 +966,33 @@ class SagaRepository(
         insert.execute()
     }
 
+    /** Hot path (once per execution slice): plain JDBC batch, no query rendering. */
     suspend fun insertStepCalls(calls: List<StepCallEntry>) {
         if (calls.isEmpty()) return
         db.withConnection { connection ->
-            val dsl = DSL.using(connection)
-            val now = Instant.now().toOffset()
-            var insert = dsl.insertInto(
-                SAGA_STEP_CALL,
-                SAGA_STEP_CALL.SAGA_ID,
-                SAGA_STEP_CALL.STEP_NAME,
-                SAGA_STEP_CALL.PHASE,
-                SAGA_STEP_CALL.ATTEMPT,
-                SAGA_STEP_CALL.REQUEST_URL,
-                SAGA_STEP_CALL.REQUEST_BODY,
-                SAGA_STEP_CALL.STATUS_CODE,
-                SAGA_STEP_CALL.RESPONSE_BODY,
-                SAGA_STEP_CALL.ERROR,
-                SAGA_STEP_CALL.STEP_STARTED_AT,
-                SAGA_STEP_CALL.CREATED_AT,
-                SAGA_STEP_CALL.STARTED_AT,
-            )
-            for (call in calls) {
-                insert = insert.values(
-                    call.sagaId,
-                    call.stepName,
-                    call.phase.name,
-                    call.attempt,
-                    call.requestUrl,
-                    call.requestBody?.let { toJsonb(it) },
-                    call.statusCode,
-                    call.responseBody?.let { toJsonb(it) },
-                    call.error,
-                    call.stepStartedAt.toOffset(),
-                    now,
-                    call.sagaStartedAt.toOffset(),
-                )
+            val sql = """
+                INSERT INTO saga_step_call
+                    (saga_id, step_name, phase, attempt, request_url, request_body, status_code,
+                     response_body, error, step_started_at, created_at, started_at)
+                VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?::jsonb, ?, ?, now(), ?)
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                for (call in calls) {
+                    ps.setObject(1, call.sagaId)
+                    ps.setString(2, call.stepName)
+                    ps.setString(3, call.phase.name)
+                    ps.setInt(4, call.attempt)
+                    ps.setString(5, call.requestUrl)
+                    ps.setString(6, call.requestBody?.let { toJsonb(it).data() })
+                    if (call.statusCode != null) ps.setInt(7, call.statusCode) else ps.setNull(7, java.sql.Types.INTEGER)
+                    ps.setString(8, call.responseBody?.let { toJsonb(it).data() })
+                    ps.setString(9, call.error)
+                    ps.setObject(10, call.stepStartedAt.toOffset())
+                    ps.setObject(11, call.sagaStartedAt.toOffset())
+                    ps.addBatch()
+                }
+                ps.executeBatch()
             }
-            insert.execute()
         }
     }
 
