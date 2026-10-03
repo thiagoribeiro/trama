@@ -4,6 +4,29 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-10-02
+
+Performance release. Same guarantees as 2.1.0. Measured on the validation host (8 threads,
+shared with Postgres, Redis and the downstream mock), one process, 3-node workflows with 20 ms calls:
+- **At equal concurrency (64 workers):** 182 → 229 workflows/s, with Trama CPU per workflow down
+  from 19.1 to 12.0 ms (−37%).
+- **With defaults:** 4 → 32 workers takes a process from about 55 to 231 workflows/s.
+
+### Changed
+- **`runtime.workerCount` defaults to 32 (was 4).** Workers are coroutines that mostly wait on
+  HTTP calls, so 4 left a process idle: with 20 ms downstream calls it capped at about 55
+  workflows/s. 32 is where this host's CPU saturates (231/s). This also raises the concurrent
+  calls a process makes to downstream services; set `RUNTIME_WORKERCOUNT=4` to keep the previous
+  behavior.
+- **Workflow HTTP calls reuse connections.** The client now runs on OkHttp with a keep-alive pool.
+  Ktor CIO opened a new TCP connection per node call, leaving one `TIME_WAIT` socket behind each.
+  OkHttp sends `Accept-Encoding: gzip` and decompresses responses transparently.
+- **One INFO log line per execution** (`saga finished`, with status and duration). The per-node
+  lines (`executing node`, `node completed` on success) and the per-slice ones (`processing saga`,
+  `saga execution started`) moved to DEBUG. Failed nodes still log `node completed` at INFO.
+- **Hot-path queries use plain JDBC.** That covers step-result loading and step-call inserts. Step
+  results are not loaded before the first node completes.
+
 ## [2.1.0] - 2026-10-02
 
 Fixes every gap found by the durability, recovery and load validation
@@ -184,6 +207,7 @@ Fixes every gap found by the durability, recovery and load validation
 First public release: v2 workflow node graph with async calls and callbacks, the visual definition
 editor, and the sleep node. See the [release notes](https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0).
 
+[2.2.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.0
 [2.1.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.1.0
 [2.0.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.1
 [2.0.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.0
