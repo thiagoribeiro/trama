@@ -33,6 +33,8 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonNull
 import org.jooq.JSONB
 import org.jooq.impl.DSL
 import run.trama.saga.InstantAsStringSerializer
@@ -43,6 +45,8 @@ private fun Instant.toOffset(): OffsetDateTime = atOffset(ZoneOffset.UTC)
 private fun OffsetDateTime?.toInstant(): Instant = this?.toInstant() ?: Instant.EPOCH
 
 private val rowJson = Json { ignoreUnknownKeys = true }
+
+private val JSON_NUMBER = Regex("""-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?""")
 
 /**
  * The definition persisted in `saga_execution.definition`: the real v2 graph when the execution
@@ -1486,10 +1490,24 @@ class SagaRepository(
 
     private fun parseJson(raw: String): JsonElement? = runCatching { json.parseToJsonElement(raw) }.getOrNull()
 
-    private fun toJsonb(raw: String): JSONB = runCatching {
-        json.parseToJsonElement(raw)
-        JSONB.valueOf(raw)
-    }.getOrElse { JSONB.valueOf(json.encodeToString(String.serializer(), raw)) }
+    /**
+     * A body as `jsonb`: kept as is when it is valid JSON, otherwise stored as a JSON string.
+     * kotlinx's tree parser alone is not a validity check: it accepts bare words such as `ok`,
+     * which Postgres then rejects, failing the whole write.
+     */
+    private fun toJsonb(raw: String): JSONB =
+        if (isStrictJson(raw)) JSONB.valueOf(raw) else JSONB.valueOf(json.encodeToString(String.serializer(), raw))
+
+    private fun isStrictJson(raw: String): Boolean {
+        val element = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return false
+        fun valid(e: JsonElement): Boolean = when (e) {
+            is JsonNull -> true
+            is JsonPrimitive -> e.isString || e.content == "true" || e.content == "false" || JSON_NUMBER.matches(e.content)
+            is JsonObject -> e.values.all(::valid)
+            is kotlinx.serialization.json.JsonArray -> e.all(::valid)
+        }
+        return valid(element)
+    }
 
     private fun cutoff(): OffsetDateTime = Instant.now().minus(15, ChronoUnit.DAYS).toOffset()
 
