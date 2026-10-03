@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+432	125.3	0.290	432	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+2	119.7	59.865	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+377	114.6	0.304	377	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+300	80.8	0.269	300	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+459	58.4	0.127	459	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+300	58.0	0.193	300	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+559	28.3	0.051	559	INSERT INTO saga_step_call (saga_id, step_name, phase, attempt, request_url, request_body, status_code, response_body, error, step_started_a
+50	19.4	0.387	50	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+50	18.9	0.378	50	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND status = $3 AND waiting_state IS NOT 
+50	16.3	0.326	50	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+109	13.5	0.124	286	SELECT step_index, step_name, phase, response_body FROM saga_step_result WHERE saga_id = $1 AND started_at >= $2 ORDER BY step_index ASC, cr
+1	11.1	11.120	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+150	10.8	0.072	150	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+1	9.8	9.787	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_resume ON saga_execution (status, resume_at) WHERE status IN ('IN_PROGRESS', 'SLEEPING', 'WAIT
+1	9.4	9.448	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)

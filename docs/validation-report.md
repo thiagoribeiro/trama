@@ -7,6 +7,57 @@ of them. The same scenarios were re-run against v2.1.0 with **every setting at i
 v2.0.1 run had to raise the Redis pool and turn the rate limiter off, because those defaults were
 findings themselves.
 
+## v2.2.0 performance
+
+The v2.1.0 re-run showed that peak throughput was bound by Trama's CPU per execution, not by queue
+polling. v2.2.0 works on that cost. All guarantees are unchanged: the full validation was re-run
+against v2.2.0 with 0 lost, 0 stuck and 0 wrong outcomes in every scenario
+(`loadtest/results/v2.2.0/`).
+
+**One step at a time.** One process, 64 workers, 3,000 chain workflows (`loadtest/results/perf-2.2/`):
+
+| Step | wf/s | Trama CPU per workflow |
+|---|---|---|
+| Baseline (v2.1.0 code; harness driver with pooled connections) | 182 | 19.1 ms |
+| Workflow HTTP calls on the JDK engine (connection reuse) | 196 | 18.7 ms |
+| Plain JDBC for step loads and call inserts; one INFO line per execution | 214 | 15.4 ms |
+| OkHttp instead of the JDK engine | **229** | **12.0 ms** |
+
+- **Connection reuse.** Ktor CIO opened a new TCP connection for every node call: 1,000
+  workflows left 3,000 `TIME_WAIT` sockets. With a pooled engine there are none.
+- **jOOQ.** Query rendering was ~10% of CPU on the two queries that ran once per execution slice.
+- **Logging.** Each 3-node workflow logged 9 INFO lines. It now logs 2: the API request and
+  `saga finished`.
+
+**Concurrency was the biggest lever.** The default `workerCount` of 4 capped a process at 55 wf/s,
+because workers are coroutines that wait on HTTP:
+
+| workerCount | 4 | 16 | 32 | 64 |
+|---|---|---|---|---|
+| wf/s (1 process) | 55 | 174 | 231 | 229 |
+
+v2.2.0 defaults to 32. Set `RUNTIME_WORKERCOUNT=4` to keep the old downstream concurrency.
+
+**Scaling (s3, 8 workers per process, as in earlier runs):**
+
+| Processes | v2.1.0 wf/s | v2.2.0 wf/s | CPU per workflow v2.1.0 → v2.2.0 |
+|---|---|---|---|
+| 1 | 92 | 101 | 16.0 → 12.1 ms |
+| 2 | 130 | 157 | 24.9 → 15.9 ms |
+| 4 | 121 | 165 | 31.4 → 15.0 ms |
+| 8 | 98 | 136 | 34.3 → 17.1 ms |
+
+**What is left.** The profile is now flat. The remaining CPU sits in library code:
+- HTTP client I/O, ~18%;
+- coroutine scheduling, ~15%, mostly hops to `Dispatchers.IO` around each JDBC call;
+- the API server, ~10%;
+- JSON, ~7%.
+
+Trama's own code is ~11%. On this shared 8-thread host, the downstream mock, Postgres and Redis
+compete for the same cores, so these numbers are relative.
+
+---
+
 ## v2.1.0 re-validation
 
 | Checklist item | v2.0.1 | v2.1.0 |

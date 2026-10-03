@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+5991	1514.1	0.253	5991	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+2400	508.9	0.212	2400	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+4248	501.5	0.118	4248	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+600	364.0	0.607	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+600	361.1	0.602	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND status = $3 AND waiting_state IS NOT 
+2400	351.8	0.147	2400	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+600	340.3	0.567	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+3048	185.2	0.061	3048	INSERT INTO saga_step_call (saga_id, step_name, phase, attempt, request_url, request_body, status_code, response_body, error, step_started_a
+1248	140.5	0.113	3192	SELECT step_index, step_name, phase, response_body FROM saga_step_result WHERE saga_id = $1 AND started_at >= $2 ORDER BY step_index ASC, cr
+4	122.6	30.657	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+1800	109.6	0.061	1800	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+600	74.0	0.123	1800	select "public"."saga_execution"."id", "public"."saga_execution"."status", "public"."saga_execution"."failure_description" from "public"."sa
+1800	72.8	0.040	1800	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+600	46.5	0.077	1800	SELECT DISTINCT ON (saga_id) saga_id, response_body FROM saga_step_result WHERE saga_id = ANY($1) AND started_at >= $2 ORDER BY saga_id, cre
+1	29.2	29.249	0	CREATE TABLE public.databasechangelog (ID VARCHAR(255) NOT NULL, AUTHOR VARCHAR(255) NOT NULL, FILENAME VARCHAR(255) NOT NULL, DATEEXECUTED 

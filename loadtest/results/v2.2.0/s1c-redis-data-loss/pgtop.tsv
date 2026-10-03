@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+261	137.8	0.528	261	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+4	134.6	33.654	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+260	48.2	0.185	260	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+140	39.7	0.284	140	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+40	39.6	0.990	40	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND status = $3 AND waiting_state IS NOT 
+140	36.8	0.263	140	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+79	31.6	0.400	79	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+200	21.8	0.109	200	INSERT INTO saga_step_call (saga_id, step_name, phase, attempt, request_url, request_body, status_code, response_body, error, step_started_a
+20	17.0	0.850	20	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+69	15.8	0.229	6780	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+80	14.1	0.176	140	SELECT step_index, step_name, phase, response_body FROM saga_step_result WHERE saga_id = $1 AND started_at >= $2 ORDER BY step_index ASC, cr
+20	13.9	0.695	20	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+20	10.4	0.520	20	update "public"."saga_execution" set "failure_description" = $1, "last_failed_step_index" = $2, "last_failed_phase" = $3, "updated_at" = cas
+1	10.2	10.157	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+1	10.1	10.141	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:

@@ -1,0 +1,12 @@
+calls	total_ms	mean_ms	rows	query
+9000	2942.1	0.327	9000	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+3000	1299.0	0.433	3000	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+3000	635.2	0.212	3000	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+3000	437.4	0.146	3000	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+9000	337.3	0.037	9000	INSERT INTO saga_step_call (saga_id, step_name, phase, attempt, request_url, request_body, status_code, response_body, error, step_started_a
+5	22.3	4.451	15000	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+1	2.8	2.790	0	SELECT saga_id, step_name, phase, count(*) FROM saga_step_result WHERE saga_id = ANY($1) GROUP BY 1,2,3 HAVING count(*) > $2
+4	0.3	0.076	4	SELECT xact_commit, tup_inserted, tup_updated, numbackends FROM pg_stat_database WHERE datname = $1
+14	0.2	0.014	0	SET application_name = 'PostgreSQL JDBC Driver'
+1	0.1	0.073	1	SELECT pg_stat_statements_reset()
+1	0.0	0.005	0	SELECT parent_id, child_id FROM saga_join_branch WHERE parent_id = ANY($1)

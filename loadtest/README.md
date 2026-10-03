@@ -47,6 +47,8 @@ The v2.0.1 run raised the Redis pool to 256 and turned the rate limiter off, bec
 | `duplicateStepRows` | The same step recorded twice in `saga_step_result`. |
 | `latencyMs`, `throughputPerSec` | End to end, from `started_at` to `completed_at`. |
 
+`loadtest/bench.py results/<set>/<scenario> ...` summarizes throughput runs: wf/s, Trama CPU per workflow over the busy window, Postgres commits/s peak, P50.
+
 Other files:
 - `metrics.csv`: long format (`epochMs,source,metric,value`) for CPU, RSS, queue counters, Redis ops and queue depth, and Postgres commits.
 - `pgtop.tsv`, `redis-commandstats.txt`: where database and Redis time went.

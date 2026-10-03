@@ -1,0 +1,4 @@
+process	level	count	message
+trama-0	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-0	WARN	1	reconciler re-sent stalled executions
+trama-1	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
