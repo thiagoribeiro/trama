@@ -31,7 +31,7 @@ class ConfigLoaderTest {
     @Test
     fun `defaults come from application yaml`() {
         val config = ConfigLoader.load()
-        if (System.getenv("REDIS_SHARDING_VIRTUALSHARDCOUNT") == null) assertEquals(1024, config.redis.sharding.virtualShardCount)
+        if (System.getenv("REDIS_SHARDING_VIRTUALSHARDCOUNT") == null) assertEquals(64, config.redis.sharding.virtualShardCount)
         assertEquals(RuntimeStore.REDIS, config.runtime.store)
         assertEquals(25, config.runtime.maxStepsPerExecution)
         assertEquals("saga:executions", config.redis.queue.keyPrefix)

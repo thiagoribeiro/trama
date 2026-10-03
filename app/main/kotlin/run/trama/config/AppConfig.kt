@@ -64,7 +64,12 @@ data class RedisConsumerConfig(
 )
 
 data class RedisShardingConfig(
-    val virtualShardCount: Int = 1024,
+    /**
+     * Queue shards that pods divide among themselves. Must be the same on every pod; it bounds how
+     * many pods can share the work (a few shards per pod is enough). Lowering it is safe: work left
+     * in removed shards is moved over by OrphanedShardMigrator. Default 1024 before 2.3.0.
+     */
+    val virtualShardCount: Int = 64,
     val podId: String = System.getenv("HOSTNAME") ?: "unknown-pod",
     val membershipKey: String = "saga:runtime:pods",
     val membershipTtlMillis: Long = 10_000,

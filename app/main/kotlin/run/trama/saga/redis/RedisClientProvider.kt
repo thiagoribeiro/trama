@@ -5,6 +5,7 @@ package run.trama.saga.redis
 import io.lettuce.core.ClientOptions
 import io.lettuce.core.Limit
 import io.lettuce.core.Range
+import io.lettuce.core.ScanArgs
 import io.lettuce.core.RedisClient
 import io.lettuce.core.SetArgs
 import io.lettuce.core.TimeoutOptions
@@ -32,6 +33,10 @@ interface RedisBinaryCommands {
         members.sumOf { zrem(key, it) ?: 0L }
     suspend fun zremrangebyscore(key: ByteArray, min: Double, max: Double): Long?
     suspend fun zrangebyscore(key: ByteArray, min: Double, max: Double, limit: Int? = null): List<ByteArray>
+    /** Every member with its score (ZRANGE 0 -1 WITHSCORES). */
+    suspend fun zrangeWithScores(key: ByteArray): List<Pair<ByteArray, Double>> = emptyList()
+    /** Keys matching [pattern] (SCAN, all nodes on a cluster). */
+    suspend fun scanKeys(pattern: String): List<ByteArray> = emptyList()
     suspend fun <T> eval(
         script: ByteArray,
         outputType: ScriptOutputType,
@@ -224,6 +229,21 @@ private class StandaloneBinaryCommands(
     override suspend fun lrange(key: ByteArray, start: Long, stop: Long): List<ByteArray> =
         delegate.lrange(key, start, stop)
 
+    override suspend fun zrangeWithScores(key: ByteArray): List<Pair<ByteArray, Double>> =
+        delegate.zrangeWithScores(key, 0, -1).toList().map { it.value to it.score }
+
+    override suspend fun scanKeys(pattern: String): List<ByteArray> {
+        val keys = mutableListOf<ByteArray>()
+        val args = ScanArgs.Builder.matches(pattern).limit(500)
+        var cursor = delegate.scan(args) ?: return keys
+        keys += cursor.keys
+        while (!cursor.isFinished) {
+            cursor = delegate.scan(cursor, args) ?: break
+            keys += cursor.keys
+        }
+        return keys
+    }
+
     override suspend fun ping(): String =
         delegate.ping()
 }
@@ -304,6 +324,21 @@ private class ClusterBinaryCommands(
 
     override suspend fun lrange(key: ByteArray, start: Long, stop: Long): List<ByteArray> =
         delegate.lrange(key, start, stop)
+
+    override suspend fun zrangeWithScores(key: ByteArray): List<Pair<ByteArray, Double>> =
+        delegate.zrangeWithScores(key, 0, -1).toList().map { it.value to it.score }
+
+    override suspend fun scanKeys(pattern: String): List<ByteArray> {
+        val keys = mutableListOf<ByteArray>()
+        val args = ScanArgs.Builder.matches(pattern).limit(500)
+        var cursor = delegate.scan(args) ?: return keys
+        keys += cursor.keys
+        while (!cursor.isFinished) {
+            cursor = delegate.scan(cursor, args) ?: break
+            keys += cursor.keys
+        }
+        return keys
+    }
 
     override suspend fun ping(): String =
         delegate.ping()
