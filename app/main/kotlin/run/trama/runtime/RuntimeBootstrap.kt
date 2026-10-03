@@ -29,6 +29,7 @@ import run.trama.saga.callback.CallbackReceiver
 import run.trama.saga.callback.CallbackTokenService
 import run.trama.saga.callback.CallbackUrlFactory
 import run.trama.saga.workflow.WorkflowExecutor
+import run.trama.saga.redis.OrphanedShardMigrator
 import run.trama.saga.redis.PodMembershipRegistry
 import run.trama.saga.redis.ReadinessStatus
 import run.trama.saga.redis.RedisShardKeyspace
@@ -212,6 +213,7 @@ class RuntimeBootstrap(
         loopJobs += scope.launch { callbackScanner.runLoop() }
         loopJobs += scope.launch { joinScanner.runLoop() }
         loopJobs += scope.launch { reconciler.runLoop() }
+        loopJobs += scope.launch { OrphanedShardMigrator(redis, keyspace, enq).runLoop() }
     }
 
     fun repositoryOrNull(): SagaRepository? = repository

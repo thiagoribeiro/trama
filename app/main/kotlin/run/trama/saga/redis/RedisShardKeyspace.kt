@@ -38,6 +38,17 @@ class RedisShardKeyspace(
      */
     fun queueDueKey(): String = "$queueKeyPrefix:due"
 
+    /** SCAN pattern matching the ready and in-flight keys of every shard, whatever the count. */
+    fun queueKeysPattern(): String = "$queueKeyPrefix:{vs-*}:*"
+
+    /** The shard id in a queue key and whether it is the in-flight set; null for other keys. */
+    fun parseQueueKey(key: String): Pair<Int, Boolean>? {
+        val match = QUEUE_KEY.matchEntire(key.removePrefix("$queueKeyPrefix:")) ?: return null
+        return match.groupValues[1].toInt() to (match.groupValues[2] == "inflight")
+    }
+
+    val shardCount: Int get() = virtualShardCount
+
     /** Execution meta buffered in Redis before 2.1 (read only to import it, see RedisSagaExecutionStore.adoptLegacy). */
     fun executionMetaKey(executionId: UUID): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId"
@@ -62,6 +73,7 @@ class RedisShardKeyspace(
     }
 
     private companion object {
+        val QUEUE_KEY = Regex("""\{vs-(\d+)\}:(ready|inflight)""")
         const val FNV64_OFFSET_BASIS = -3750763034362895579L
         const val FNV64_PRIME = 1099511628211L
     }

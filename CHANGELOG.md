@@ -4,6 +4,24 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-10-03
+
+### Changed
+- **`redis.sharding.virtualShardCount` defaults to 64 (was 1024).** A few shards per pod are
+  enough to spread the queue. Fewer shards make each claimer's periodic full sweep 16× cheaper.
+  The count still bounds how many pods can share the work, so raise it if you run more than a few
+  dozen worker pods. It must be the same on every pod.
+
+### Added
+- **Lowering the shard count is safe.** Each pod moves queued work out of shards past the current
+  count (checked every minute), into the shard it maps to now, keeping its due time. In-flight
+  items are moved only once their claim lease has expired.
+
+### Upgrade notes
+- **Deployments that never set the count switch from 1024 to 64 shards.** During a rolling deploy,
+  pods on the old count keep claiming shards 64–1023 until they are replaced, and the upgraded
+  pods then move whatever is left. To keep 1024, set `REDIS_SHARDING_VIRTUALSHARDCOUNT=1024`.
+
 ## [2.2.1] - 2026-10-03
 
 ### Fixed
@@ -215,6 +233,7 @@ Fixes every gap found by the durability, recovery and load validation
 First public release: v2 workflow node graph with async calls and callbacks, the visual definition
 editor, and the sleep node. See the [release notes](https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0).
 
+[2.3.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.3.0
 [2.2.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.1
 [2.2.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.0
 [2.1.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.1.0

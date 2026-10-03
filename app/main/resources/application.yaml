@@ -10,7 +10,7 @@ redis:
     batchSize: 50
     processingTimeoutMillis: 20000
   sharding:
-    virtualShardCount: 1024
+    virtualShardCount: 64
     membershipKey: "saga:runtime:pods"
     membershipTtlMillis: 10000
     heartbeatIntervalMillis: 3000
