@@ -4,6 +4,14 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-10-03
+
+### Fixed
+- **Executions got stuck when a downstream answered with a body that is not JSON** (e.g. a plain
+  `ok`). Recording the call failed (`invalid input syntax for type json`), and the execution was
+  re-delivered and failed again indefinitely. Such bodies are now stored as JSON strings; JSON
+  bodies are stored unchanged. Present since 2.1.0.
+
 ## [2.2.0] - 2026-10-02
 
 Performance release. Same guarantees as 2.1.0. Measured on the validation host (8 threads,
@@ -207,6 +215,7 @@ Fixes every gap found by the durability, recovery and load validation
 First public release: v2 workflow node graph with async calls and callbacks, the visual definition
 editor, and the sleep node. See the [release notes](https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0).
 
+[2.2.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.1
 [2.2.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.0
 [2.1.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.1.0
 [2.0.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.1

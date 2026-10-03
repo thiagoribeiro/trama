@@ -182,4 +182,30 @@ class CheckpointRepositoryIntegrationTest {
         repo.finalizeCheckpointed(children[1].id, 0, "FAILED", "boom")
         assertTrue(parent.id in repo.findStalledJoinBarriers(1000))
     }
+
+    @Test
+    fun `responses that are not JSON are stored as JSON strings`() = runBlocking<Unit> {
+        val exec = execution()
+        repo.admitExecutions(listOf(exec))
+        val bodies = listOf("ok", "<html>hi</html>", "{oops", "{\"a\": ok}", "")
+        repo.insertStepCalls(bodies.map { body ->
+            run.trama.saga.StepCallEntry(exec.id, exec.startedAt, "a", ExecutionPhase.UP, 0, "http://svc/a", body, 200, body, null, Instant.now())
+        })
+        val next = exec.next(ExecutionState.InProgress(activeNodeId = "b", completedNodes = listOf("a")))
+        assertTrue(repo.checkpoint(next, next.checkpointSeq, Instant.now(), step("a").copy(responseBody = "ok"), null))
+
+        assertEquals(JsonPrimitive("ok"), repo.loadStepResultsForTemplate(exec.id).single().upBody)
+        assertEquals(bodies.size, repo.getStepCalls(exec.id).size)
+    }
+
+    @Test
+    fun `JSON responses keep their structure`() = runBlocking<Unit> {
+        val exec = execution()
+        repo.admitExecutions(listOf(exec))
+        val next = exec.next(ExecutionState.InProgress(activeNodeId = "b", completedNodes = listOf("a")))
+        repo.checkpoint(next, next.checkpointSeq, Instant.now(), step("a").copy(responseBody = """{"id": 7, "ok": true, "tags": ["x", null, 1.5]}"""), null)
+
+        val body = repo.loadStepResultsForTemplate(exec.id).single().upBody
+        assertEquals("""{"id":7,"ok":true,"tags":["x",null,1.5]}""".let { kotlinx.serialization.json.Json.parseToJsonElement(it) }, body)
+    }
 }
