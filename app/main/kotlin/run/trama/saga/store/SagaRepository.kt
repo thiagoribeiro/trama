@@ -1,6 +1,12 @@
 package run.trama.saga.store
 
 import run.trama.saga.ChildExecutionStatus
+import run.trama.saga.ExecutionState
+import run.trama.saga.Parking
+import run.trama.saga.PayloadValue
+import run.trama.saga.PersistedCheckpoint
+import run.trama.saga.StepRecord
+import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.JoinArrival
 import run.trama.saga.JoinBranchLink
@@ -12,6 +18,7 @@ import run.trama.saga.StepCallEntry
 import run.trama.saga.WaitingInfo
 import run.trama.runtime.CallbackTimeoutRepository
 import run.trama.runtime.JoinBarrierRepository
+import run.trama.runtime.StalledExecutionRepository
 import run.trama.jooq.Tables.SAGA_DEFINITION
 import run.trama.jooq.Tables.SAGA_EXECUTION
 import run.trama.jooq.Tables.SAGA_STEP_CALL
@@ -58,7 +65,7 @@ class SagaRepository(
      * a definition that was deleted elsewhere. 0 disables caching.
      */
     definitionCacheTtlMillis: Long = 5_000,
-) : CallbackTimeoutRepository, JoinBarrierRepository {
+) : CallbackTimeoutRepository, JoinBarrierRepository, StalledExecutionRepository {
     private class CachedDefinition(val record: SagaDefinitionRecord, val cachedAtNanos: Long)
 
     private val definitionCacheTtlNanos = definitionCacheTtlMillis * 1_000_000
@@ -96,7 +103,8 @@ class SagaRepository(
 
     /**
      * Ensures a row exists in `saga_execution` for the given [id]/[startedAt] combination.
-     * On conflict, preserves any existing definition/payload and resets status to `IN_PROGRESS`.
+     * On conflict, preserves any existing definition/payload and resets status to `IN_PROGRESS`,
+     * unless the execution already finished.
      */
     suspend fun upsertExecutionRecord(
         id: UUID,
@@ -139,6 +147,8 @@ class SagaRepository(
                     DSL.coalesce(SAGA_EXECUTION.DEFINITION, definitionJsonb))
                 .set(SAGA_EXECUTION.PAYLOAD, DSL.coalesce(SAGA_EXECUTION.PAYLOAD, payloadJsonb))
                 .set(SAGA_EXECUTION.UPDATED_AT, now)
+                // A finished execution is never reopened here; only the retry endpoint does that.
+                .where(SAGA_EXECUTION.STATUS.notIn(PersistedCheckpoint.TERMINAL_STATUSES))
                 .execute()
         }
     }
@@ -323,22 +333,6 @@ class SagaRepository(
         }
     }
 
-    suspend fun markRetrying(executionId: UUID) {
-        db.withConnection { connection ->
-            val dsl = DSL.using(connection)
-            dsl.update(SAGA_EXECUTION)
-                .set(SAGA_EXECUTION.STATUS, "IN_PROGRESS")
-                .set(SAGA_EXECUTION.FAILURE_DESCRIPTION, null as String?)
-                .set(SAGA_EXECUTION.CALLBACK_WARNING, null as String?)
-                .set(SAGA_EXECUTION.LAST_FAILED_STEP_INDEX, null as Int?)
-                .set(SAGA_EXECUTION.LAST_FAILED_PHASE, null as String?)
-                .set(SAGA_EXECUTION.UPDATED_AT, Instant.now().toOffset())
-                .where(SAGA_EXECUTION.ID.eq(executionId))
-                .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
-                .execute()
-        }
-    }
-
     suspend fun saveWaitingState(
         executionId: UUID,
         nodeId: String,
@@ -369,7 +363,7 @@ class SagaRepository(
         }
     }
 
-    override suspend fun consumeWaitingState(executionId: UUID): WaitingInfo? {
+    suspend fun consumeWaitingState(executionId: UUID): WaitingInfo? {
         return db.withConnection { connection ->
             // Atomically clear and return waiting_state in one round-trip. RETURNING evaluates
             // against the row's POST-update state, so a bare `SET waiting_state = NULL ...
@@ -409,30 +403,6 @@ class SagaRepository(
                     execution = execution,
                 )
             }.getOrNull()
-        }
-    }
-
-    override suspend fun findExpiredWaitingExecutions(bufferSeconds: Long, limit: Int): List<UUID> {
-        return db.withConnection { connection ->
-            val sql = """
-                SELECT id FROM saga_execution
-                WHERE status = 'WAITING_CALLBACK'
-                AND waiting_state IS NOT NULL
-                AND (waiting_state->>'expiresAt')::timestamptz < now() - make_interval(secs => ?)
-                AND started_at >= ?
-                ORDER BY started_at DESC
-                LIMIT ?
-            """.trimIndent()
-            val rs = connection.prepareStatement(sql).also { ps ->
-                ps.setLong(1, bufferSeconds)
-                ps.setObject(2, java.sql.Timestamp.from(cutoff().toInstant()))
-                ps.setInt(3, limit)
-            }.executeQuery()
-            val ids = mutableListOf<UUID>()
-            while (rs.next()) {
-                ids += UUID.fromString(rs.getString("id"))
-            }
-            ids
         }
     }
 
@@ -656,7 +626,7 @@ class SagaRepository(
         return db.withConnection { connection ->
             // Also flips status away from WAITING_JOIN here (not just waiting_state to NULL) so
             // findStalledJoinBarriers can no longer re-match this row in the window before the
-            // re-enqueued parent is actually dequeued and upsertStart runs.
+            // re-enqueued parent is actually dequeued and checkpointed.
             //
             // RETURNING evaluates against the row's POST-update state, so a bare
             // `SET waiting_state = NULL ... RETURNING waiting_state` always returns NULL —
@@ -697,7 +667,16 @@ class SagaRepository(
             val sql = """
                 SELECT b.parent_id FROM saga_join_barrier b
                 JOIN saga_execution e ON e.id = b.parent_id AND e.started_at = b.parent_started_at
-                WHERE b.arrived_count >= b.expected_count AND e.status = 'WAITING_JOIN'
+                WHERE e.status = 'WAITING_JOIN' AND (
+                    b.arrived_count >= b.expected_count
+                    -- Every branch finished, even if an arrival was never recorded (the branch's
+                    -- process died, or its Postgres call failed, between finishing and arriving).
+                    OR (SELECT count(*) FROM saga_join_branch jb
+                        JOIN saga_execution c ON c.id = jb.child_id AND c.started_at = jb.child_started_at
+                        WHERE jb.parent_id = b.parent_id AND jb.parent_started_at = b.parent_started_at
+                          AND jb.split_node_id = b.split_node_id
+                          AND c.status IN ('SUCCEEDED', 'FAILED', 'CORRUPTED')) >= b.expected_count
+                )
                 LIMIT ?
             """.trimIndent()
             val rs = connection.prepareStatement(sql).also { ps -> ps.setInt(1, limit) }.executeQuery()
@@ -958,87 +937,7 @@ class SagaRepository(
 
 
     /**
-     * Performs all finalization DB writes in a single connection (one HikariCP checkout).
-     * Replaces the sequence: upsertExecutionRecord → updateFailureDescription →
-     * updateCallbackWarning → updateExecutionFinal → N×insertStepResult.
-     */
-    suspend fun finalizeExecution(
-        id: UUID,
-        name: String,
-        version: String,
-        definitionJson: String,
-        startedAt: Instant,
-        status: String,
-        failureDescription: String?,
-        lastFailedStepIndex: Int?,
-        lastFailedPhase: ExecutionPhase?,
-        callbackWarning: String?,
-        steps: List<RedisStepEntry>,
-        payloadJson: String? = null,
-    ) {
-        val definitionJsonb = JSONB.valueOf(definitionJson)
-        val payloadJsonb = payloadJson?.let { JSONB.valueOf(it) }
-        db.withConnection { connection ->
-            val dsl = DSL.using(connection)
-            val now = Instant.now().toOffset()
-            val completedAt = if (status == "IN_PROGRESS") null else now
-
-            // 1. Single UPSERT with final status (replaces upsertExecutionRecord + updateExecutionFinal)
-            dsl.insertInto(SAGA_EXECUTION)
-                .columns(
-                    SAGA_EXECUTION.ID,
-                    SAGA_EXECUTION.NAME,
-                    SAGA_EXECUTION.VERSION,
-                    SAGA_EXECUTION.DEFINITION,
-                    SAGA_EXECUTION.STATUS,
-                    SAGA_EXECUTION.FAILURE_DESCRIPTION,
-                    SAGA_EXECUTION.STARTED_AT,
-                    SAGA_EXECUTION.COMPLETED_AT,
-                    SAGA_EXECUTION.UPDATED_AT,
-                    SAGA_EXECUTION.PAYLOAD,
-                )
-                .values(
-                    id, name, version, definitionJsonb, status,
-                    failureDescription, startedAt.toOffset(), completedAt, now, payloadJsonb,
-                )
-                .onConflict(SAGA_EXECUTION.ID, SAGA_EXECUTION.STARTED_AT)
-                .doUpdate()
-                .set(SAGA_EXECUTION.STATUS, status)
-                .set(SAGA_EXECUTION.FAILURE_DESCRIPTION, failureDescription)
-                .set(SAGA_EXECUTION.DEFINITION, DSL.coalesce(SAGA_EXECUTION.DEFINITION, definitionJsonb))
-                .set(SAGA_EXECUTION.PAYLOAD, DSL.coalesce(SAGA_EXECUTION.PAYLOAD, payloadJsonb))
-                .set(SAGA_EXECUTION.COMPLETED_AT, completedAt)
-                .set(SAGA_EXECUTION.UPDATED_AT, now)
-                .execute()
-
-            // 2. Failure metadata (conditional)
-            if (failureDescription != null) {
-                dsl.update(SAGA_EXECUTION)
-                    .set(SAGA_EXECUTION.LAST_FAILED_STEP_INDEX, lastFailedStepIndex)
-                    .set(SAGA_EXECUTION.LAST_FAILED_PHASE, lastFailedPhase?.name)
-                    .set(SAGA_EXECUTION.UPDATED_AT, now)
-                    .where(SAGA_EXECUTION.ID.eq(id))
-                    .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
-                    .execute()
-            }
-
-            // 3. Callback warning (conditional)
-            if (callbackWarning != null) {
-                dsl.update(SAGA_EXECUTION)
-                    .set(SAGA_EXECUTION.CALLBACK_WARNING, callbackWarning)
-                    .set(SAGA_EXECUTION.UPDATED_AT, now)
-                    .where(SAGA_EXECUTION.ID.eq(id))
-                    .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
-                    .execute()
-            }
-
-            // 4. Batch insert all step results (replaces N×insertStepResult)
-            insertStepResultBatch(dsl, id, steps)
-        }
-    }
-
-    /**
-     * One multi-row INSERT for step results buffered by the REDIS store. Each row keeps the
+     * One multi-row INSERT for step results buffered in Redis by versions before 2.1. Each row keeps the
      * createdAt recorded when the step actually completed: stamping them all with the flush time
      * made /steps ordering arbitrary and inflated latencyMs (created_at - step_started_at).
      */
@@ -1245,6 +1144,357 @@ class SagaRepository(
     }
 
     private fun definitionNameVersionKey(name: String, version: String) = "$name::$version"
+
+    // ── Checkpoints ────────────────────────────────────────────────────────────
+    // Every execution's resume point lives in its saga_execution row (changeset 009). All writes
+    // to it are compare-and-set on checkpoint_seq, in one statement each: a worker acting on an
+    // outdated copy of an execution (redelivered after its claim expired, or paused past it)
+    // matches zero rows instead of overwriting newer progress.
+
+    /** Creates rows for executions about to be enqueued for the first time; existing rows are kept. */
+    suspend fun admitExecutions(executions: List<SagaExecution>) {
+        if (executions.isEmpty()) return
+        db.withConnection { connection ->
+            val sql = """
+                INSERT INTO saga_execution
+                    (id, name, version, definition, status, started_at, updated_at, payload,
+                     checkpoint, checkpoint_seq, checkpoint_carrier, resume_at)
+                VALUES (?, ?, ?, ?::jsonb, 'IN_PROGRESS', ?, now(), ?::jsonb, ?::jsonb, ?, ?, now())
+                ON CONFLICT (id, started_at) DO NOTHING
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                for (execution in executions) {
+                    ps.setObject(1, execution.id)
+                    ps.setString(2, execution.definition.name)
+                    ps.setString(3, execution.definition.version)
+                    ps.setString(4, execution.persistedDefinitionJson())
+                    ps.setObject(5, execution.startedAt.toOffset())
+                    ps.setString(6, execution.persistedPayloadJson())
+                    ps.setString(7, checkpointJson(execution))
+                    ps.setLong(8, execution.checkpointSeq)
+                    ps.setLong(9, execution.checkpointSeq)
+                    ps.addBatch()
+                }
+                ps.executeBatch()
+            }
+        }
+    }
+
+    /**
+     * Imports an execution's state that a pre-2.1 version buffered in Redis: makes sure its row
+     * exists, then adds the buffered step results and failure details.
+     */
+    suspend fun importLegacyState(
+        execution: SagaExecution,
+        steps: List<RedisStepEntry>,
+        failureDescription: String?,
+        callbackWarning: String?,
+    ) {
+        admitExecutions(listOf(execution))
+        db.withConnection { connection ->
+            val dsl = DSL.using(connection)
+            insertStepResultBatch(dsl, execution.id, steps)
+            if (failureDescription != null || callbackWarning != null) {
+                dsl.update(SAGA_EXECUTION)
+                    .set(SAGA_EXECUTION.FAILURE_DESCRIPTION, DSL.coalesce(DSL.`val`(failureDescription), SAGA_EXECUTION.FAILURE_DESCRIPTION))
+                    .set(SAGA_EXECUTION.CALLBACK_WARNING, DSL.coalesce(DSL.`val`(callbackWarning), SAGA_EXECUTION.CALLBACK_WARNING))
+                    .where(SAGA_EXECUTION.ID.eq(execution.id))
+                    .and(SAGA_EXECUTION.STARTED_AT.ge(cutoff()))
+                    .execute()
+            }
+        }
+    }
+
+    suspend fun readCheckpoint(executionId: UUID): PersistedCheckpoint? =
+        db.withConnection { connection ->
+            val sql = """
+                SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy
+                FROM saga_execution WHERE id = ? AND started_at >= ?
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setObject(1, executionId)
+                ps.setObject(2, cutoff())
+                ps.executeQuery().use { rs ->
+                    if (!rs.next()) return@withConnection null
+                    PersistedCheckpoint(
+                        status = rs.getString(1),
+                        seq = rs.getLong(2),
+                        carrier = rs.getLong(3).takeUnless { rs.wasNull() },
+                        updatedAt = rs.getObject(4, OffsetDateTime::class.java).toInstant(),
+                        legacy = rs.getBoolean(5),
+                    )
+                }
+            }
+        }
+
+    suspend fun loadCheckpoint(executionId: UUID): SagaExecution? =
+        db.withConnection { connection ->
+            val sql = """
+                SELECT checkpoint, checkpoint_seq, definition, payload, name, version
+                FROM saga_execution WHERE id = ? AND started_at >= ? AND checkpoint IS NOT NULL
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setObject(1, executionId)
+                ps.setObject(2, cutoff())
+                ps.executeQuery().use { rs -> if (rs.next()) rowExecution(rs, executionId) else null }
+            }
+        }
+
+    /**
+     * Compare-and-set from `next.checkpointSeq - 1` to [next], recording [step] and the parked
+     * state in the same statement. Returns false when no row matched: the stored seq moved on,
+     * or the execution is already terminal.
+     */
+    suspend fun checkpoint(
+        next: SagaExecution,
+        carrier: Long,
+        resumeAt: Instant,
+        step: StepRecord?,
+        parking: Parking?,
+    ): Boolean {
+        val waitingState = parking?.let { parkedStateJson(next, it) }
+        return db.withConnection { connection ->
+            val sql = """
+                WITH upd AS (
+                    UPDATE saga_execution
+                    SET checkpoint = ?::jsonb, checkpoint_seq = ?, checkpoint_carrier = ?, resume_at = ?,
+                        status = ?, waiting_state = COALESCE(?::jsonb, waiting_state), updated_at = now()
+                    WHERE id = ? AND started_at >= ? AND checkpoint_seq = ?
+                      AND status NOT IN ('SUCCEEDED', 'FAILED', 'CORRUPTED')
+                    RETURNING id, started_at
+                ), ins AS (
+                    INSERT INTO saga_step_result
+                        (saga_id, step_index, step_name, phase, status_code, success, response_body,
+                         step_started_at, started_at, created_at)
+                    SELECT id, ?, ?, ?, ?, ?, ?::jsonb, ?, started_at, now() FROM upd WHERE ?
+                )
+                SELECT count(*) FROM upd
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setString(1, checkpointJson(next))
+                ps.setLong(2, next.checkpointSeq)
+                ps.setLong(3, carrier)
+                ps.setObject(4, resumeAt.toOffset())
+                ps.setString(5, parking?.status ?: "IN_PROGRESS")
+                ps.setString(6, waitingState)
+                ps.setObject(7, next.id)
+                ps.setObject(8, cutoff())
+                ps.setLong(9, next.checkpointSeq - 1)
+                ps.setInt(10, step?.stepIdx ?: 0)
+                ps.setString(11, step?.stepName)
+                ps.setString(12, step?.phase?.name)
+                if (step?.statusCode != null) ps.setInt(13, step.statusCode) else ps.setNull(13, java.sql.Types.INTEGER)
+                ps.setBoolean(14, step?.success ?: false)
+                ps.setString(15, step?.responseBody?.let { toJsonb(it).data() })
+                ps.setObject(16, step?.stepStartedAt?.toOffset())
+                ps.setBoolean(17, step != null)
+                ps.executeQuery().use { rs -> rs.next() && rs.getLong(1) == 1L }
+            }
+        }
+    }
+
+    /**
+     * Records a terminal status as a compare-and-set on [expectedSeq]; clears the resume state.
+     * A null [failureDescription] keeps the one recorded earlier (e.g. by the failure that led to
+     * compensation). Returns false when no row matched.
+     */
+    suspend fun finalizeCheckpointed(id: UUID, expectedSeq: Long, status: String, failureDescription: String?): Boolean =
+        db.withConnection { connection ->
+            val sql = """
+                UPDATE saga_execution
+                SET status = ?, failure_description = COALESCE(?, failure_description),
+                    completed_at = now(), updated_at = now(), checkpoint = NULL, checkpoint_seq = ?,
+                    checkpoint_carrier = NULL, resume_at = NULL, waiting_state = NULL
+                WHERE id = ? AND started_at >= ? AND checkpoint_seq = ?
+                  AND status NOT IN ('SUCCEEDED', 'FAILED', 'CORRUPTED')
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setString(1, status)
+                ps.setString(2, failureDescription)
+                ps.setLong(3, expectedSeq + 1)
+                ps.setObject(4, id)
+                ps.setObject(5, cutoff())
+                ps.setLong(6, expectedSeq)
+                ps.executeUpdate() == 1
+            }
+        }
+
+    /**
+     * Turns a FAILED execution back into a running one starting from [execution]'s state, for the
+     * retry endpoint. Bumps the seq so any leftover copy of the old run is fenced off, and returns
+     * the execution carrying it; null when the row is not (or no longer) FAILED.
+     */
+    suspend fun prepareRetry(execution: SagaExecution): SagaExecution? =
+        db.withConnection { connection ->
+            val sql = """
+                UPDATE saga_execution
+                SET status = 'IN_PROGRESS', failure_description = NULL, callback_warning = NULL,
+                    last_failed_step_index = NULL, last_failed_phase = NULL, waiting_state = NULL,
+                    checkpoint = ?::jsonb, checkpoint_seq = checkpoint_seq + 1,
+                    checkpoint_carrier = checkpoint_seq + 1, resume_at = now(), updated_at = now()
+                WHERE id = ? AND started_at >= ? AND status = 'FAILED'
+                RETURNING checkpoint_seq
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setString(1, checkpointJson(execution))
+                ps.setObject(2, execution.id)
+                ps.setObject(3, cutoff())
+                ps.executeQuery().use { rs -> if (rs.next()) execution.copy(checkpointSeq = rs.getLong(1)) else null }
+            }
+        }
+
+    /**
+     * Re-sends an execution whose queue item vanished: claims up to [limit] rows matching
+     * [condition] (rows locked by another pod are skipped), bumps their seq so any copy still
+     * around becomes stale, and returns them rebuilt at that seq.
+     */
+    private suspend fun claimForRedelivery(condition: String, conditionParam: Any, limit: Int): List<SagaExecution> =
+        db.withConnection { connection ->
+            val sql = """
+                UPDATE saga_execution se
+                SET checkpoint_seq = se.checkpoint_seq + 1, checkpoint_carrier = se.checkpoint_seq + 1,
+                    resume_at = now(), updated_at = now()
+                FROM (
+                    SELECT id, started_at FROM saga_execution
+                    WHERE started_at >= ? AND ($condition)
+                    LIMIT ? FOR UPDATE SKIP LOCKED
+                ) c
+                WHERE se.id = c.id AND se.started_at = c.started_at
+                RETURNING se.id, se.checkpoint, se.checkpoint_seq, se.definition, se.payload, se.name, se.version, se.waiting_state
+            """.trimIndent()
+            connection.prepareStatement(sql).use { ps ->
+                ps.setObject(1, cutoff())
+                ps.setObject(2, conditionParam)
+                ps.setInt(3, limit)
+                ps.executeQuery().use { rs ->
+                    val claimed = mutableListOf<SagaExecution>()
+                    while (rs.next()) {
+                        val id = rs.getObject("id", UUID::class.java)
+                        val execution = if (rs.getString("checkpoint") != null) {
+                            rowExecution(rs, id)
+                        } else {
+                            // Parked before checkpoints existed: the parked state holds the execution.
+                            legacyWaitingExecution(rs.getString("waiting_state"))?.copy(checkpointSeq = rs.getLong("checkpoint_seq"))
+                        }
+                        if (execution != null) claimed += execution
+                    }
+                    claimed
+                }
+            }
+        }
+
+    /**
+     * Running or sleeping executions that should have moved more than [staleAfterMillis] ago but
+     * did not: their queue item was lost (Redis data loss) or their worker died after a checkpoint
+     * without handing the work on.
+     */
+    override suspend fun claimStalledExecutions(staleAfterMillis: Long, limit: Int): List<SagaExecution> =
+        claimForRedelivery(
+            "status IN ('IN_PROGRESS', 'SLEEPING') AND checkpoint IS NOT NULL " +
+                "AND GREATEST(updated_at, COALESCE(resume_at, updated_at)) < now() - make_interval(secs => ?)",
+            staleAfterMillis / 1000.0,
+            limit,
+        )
+
+    /** Executions still waiting for a callback [bufferSeconds] after its deadline. */
+    override suspend fun claimExpiredCallbackWaits(bufferSeconds: Long, limit: Int): List<SagaExecution> =
+        claimForRedelivery(
+            "status = 'WAITING_CALLBACK' " +
+                "AND COALESCE(resume_at, (waiting_state->>'expiresAt')::timestamptz) < now() - make_interval(secs => ?)",
+            bufferSeconds.toDouble(),
+            limit,
+        )
+
+    private fun rowExecution(rs: java.sql.ResultSet, id: UUID): SagaExecution? = runCatching {
+        val state = json.decodeFromString(CheckpointJson.serializer(), rs.getString("checkpoint"))
+        val definitionJson = rs.getString("definition")
+        val name = rs.getString("name")
+        val version = rs.getString("version")
+        val definitionV2 = if (json.parseToJsonElement(definitionJson).let { it is JsonObject && it.containsKey("nodes") }) {
+            json.decodeFromString(SagaDefinitionV2.serializer(), definitionJson)
+        } else null
+        val definition = if (definitionV2 != null) {
+            // Same name/version stub a v2 execution is created with (see Application.kt).
+            SagaDefinition(name = name, version = version, failureHandling = definitionV2.failureHandling, steps = emptyList())
+        } else {
+            json.decodeFromString(SagaDefinition.serializer(), definitionJson)
+        }
+        val payload = rs.getString("payload")?.let { raw ->
+            (json.parseToJsonElement(raw) as? JsonObject)?.mapValues { PayloadValue(it.value) }
+        } ?: emptyMap()
+        SagaExecution(
+            definition = definition,
+            definitionV2 = definitionV2,
+            id = id,
+            startedAt = state.startedAt,
+            currentStepIndex = state.currentStepIndex,
+            state = state.state,
+            payload = payload,
+            parentExecutionId = state.parentExecutionId,
+            parentStartedAt = state.parentStartedAt,
+            parentSplitNodeId = state.parentSplitNodeId,
+            parentJoinNodeId = state.parentJoinNodeId,
+            branchId = state.branchId,
+            checkpointSeq = rs.getLong("checkpoint_seq"),
+        )
+    }.getOrNull()
+
+    private fun legacyWaitingExecution(raw: String?): SagaExecution? = raw?.let {
+        runCatching {
+            json.decodeFromString(SagaExecution.serializer(), json.decodeFromString(WaitingStateJson.serializer(), it).executionJson)
+        }.getOrNull()
+    }
+
+    private fun checkpointJson(execution: SagaExecution): String =
+        json.encodeToString(
+            CheckpointJson.serializer(),
+            CheckpointJson(
+                startedAt = execution.startedAt,
+                currentStepIndex = execution.currentStepIndex,
+                state = execution.state,
+                parentExecutionId = execution.parentExecutionId,
+                parentStartedAt = execution.parentStartedAt,
+                parentSplitNodeId = execution.parentSplitNodeId,
+                parentJoinNodeId = execution.parentJoinNodeId,
+                branchId = execution.branchId,
+            ),
+        )
+
+    /** The waiting_state document for a parked checkpoint, in the shape its readers expect. */
+    private fun parkedStateJson(execution: SagaExecution, parking: Parking): String {
+        val executionJson = json.encodeToString(SagaExecution.serializer(), execution)
+        return when (parking) {
+            is Parking.Callback -> {
+                val state = execution.state as ExecutionState.WaitingCallback
+                json.encodeToString(
+                    WaitingStateJson.serializer(),
+                    WaitingStateJson(state.nodeId, state.attempt, state.nonce, parking.signature, state.deadlineAt, executionJson),
+                )
+            }
+            is Parking.Sleep -> json.encodeToString(SleepStateJson.serializer(), SleepStateJson(parking.wakeAt, executionJson))
+            Parking.Join -> {
+                val state = execution.state as ExecutionState.WaitingJoin
+                json.encodeToString(WaitingJoinStateJson.serializer(), WaitingJoinStateJson(state.splitNodeId, state.joinNodeId, executionJson))
+            }
+        }
+    }
+
+    /**
+     * The checkpoint column: everything needed to resume an execution except what has its own
+     * column (definition, payload), so per-node checkpoints stay small.
+     */
+    @Serializable
+    private data class CheckpointJson(
+        @Serializable(with = InstantAsStringSerializer::class)
+        val startedAt: Instant,
+        val currentStepIndex: Int,
+        val state: ExecutionState,
+        val parentExecutionId: @Serializable(with = UuidAsStringSerializer::class) UUID? = null,
+        val parentStartedAt: @Serializable(with = InstantAsStringSerializer::class) Instant? = null,
+        val parentSplitNodeId: String? = null,
+        val parentJoinNodeId: String? = null,
+        val branchId: String? = null,
+    )
 
     private fun parseJson(raw: String): JsonElement? = runCatching { json.parseToJsonElement(raw) }.getOrNull()
 

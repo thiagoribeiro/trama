@@ -58,15 +58,19 @@ open class RecordingStore : SagaExecutionStore {
     var finalFailureDescription: String? = null
     val failures = mutableListOf<String>()
     val callbackWarnings = mutableListOf<String>()
-    val upserts = mutableListOf<SagaExecution>()
     val stepResults = mutableListOf<RecordedStep>()
     val stepCalls = mutableListOf<StepCallEntry>()
     val sleeping = mutableMapOf<UUID, SleepEntry>()
-    val statusUpdates = mutableListOf<String>()
-    val retainedUntil = mutableListOf<Instant>()
     var preloadedStepResults: List<StepResult> = emptyList()
 
-    override suspend fun upsertStart(execution: SagaExecution) { upserts += execution }
+    val checkpoints = mutableListOf<SagaExecution>()
+    val resumeAts = mutableListOf<Instant>()
+
+    override suspend fun checkpoint(next: SagaExecution, carrier: Long, resumeAt: Instant, step: StepRecord?, parking: Parking?) {
+        checkpoints += next
+        resumeAts += resumeAt
+        super.checkpoint(next, carrier, resumeAt, step, parking)
+    }
     override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
         finalStatus = status
         finalFailureDescription = failureDescription
@@ -98,8 +102,6 @@ open class RecordingStore : SagaExecutionStore {
     }
     override suspend fun peekSleeping(executionId: UUID): SleepEntry? = sleeping[executionId]
     override suspend fun consumeSleeping(executionId: UUID): SleepEntry? = sleeping.remove(executionId)
-    override suspend fun updateStatus(executionId: UUID, status: String) { statusUpdates += status }
-    override suspend fun retainUntil(executionId: UUID, until: Instant) { retainedUntil += until }
     override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<JoinBranchLink>): Set<String> =
         branches.map { it.branchId }.toSet()
     override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? = null
@@ -108,6 +110,43 @@ open class RecordingStore : SagaExecutionStore {
     override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
     override suspend fun getChildStatus(executionId: UUID): ChildExecutionStatus? = null
     override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, ChildExecutionStatus> = emptyMap()
+}
+
+/**
+ * [RecordingStore] that also keeps a durable checkpoint per execution, with the same
+ * compare-and-set semantics as the Postgres stores: what fencing and redelivery tests need.
+ */
+open class CheckpointingStore : RecordingStore() {
+    data class Row(val status: String, val seq: Long, val carrier: Long?, val execution: SagaExecution?, val updatedAt: Instant = Instant.now())
+
+    val rows = mutableMapOf<UUID, Row>()
+
+    override suspend fun admit(executions: List<SagaExecution>) {
+        executions.forEach { rows.putIfAbsent(it.id, Row("IN_PROGRESS", it.checkpointSeq, it.checkpointSeq, it)) }
+    }
+
+    override suspend fun readCheckpoint(executionId: UUID): PersistedCheckpoint? =
+        rows[executionId]?.let { PersistedCheckpoint(it.status, it.seq, it.carrier, it.updatedAt, legacy = false) }
+
+    override suspend fun loadCheckpoint(executionId: UUID): SagaExecution? = rows[executionId]?.execution
+
+    override suspend fun checkpoint(next: SagaExecution, carrier: Long, resumeAt: Instant, step: StepRecord?, parking: Parking?) {
+        val row = rows[next.id]
+        if (row == null || row.seq != next.checkpointSeq - 1 || row.status in PersistedCheckpoint.TERMINAL_STATUSES) {
+            throw StaleCheckpointException(next.id)
+        }
+        rows[next.id] = Row(parking?.status ?: "IN_PROGRESS", next.checkpointSeq, carrier, next)
+        super.checkpoint(next, carrier, resumeAt, step, parking)
+    }
+
+    override suspend fun finalize(execution: SagaExecution, status: String, failureDescription: String?) {
+        val row = rows[execution.id]
+        if (row == null || row.seq != execution.checkpointSeq || row.status in PersistedCheckpoint.TERMINAL_STATUSES) {
+            throw StaleCheckpointException(execution.id)
+        }
+        rows[execution.id] = Row(status, execution.checkpointSeq + 1, null, null)
+        super.finalize(execution, status, failureDescription)
+    }
 }
 
 fun testExecutor(

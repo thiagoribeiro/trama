@@ -11,6 +11,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import run.trama.saga.ExecutionPhase
+import run.trama.saga.ExecutionState
+import run.trama.saga.FailureHandling
+import run.trama.saga.SagaDefinition
+import run.trama.saga.SagaExecution
 import run.trama.saga.JoinBranchLink
 import run.trama.saga.StepCallEntry
 
@@ -84,7 +88,16 @@ class SagaRepositoryIntegrationTest {
         assertEquals(2, retry.failedStepIndex)
         assertTrue(retry.definitionJson!!.contains("failureHandling"))
 
-        repo.markRetrying(id)
+        val retryExecution = SagaExecution(
+            definition = SagaDefinition("x", "1", FailureHandling.Retry(1, 0), steps = emptyList()),
+            id = id,
+            startedAt = Instant.now(),
+            currentStepIndex = 0,
+            state = ExecutionState.InProgress(activeNodeId = "a"),
+        )
+        val prepared = assertNotNull(repo.prepareRetry(retryExecution))
+        assertEquals(1, prepared.checkpointSeq, "retry bumps the seq, fencing off the old run")
+        assertNull(repo.prepareRetry(retryExecution), "only a FAILED execution can be retried")
         val after = assertNotNull(repo.getExecutionStatus(id))
         assertEquals("IN_PROGRESS", after.status)
         assertNull(after.failureDescription)

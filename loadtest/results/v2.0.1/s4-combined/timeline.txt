@@ -1,0 +1,6 @@
+kill trama-2 at_s=60
+redis cut at_s=120
+redis restored at_s=130
+pg cut at_s=180
+pg restored at_s=190
+trama-2 back at_s=204

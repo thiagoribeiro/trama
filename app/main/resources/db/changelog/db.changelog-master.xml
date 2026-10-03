@@ -160,4 +160,26 @@
         </sql>
     </changeSet>
 
+    <!-- Durable resume point for every execution, so Postgres alone can resume it.
+         - checkpoint: the execution's state at its last node boundary (no definition/payload,
+           which already live in their own columns).
+         - checkpoint_seq: counts those boundaries. Every write is a compare-and-set on it, which
+           fences off a worker acting on an outdated copy of the execution.
+         - checkpoint_carrier: the seq of the queue item that carries the execution forward, so a
+           redelivered item can tell "I was carrying this when my worker died" from "stale copy".
+         - resume_at: when the execution is next expected to move (now, a retry delay, a sleep's
+           wake time, a callback deadline); the reconciler only touches rows past it.
+         Additive: rows written before this change keep NULL / 0. -->
+    <changeSet id="009-execution-checkpoint" author="trama">
+        <sql>
+            ALTER TABLE saga_execution ADD COLUMN IF NOT EXISTS checkpoint jsonb;
+            ALTER TABLE saga_execution ADD COLUMN IF NOT EXISTS checkpoint_seq bigint NOT NULL DEFAULT 0;
+            ALTER TABLE saga_execution ADD COLUMN IF NOT EXISTS checkpoint_carrier bigint;
+            ALTER TABLE saga_execution ADD COLUMN IF NOT EXISTS resume_at timestamptz;
+            CREATE INDEX IF NOT EXISTS idx_saga_execution_resume
+                ON saga_execution (status, resume_at)
+                WHERE status IN ('IN_PROGRESS', 'SLEEPING', 'WAITING_CALLBACK');
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "run.trama"
-version = "2.0.1"
+version = "2.1.0"
 
 repositories {
     mavenCentral()
@@ -41,7 +41,6 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.lettuce:lettuce-core:6.8.2.RELEASE")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.11.0")
-    implementation("org.apache.commons:commons-pool2:2.13.1")
     implementation("com.ensarsarajcic.kotlinx:serialization-msgpack:$msgpackVersion")
     implementation("com.github.spullara.mustache.java:compiler:0.9.14")
     implementation("io.micrometer:micrometer-registry-prometheus:1.17.0")
@@ -121,6 +120,32 @@ sourceSets {
 
 application {
     mainClass.set("run.trama.app.ApplicationKt")
+}
+
+// Validation harness (loadtest/README.md): load generator, downstream mock, metrics collector
+// and checker. Not part of `test`/CI; run with ./gradlew loadtest --args="<command> ...".
+val loadtest: SourceSet by sourceSets.creating {
+    kotlin.srcDir("app/loadtest/kotlin")
+    compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
+    runtimeClasspath += output + compileClasspath + sourceSets.main.get().runtimeClasspath
+}
+
+tasks.register<JavaExec>("loadtest") {
+    group       = "verification"
+    description = "Validation harness: mock | drive | collect | check (see loadtest/README.md)"
+    classpath   = loadtest.runtimeClasspath
+    mainClass.set("run.trama.loadtest.MainKt")
+    workingDir  = rootDir
+}
+
+// Writes the harness classpath so the loadtest shell scripts can start several JVMs quickly with `java -cp`.
+tasks.register("loadtestClasspath") {
+    group       = "verification"
+    description = "Compile the validation harness and write its classpath to build/loadtest.classpath"
+    dependsOn(loadtest.classesTaskName, "installDist")
+    val out = layout.buildDirectory.file("loadtest.classpath")
+    outputs.file(out)
+    doLast { out.get().asFile.writeText(loadtest.runtimeClasspath.asPath) }
 }
 
 tasks.register<JavaExec>("trama-validate") {

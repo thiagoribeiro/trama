@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+6	272.7	45.457	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+60	34.0	0.566	180	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+60	25.3	0.422	60	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "failure_description", "started_at", "completed_at",
+1	23.6	23.609	0	CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+1	20.8	20.794	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+1	18.5	18.485	0	CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at ON saga_step_call (saga_id, started_at, step_started_at ASC)
+3	17.9	5.980	132	select c.relname, (regexp_match(pg_get_expr(c.relpartbound, c.oid), $1))[$2]::timestamptz as lo, (regexp_match(pg_get_expr(c.relpartbound, c
+60	17.1	0.285	180	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+1	10.6	10.602	0	create table if not exists saga_step_call_202711 partition of saga_step_call for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	9.7	9.733	0	create table if not exists saga_step_result_202711 partition of saga_step_result for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00
+1	9.1	9.097	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	3.9	3.931	0	create table if not exists saga_definition ( id uuid primary key, name text not null, version text not null, definition jsonb not null, crea
+3	3.6	1.200	135	select inhrelid::regclass::text as child from pg_inherits where inhparent in ($1::regclass, $2::regclass, $3::regclass)
+1	3.3	3.327	0	CREATE TABLE IF NOT EXISTS saga_join_branch ( id bigserial NOT NULL PRIMARY KEY, parent_id uuid NOT NULL, parent_started_at timestamptz NOT 
+1	3.2	3.239	0	CREATE TABLE IF NOT EXISTS saga_join_barrier ( parent_id uuid NOT NULL, parent_started_at timestamptz NOT NULL, split_node_id text NOT NULL,

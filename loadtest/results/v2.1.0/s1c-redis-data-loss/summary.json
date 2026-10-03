@@ -1,0 +1,41 @@
+{
+    "runs": 100,
+    "submitFailed": 0,
+    "status": {
+        "FAILED": 20,
+        "SUCCEEDED": 80
+    },
+    "statusByDef": {
+        "park-backoff": {
+            "FAILED": 20
+        },
+        "park-callback": {
+            "SUCCEEDED": 20
+        },
+        "park-join": {
+            "SUCCEEDED": 20
+        },
+        "park-running": {
+            "SUCCEEDED": 20
+        },
+        "park-sleeping": {
+            "SUCCEEDED": 20
+        }
+    },
+    "stuck": 0,
+    "lost": 0,
+    "wrongOutcome": 0,
+    "childExecutions": 40,
+    "childrenNotTerminal": 0,
+    "extraExternalCalls": 20,
+    "runsWithDuplicateCalls": 20,
+    "missingEffectsOnCorrectOutcome": 0,
+    "duplicateStepRows": 20,
+    "throughputPerSec": 0.5,
+    "latencyMs": {
+        "p50": 202511,
+        "p95": 203519,
+        "p99": 203609,
+        "max": 203621
+    }
+}

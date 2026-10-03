@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+4	118.5	29.631	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+40	40.4	1.009	40	update "public"."saga_execution" set "status" = $1, "updated_at" = cast($2 as timestamp(6) with time zone) where ("public"."saga_execution".
+80	36.5	0.456	80	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "started_at", "updated_at", "payload") values (cast(
+40	21.9	0.548	40	update "public"."saga_execution" set "waiting_state" = cast($1 as jsonb), "status" = $2, "updated_at" = cast($3 as timestamp(6) with time zo
+100	21.6	0.216	100	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+104	19.8	0.191	6200	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+1	10.5	10.459	0	create table if not exists saga_step_result_202711 partition of saga_step_result for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00
+1	10.2	10.168	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	10.1	10.102	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+2	9.7	4.846	87	select c.relname, (regexp_match(pg_get_expr(c.relpartbound, c.oid), $1))[$2]::timestamptz as lo, (regexp_match(pg_get_expr(c.relpartbound, c
+1	9.3	9.323	0	CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at ON saga_step_call (saga_id, started_at, step_started_at ASC)
+1	8.3	8.323	0	CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+1	7.7	7.655	0	create table if not exists saga_step_call_202711 partition of saga_step_call for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+40	5.6	0.140	40	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+20	5.3	0.267	20	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "failure_description", "started_at", "completed_at",

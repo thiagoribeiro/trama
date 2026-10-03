@@ -1,0 +1,1 @@
+flush_at_s=13 hold_s=60

@@ -1,0 +1,11 @@
+count	level	message	root cause
+409	WARN	processing failed	io.lettuce.core.RedisNoScriptException: NOSCRIPT No matching script. Please use EVAL.
+85	WARN	missing redis meta on finalization for sagaId=<id>	
+52	ERROR	Unhandled exception while processing request	io.lettuce.core.RedisNoScriptException: NOSCRIPT No matching script. Please use EVAL.
+25	WARN	processing failed	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379
+10	ERROR	Unhandled exception while processing request	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379
+8	WARN	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection closed prematurely	io.lettuce.core.RedisConnectionException: Connection closed prematurely
+5	WARN	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: RedisHandshakeHandler not registered	java.lang.IllegalStateException: RedisHandshakeHandler not registered
+3	WARN	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Co	
+2	ERROR	resumeAfterJoin failed before committing; restoring join pointer for a later retry	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379
+1	WARN	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection reset	java.net.SocketException: Connection reset

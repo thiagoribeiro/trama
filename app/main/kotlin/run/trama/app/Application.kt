@@ -124,16 +124,14 @@ fun Application.module() {
         }
     }
 
-    if (appConfig.runtime.enabled) {
-        bootstrap.start()
-    }
+    // Always: an API-only process (runtime.enabled=false) still accepts runs and callbacks; it
+    // just leaves executing them to worker processes.
+    bootstrap.start()
     val repository = bootstrap.repositoryOrNull()
     installRequestTracing()
 
     monitor.subscribe(ApplicationStopping) {
-        if (appConfig.runtime.enabled) {
-            bootstrap.stop()
-        }
+        bootstrap.stop()
     }
 
     install(DefaultHeaders) {
@@ -184,7 +182,11 @@ fun Application.module() {
 
     routing {
         get("/healthz") {
-            call.respondText("ok")
+            if (bootstrap.live()) {
+                call.respondText("ok")
+            } else {
+                call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("consumer_stalled")))
+            }
         }
         get("/readyz") {
             val readiness = bootstrap.readiness()
@@ -366,8 +368,10 @@ fun Application.module() {
                     ?.let { raw -> json.parseToJsonElement(raw).jsonObject.mapValues { PayloadValue(it.value) } }
                     ?: emptyMap(),
             )
-            repo.markRetrying(id)
-            bootstrap.enqueueRetry(execution)
+            if (!bootstrap.retry(execution)) {
+                call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("only FAILED executions can be retried")))
+                return@post
+            }
             call.respond(HttpStatusCode.Accepted, SagaRetryResponse(id.toString(), "REQUEUED"))
         }
         post("/workflows/{id}/wake") {
@@ -429,7 +433,7 @@ fun Application.module() {
                     state = ExecutionState.InProgress(activeNodeId = def.entrypoint),
                     payload = payload.mapValues { PayloadValue(it.value) },
                 )
-                bootstrap.enqueueRetry(execution)
+                bootstrap.submit(execution)
                 call.respond(SagaCreateResponse(execution.id.toString()))
             } else {
                 // ── V1 steps-based inline run (existing logic) ─────────────────────
@@ -458,7 +462,7 @@ fun Application.module() {
                     call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
                     return@post
                 }
-                bootstrap.enqueueRetry(execution)
+                bootstrap.submit(execution)
                 call.respond(SagaCreateResponse(execution.id.toString()))
             }
         }
@@ -663,7 +667,7 @@ fun Application.module() {
                 ),
                 payload = req.payload.mapValues { PayloadValue(it.value) },
             )
-            bootstrap.enqueueRetry(execution)
+            bootstrap.submit(execution)
             call.respond(SagaCreateResponse(execution.id.toString()))
         }
 

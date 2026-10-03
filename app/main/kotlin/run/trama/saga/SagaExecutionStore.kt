@@ -83,8 +83,53 @@ data class WaitingInfo(
     val execution: SagaExecution,
 )
 
+/** A step result recorded together with the checkpoint that follows it. */
+data class StepRecord(
+    val stepIdx: Int,
+    val stepName: String,
+    val phase: ExecutionPhase,
+    val statusCode: Int?,
+    val success: Boolean,
+    val responseBody: String?,
+    val stepStartedAt: Instant?,
+)
+
+/** How a checkpoint parks the execution, when it does. Each maps to the status it shows. */
+sealed interface Parking {
+    val status: String
+
+    /** Waiting for an async callback; [signature] is the callback token's signature. */
+    data class Callback(val signature: String) : Parking {
+        override val status get() = "WAITING_CALLBACK"
+    }
+
+    data class Sleep(val wakeAt: Instant) : Parking {
+        override val status get() = "SLEEPING"
+    }
+
+    data object Join : Parking {
+        override val status get() = "WAITING_JOIN"
+    }
+}
+
+/** What Postgres records about an execution's progress (see [SagaExecutionStore.readCheckpoint]). */
+data class PersistedCheckpoint(
+    val status: String,
+    val seq: Long,
+    /** Seq of the queue item carrying the execution forward; null for rows from before checkpoints. */
+    val carrier: Long?,
+    val updatedAt: Instant,
+    /** True for rows written before checkpoints existed (no resumable state stored). */
+    val legacy: Boolean,
+) {
+    val terminal: Boolean get() = status in TERMINAL_STATUSES
+
+    companion object {
+        val TERMINAL_STATUSES = setOf("SUCCEEDED", "FAILED", "CORRUPTED")
+    }
+}
+
 interface SagaExecutionStore {
-    suspend fun upsertStart(execution: SagaExecution)
     suspend fun updateFinal(executionId: java.util.UUID, status: String, failureDescription: String? = null)
     suspend fun updateFailure(
         executionId: java.util.UUID,
@@ -106,6 +151,55 @@ interface SagaExecutionStore {
     )
     suspend fun insertStepCalls(calls: List<StepCallEntry>)
     suspend fun loadStepResults(sagaId: java.util.UUID): List<StepResult>
+
+    // ── Checkpoints ────────────────────────────────────────────────────────────
+    // Postgres holds every execution's resume point. The defaults below suit stores without
+    // durable checkpoints (test doubles): they keep recording steps and parked state through the
+    // older per-purpose methods and never fence.
+
+    /** Creates the rows of new executions (checkpoint seq 0) before they are first enqueued. Idempotent. */
+    suspend fun admit(executions: List<SagaExecution>) {}
+
+    /** Progress recorded for [executionId], or null when there is no row (or no durable store). */
+    suspend fun readCheckpoint(executionId: java.util.UUID): PersistedCheckpoint? = null
+
+    /** The execution as of its stored checkpoint (seq included), or null without one. */
+    suspend fun loadCheckpoint(executionId: java.util.UUID): SagaExecution? = null
+
+    /**
+     * Moves the stored checkpoint from `next.checkpointSeq - 1` to [next], atomically with
+     * recording [step] and, when [parking] is set, the parked state. [carrier] is the seq of the
+     * queue item that will carry the execution on from here. [resumeAt] is when it is next due.
+     * Throws [StaleCheckpointException] when the stored seq moved on or the execution is finished:
+     * another copy of this execution got there first.
+     */
+    suspend fun checkpoint(
+        next: SagaExecution,
+        carrier: Long,
+        resumeAt: Instant,
+        step: StepRecord? = null,
+        parking: Parking? = null,
+    ) {
+        if (step != null) {
+            insertStepResult(next.id, next.startedAt, step.stepIdx, step.stepName, step.phase, step.statusCode, step.success, step.responseBody, step.stepStartedAt)
+        }
+        when (parking) {
+            is Parking.Callback -> saveWaiting(next, parking.signature)
+            is Parking.Sleep -> saveSleeping(next, parking.wakeAt)
+            Parking.Join -> saveWaitingJoin(next)
+            null -> {}
+        }
+    }
+
+    /**
+     * Records the terminal [status], as a compare-and-set on [execution]'s checkpoint seq.
+     * Throws [StaleCheckpointException] when the execution was advanced or finished elsewhere.
+     */
+    suspend fun finalize(execution: SagaExecution, status: String, failureDescription: String?) =
+        updateFinal(execution.id, status, failureDescription)
+
+    /** Upgrade path: moves state an older version kept outside Postgres into it. */
+    suspend fun adoptLegacy(execution: SagaExecution) {}
 
     /**
      * Persists a [WaitingInfo] entry for the given execution so the callback receiver
@@ -144,20 +238,6 @@ interface SagaExecutionStore {
      * Returns null if no entry exists.
      */
     suspend fun consumeSleeping(executionId: java.util.UUID): SleepEntry?
-
-    /**
-     * Updates the status column in Postgres without finalising the execution.
-     * Used to surface SLEEPING status to the status API while the saga is in the queue.
-     */
-    suspend fun updateStatus(executionId: java.util.UUID, status: String)
-
-    /**
-     * Keeps whatever transient state this store holds for [executionId] (e.g. Redis meta and step
-     * history, which otherwise expire after a short idle TTL) alive at least until [until].
-     * Called before an execution goes idle for a known period, e.g. a delayed retry.
-     * Stores whose state is durable need not do anything.
-     */
-    suspend fun retainUntil(executionId: java.util.UUID, until: Instant) {}
 
     // ── Split / join ───────────────────────────────────────────────────────────
 
@@ -223,11 +303,37 @@ interface SagaExecutionStore {
     suspend fun getChildStatuses(executionIds: List<java.util.UUID>): Map<java.util.UUID, ChildExecutionStatus>
 }
 
-class SagaRepositoryStore(
+/**
+ * The Postgres store: every execution's state, steps and resume point live in its
+ * saga_execution row. Also the durable base of [run.trama.saga.redis.RedisSagaExecutionStore].
+ */
+open class SagaRepositoryStore(
     private val repository: SagaRepository,
 ) : SagaExecutionStore {
-    override suspend fun upsertStart(execution: SagaExecution) =
-        repository.upsertExecutionStart(execution)
+    override suspend fun admit(executions: List<SagaExecution>) =
+        repository.admitExecutions(executions)
+
+    override suspend fun readCheckpoint(executionId: java.util.UUID): PersistedCheckpoint? =
+        repository.readCheckpoint(executionId)
+
+    override suspend fun loadCheckpoint(executionId: java.util.UUID): SagaExecution? =
+        repository.loadCheckpoint(executionId)
+
+    override suspend fun checkpoint(
+        next: SagaExecution,
+        carrier: Long,
+        resumeAt: Instant,
+        step: StepRecord?,
+        parking: Parking?,
+    ) {
+        if (!repository.checkpoint(next, carrier, resumeAt, step, parking)) throw StaleCheckpointException(next.id)
+    }
+
+    override suspend fun finalize(execution: SagaExecution, status: String, failureDescription: String?) {
+        if (!repository.finalizeCheckpointed(execution.id, execution.checkpointSeq, status, failureDescription)) {
+            throw StaleCheckpointException(execution.id)
+        }
+    }
 
     override suspend fun updateFinal(executionId: java.util.UUID, status: String, failureDescription: String?) =
         repository.updateExecutionFinal(executionId, status, failureDescription)
@@ -299,9 +405,6 @@ class SagaRepositoryStore(
 
     override suspend fun consumeSleeping(executionId: java.util.UUID): SleepEntry? =
         repository.consumeSleepingState(executionId)
-
-    override suspend fun updateStatus(executionId: java.util.UUID, status: String) =
-        repository.updateStatus(executionId, status)
 
     override suspend fun registerJoinBarrier(
         parentId: java.util.UUID,

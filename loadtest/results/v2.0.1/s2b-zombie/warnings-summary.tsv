@@ -1,0 +1,6 @@
+count	level	message	root cause
+31	WARN	claims expired before renewal	
+16	WARN	missing redis meta on finalization for sagaId=<id>	
+8	WARN	node failed	
+3	WARN	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Co	
+1	WARN	saga-db-pool - Thread starvation or clock leap detected (housekeeper delta=51s711ms880µs189ns).	

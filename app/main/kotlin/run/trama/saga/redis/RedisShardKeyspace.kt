@@ -31,25 +31,20 @@ class RedisShardKeyspace(
     fun queueInFlightKey(shardId: Int): String =
         "$queueKeyPrefix:${queueTag(shardId)}:inflight"
 
+    /**
+     * Index of shards that may have work due: member = shard id, score = earliest time something
+     * in that shard's ready or in-flight set needs attention. Lets claimers visit only those
+     * shards instead of scanning every owned shard on each poll.
+     */
+    fun queueDueKey(): String = "$queueKeyPrefix:due"
+
+    /** Execution meta buffered in Redis before 2.1 (read only to import it, see RedisSagaExecutionStore.adoptLegacy). */
     fun executionMetaKey(executionId: UUID): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId"
 
+    /** Step history buffered in Redis before 2.1 (same). */
     fun executionStepsKey(executionId: UUID): String =
         "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:steps"
-
-    fun waitingKey(executionId: UUID): String =
-        "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:waiting"
-
-    fun sleepKey(executionId: UUID): String =
-        "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:sleep"
-
-    /** Holds the expected branch count for a join barrier — set once by registerJoinBarrier. */
-    fun joinExpectedKey(executionId: UUID, splitNodeId: String): String =
-        "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:join:$splitNodeId:expected"
-
-    /** SET of arrived child ids for a join barrier (SADD'd once per arriving branch) — the fast path for markChildArrived. */
-    fun joinArrivedKey(executionId: UUID, splitNodeId: String): String =
-        "saga_executions:${queueTag(virtualShardFor(executionId))}:$executionId:join:$splitNodeId:arrived"
 
     fun rateLimitCountKey(sagaName: String, keyPrefix: String): ByteArray =
         "$keyPrefix:{rl:$sagaName}:count".toByteArray(StandardCharsets.UTF_8)

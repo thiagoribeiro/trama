@@ -6,6 +6,11 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.opentelemetry.api.trace.Span
 import run.trama.saga.ExecutionOutcome
+import run.trama.saga.Parking
+import run.trama.saga.PersistedCheckpoint
+import run.trama.saga.StaleCheckpointException
+import run.trama.saga.StepRecord
+import run.trama.saga.ensureLease
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
 import run.trama.saga.FailureReason
@@ -70,6 +75,12 @@ class WorkflowExecutor(
     private fun parseBodyOrNull(raw: String?): JsonElement? =
         raw?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
 
+    /**
+     * The copy of an execution this call is advancing: its latest checkpointed state, and the seq
+     * of the queue item carrying it forward (see [advance]).
+     */
+    private class Cursor(var execution: SagaExecution, var carrier: Long)
+
     override suspend fun execute(execution: SagaExecution): ExecutionOutcome {
         return Tracing.withSpan(
             tracer = tracer,
@@ -87,42 +98,89 @@ class WorkflowExecutor(
                     kv("sagaVersion", execution.definition.version),
                 )
             }
-            when (val state = execution.state) {
+            val cursor = resolveStart(execution)
+            when (val state = cursor.execution.state) {
                 is ExecutionState.InProgress -> {
-                    store.upsertStart(execution)
-                    val workflow = resolveWorkflow(execution)
-                    val activeNodeId = resolveActiveNodeId(state, execution)
-                    val (completed, compStack) = resolveLegacyStacks(state, execution)
-                    executeForward(execution, workflow, activeNodeId, completed, compStack, state.retry)
+                    val current = cursor.execution
+                    val workflow = resolveWorkflow(current)
+                    val activeNodeId = resolveActiveNodeId(state, current)
+                    val (completed, compStack) = resolveLegacyStacks(state, current)
+                    executeForward(cursor, workflow, activeNodeId, completed, compStack, state.retry)
                 }
                 is ExecutionState.Compensating -> {
-                    val workflow = resolveWorkflow(execution)
-                    executeCompensating(execution, workflow, state)
+                    val workflow = resolveWorkflow(cursor.execution)
+                    executeCompensating(cursor, workflow, state)
                 }
                 is ExecutionState.Failed -> ExecutionOutcome.FailedFinal
                 is ExecutionState.Succeeded -> {
                     // Enqueued by CallbackReceiver when the callback of a terminal async node is
-                    // accepted: finish exactly as when the executor itself completes the last node.
-                    finishSuccess(execution, resolveWorkflow(execution), store.loadStepResults(execution.id))
+                    // accepted, or adopted from a checkpoint written right before finishing:
+                    // finish exactly as when the executor itself completes the last node.
+                    finishSuccess(cursor, resolveWorkflow(cursor.execution), store.loadStepResults(cursor.execution.id))
                 }
                 is ExecutionState.WaitingCallback -> {
-                    val workflow = resolveWorkflow(execution)
-                    executeWaitingCallback(execution, workflow, state)
+                    val workflow = resolveWorkflow(cursor.execution)
+                    executeWaitingCallback(cursor, workflow, state)
                 }
                 is ExecutionState.Sleeping -> {
-                    val workflow = resolveWorkflow(execution)
-                    executeSleeping(execution, workflow, state)
+                    val workflow = resolveWorkflow(cursor.execution)
+                    executeSleeping(cursor, workflow, state)
                 }
-                is ExecutionState.WaitingJoin -> {
-                    // WaitingJoin executions are parked (see saveWaitingJoin), not re-enqueued —
-                    // they are only resumed by the last arriving branch (finalizeAndNotifyParent)
-                    // or by JoinCompletionScanner as a backstop. Seeing one dequeued directly
-                    // means a stray redelivery; there is nothing to do.
-                    logger.warn("unexpected WaitingJoin execution dequeued directly", kv("sagaId", execution.id.toString()))
-                    ExecutionOutcome.Reenqueued
-                }
+                is ExecutionState.WaitingJoin -> recoverWaitingJoin(cursor.execution, state)
             }
         }
+    }
+
+    /**
+     * Decides which copy of the execution to run, from what Postgres has recorded:
+     * - same seq as this queue item: the item is current, run it;
+     * - a newer seq still carried by this item: its previous worker died after checkpointing
+     *   further but before handing the work on, so continue from the stored checkpoint;
+     * - anything else (newer seq carried by another item, or finished): this copy is stale.
+     */
+    private suspend fun resolveStart(item: SagaExecution): Cursor {
+        val persisted = store.readCheckpoint(item.id)
+        if (persisted == null) {
+            // No row: a store without durable checkpoints, or an execution started by an older
+            // version that only wrote its row on parking or finishing.
+            store.adoptLegacy(item)
+            store.admit(listOf(item))
+            return Cursor(item, item.checkpointSeq)
+        }
+        if (persisted.legacy) store.adoptLegacy(item)
+        if (persisted.terminal) throw StaleCheckpointException(item.id)
+        if (persisted.seq == item.checkpointSeq) return Cursor(item, item.checkpointSeq)
+        if (persisted.seq > item.checkpointSeq && persisted.carrier == item.checkpointSeq) {
+            val adopted = store.loadCheckpoint(item.id) ?: throw StaleCheckpointException(item.id)
+            Tracing.withTraceMdc(Span.current(), item.id.toString()) {
+                logger.info("resuming from checkpoint", kv("fromSeq", item.checkpointSeq), kv("toSeq", adopted.checkpointSeq))
+            }
+            return Cursor(adopted, item.checkpointSeq)
+        }
+        throw StaleCheckpointException(item.id)
+    }
+
+    /**
+     * Makes [state] the execution's durable checkpoint (compare-and-set on its seq) together with
+     * [step] and, for parking transitions, the parked state. With [handoff] the execution moves
+     * on in a new queue item enqueued right after, which becomes its carrier; otherwise this call
+     * keeps carrying it. Fenced: throws if this worker lost its claim or another copy got ahead.
+     */
+    private suspend fun advance(
+        cursor: Cursor,
+        state: ExecutionState,
+        step: StepRecord? = null,
+        parking: Parking? = null,
+        handoff: Boolean = false,
+        resumeAt: Instant = Instant.now(),
+    ): SagaExecution {
+        ensureLease()
+        val next = cursor.execution.copy(state = state, checkpointSeq = cursor.execution.checkpointSeq + 1)
+        val carrier = if (handoff) next.checkpointSeq else cursor.carrier
+        store.checkpoint(next, carrier, resumeAt, step, parking)
+        cursor.execution = next
+        cursor.carrier = carrier
+        return next
     }
 
     // ── Definition resolution ─────────────────────────────────────────────────
@@ -138,13 +196,14 @@ class WorkflowExecutor(
     // ── Forward execution ─────────────────────────────────────────────────────
 
     private suspend fun executeForward(
-        execution: SagaExecution,
+        cursor: Cursor,
         workflow: WorkflowDefinition,
         startNodeId: String,
         initialCompleted: List<String>,
         initialCompStack: List<String>,
         initialRetry: RetryState,
     ): ExecutionOutcome {
+        val execution = cursor.execution
         var activeNodeId = startNodeId
         var completedNodes = initialCompleted.toMutableList()
         var compensationStack = initialCompStack.toMutableList()
@@ -157,19 +216,20 @@ class WorkflowExecutor(
 
         while (true) {
             val node = workflow.nodes[activeNodeId]
-                ?: return handleBug(execution, "node '$activeNodeId' not found in workflow")
+                ?: return handleBug(cursor.execution, "node '$activeNodeId' not found in workflow")
 
             val stepIdx = completedNodes.size
+            // Set by nodes that complete and continue the forward walk; checkpointed below.
+            val step: StepRecord
 
             when (node) {
                 is TaskNode -> {
+                    ensureLease()
                     val taskStartNanos = System.nanoTime()
-                    val httpResult = taskHandler.execute(node, execution, execution.payload, stepResults)
+                    val httpResult = taskHandler.execute(node, cursor.execution, execution.payload, stepResults)
                     recordNodeDuration(execution, "task", if (node.action.mode == TaskMode.ASYNC) "async" else "sync", taskStartNanos)
 
-                    store.insertStepResult(
-                        sagaId = execution.id,
-                        startedAt = execution.startedAt,
+                    step = StepRecord(
                         stepIdx = stepIdx,
                         stepName = node.id,
                         phase = ExecutionPhase.UP,
@@ -197,9 +257,9 @@ class WorkflowExecutor(
                         is NodeResult.NodeFailed -> {
                             if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                             return handleForwardFailure(
-                                execution, workflow, activeNodeId,
+                                cursor, workflow, activeNodeId,
                                 completedNodes, compensationStack,
-                                retry, result.reason,
+                                retry, result.reason, step,
                             )
                         }
                         is NodeResult.Advanced -> {
@@ -211,14 +271,16 @@ class WorkflowExecutor(
                             }
                             if (node.next == null) {
                                 if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
-                                return finishSuccess(execution, workflow, stepResults)
+                                advance(cursor, ExecutionState.Succeeded(completedAt = Instant.now()), step)
+                                return finishSuccess(cursor, workflow, stepResults)
                             }
                             activeNodeId = node.next
                         }
                         is NodeResult.WaitingForCallback -> {
                             if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
-                            val updated = execution.copy(
-                                state = ExecutionState.WaitingCallback(
+                            val updated = advance(
+                                cursor,
+                                ExecutionState.WaitingCallback(
                                     nodeId = result.nodeId,
                                     attempt = result.attempt,
                                     deadlineAt = result.deadlineAt,
@@ -226,8 +288,11 @@ class WorkflowExecutor(
                                     completedNodes = completedNodes.toList(),
                                     compensationStack = compensationStack.toList(),
                                 ),
+                                step = step,
+                                parking = Parking.Callback(result.signature),
+                                handoff = true,
+                                resumeAt = result.deadlineAt,
                             )
-                            store.saveWaiting(updated, result.signature)
                             val delayMillis = (result.deadlineAt.toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0)
                             enqueuer.enqueue(updated, delayMillis)
                             metrics.recordCallbackWaitEntered(execution.definition.name, execution.definition.version)
@@ -249,9 +314,7 @@ class WorkflowExecutor(
                     val evalResult = SwitchNodeHandler.evaluate(node, execution, execution.payload, stepResults)
                     recordNodeDuration(execution, "switch", "none", switchStartNanos)
                     val traceJson = buildSwitchTraceJson(evalResult)
-                    store.insertStepResult(
-                        sagaId = execution.id,
-                        startedAt = execution.startedAt,
+                    step = StepRecord(
                         stepIdx = stepIdx,
                         stepName = node.id,
                         phase = ExecutionPhase.SWITCH,
@@ -283,16 +346,19 @@ class WorkflowExecutor(
                     if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                     val wakeAt = Instant.now().plusMillis(node.durationMillis)
                     val delay = minOf(node.durationMillis, sleepMaxChunkMillis + sleepJitterMillis)
-                    val updated = execution.copy(
-                        state = ExecutionState.Sleeping(
+                    val sleepStartNanos = System.nanoTime()
+                    val updated = advance(
+                        cursor,
+                        ExecutionState.Sleeping(
                             wakeAt = wakeAt,
                             nextNodeId = node.next,
                             completedNodes = completedNodes.toList(),
                             compensationStack = compensationStack.toList(),
                         ),
+                        parking = Parking.Sleep(wakeAt),
+                        handoff = true,
+                        resumeAt = wakeAt,
                     )
-                    val sleepStartNanos = System.nanoTime()
-                    store.saveSleeping(updated, wakeAt)
                     enqueuer.enqueue(updated, delay)
                     recordNodeDuration(execution, "sleep", "none", sleepStartNanos)
                     Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
@@ -334,22 +400,14 @@ class WorkflowExecutor(
                         )
                     }
 
-                    store.insertStepResult(
-                        sagaId = execution.id,
-                        startedAt = execution.startedAt,
-                        stepIdx = stepIdx,
-                        stepName = node.id,
-                        phase = ExecutionPhase.SPLIT,
-                        statusCode = null,
-                        success = true,
-                        responseBody = buildSplitTraceJson(children),
-                        stepStartedAt = Instant.now(),
-                    )
-
+                    // Children get their rows before they are registered on the barrier: a
+                    // registered branch must always be resumable from Postgres, even if this
+                    // worker dies before enqueuing it (the reconciler then picks it up).
+                    val splitStartNanos = System.nanoTime()
+                    store.admit(children)
                     // Barrier + parked parent state must be durable BEFORE any child can run,
                     // since a child could finish (and call markChildArrived) as soon as
                     // it is enqueued below.
-                    val splitStartNanos = System.nanoTime()
                     val newlyRegisteredBranches = store.registerJoinBarrier(
                         parentId = execution.id,
                         parentStartedAt = execution.startedAt,
@@ -357,16 +415,26 @@ class WorkflowExecutor(
                         joinNodeId = node.join,
                         branches = children.map { child -> JoinBranchLink(child.branchId!!, child.id, child.startedAt) },
                     )
-                    store.saveWaitingJoin(
-                        execution.copy(
-                            state = ExecutionState.WaitingJoin(
-                                splitNodeId = node.id,
-                                joinNodeId = node.join,
-                                expectedBranches = children.size,
-                                completedNodes = completedNodes.toList(),
-                                compensationStack = compensationStack.toList(),
-                            ),
+                    advance(
+                        cursor,
+                        ExecutionState.WaitingJoin(
+                            splitNodeId = node.id,
+                            joinNodeId = node.join,
+                            expectedBranches = children.size,
+                            completedNodes = completedNodes.toList(),
+                            compensationStack = compensationStack.toList(),
                         ),
+                        step = StepRecord(
+                            stepIdx = stepIdx,
+                            stepName = node.id,
+                            phase = ExecutionPhase.SPLIT,
+                            statusCode = null,
+                            success = true,
+                            responseBody = buildSplitTraceJson(children),
+                            stepStartedAt = Instant.now(),
+                        ),
+                        parking = Parking.Join,
+                        handoff = true,
                     )
                     // Only enqueue branches newly registered by the call above: a redelivery of
                     // this very split step reconstructs the same deterministic children, but any
@@ -389,20 +457,26 @@ class WorkflowExecutor(
                     // finalizeAndNotifyParent/resumeAfterJoin (which sets activeNodeId to
                     // join.next directly) — walking into a join node here is a definition/
                     // executor bug, not a runtime condition.
-                    return handleBug(execution, "join node '${node.id}' reached directly by the forward walk")
+                    return handleBug(cursor.execution, "join node '${node.id}' reached directly by the forward walk")
                 }
             }
 
+            // The node completed and the walk continues at activeNodeId: checkpoint it. Past
+            // maxNodesPerExecution the rest of the walk is handed to a fresh queue item.
             processed++
-            if (processed >= maxNodesPerExecution) {
+            val handoff = processed >= maxNodesPerExecution
+            val updated = advance(
+                cursor,
+                ExecutionState.InProgress(
+                    activeNodeId = activeNodeId,
+                    completedNodes = completedNodes.toList(),
+                    compensationStack = compensationStack.toList(),
+                ),
+                step = step,
+                handoff = handoff,
+            )
+            if (handoff) {
                 if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
-                val updated = execution.copy(
-                    state = ExecutionState.InProgress(
-                        activeNodeId = activeNodeId,
-                        completedNodes = completedNodes,
-                        compensationStack = compensationStack,
-                    ),
-                )
                 enqueuer.enqueue(updated, 0)
                 Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                     logger.info("execution checkpoint scheduled", kv("nextNodeId", activeNodeId))
@@ -413,14 +487,16 @@ class WorkflowExecutor(
     }
 
     private suspend fun handleForwardFailure(
-        execution: SagaExecution,
+        cursor: Cursor,
         workflow: WorkflowDefinition,
         failedNodeId: String,
         completedNodes: List<String>,
         compensationStack: List<String>,
         retryState: RetryState,
         reason: FailureReason,
+        step: StepRecord,
     ): ExecutionOutcome {
+        val execution = cursor.execution
         val retryDecision = retryPolicy.next(retryState, workflow.failureHandling)
         return if (retryDecision.shouldRetry) {
             Span.current().addEvent("saga.retry")
@@ -431,41 +507,49 @@ class WorkflowExecutor(
                     kv("attempt", retryDecision.attempt),
                 )
             }
-            val updated = execution.copy(
-                state = ExecutionState.InProgress(
+            val updated = advance(
+                cursor,
+                ExecutionState.InProgress(
                     activeNodeId = failedNodeId,
                     completedNodes = completedNodes,
                     compensationStack = compensationStack,
                     retry = RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis),
                 ),
+                step = step,
+                handoff = true,
+                resumeAt = Instant.now().plusMillis(retryDecision.delayMillis),
             )
-            retainForDelay(execution, retryDecision.delayMillis)
             enqueuer.enqueue(updated, retryDecision.delayMillis)
             ExecutionOutcome.Reenqueued
         } else {
-            store.updateFailure(execution.id, reason.message, null, null)
             Span.current().addEvent("saga.compensate")
             Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                 logger.info("compensation scheduled", kv("failedNodeId", failedNodeId))
             }
-            val updated = execution.copy(
-                state = ExecutionState.Compensating(
+            val updated = advance(
+                cursor,
+                ExecutionState.Compensating(
                     compensationStack = compensationStack,
                     completedNodes = completedNodes,
                     failureReason = reason,
                 ),
+                step = step,
+                handoff = true,
             )
+            store.updateFailure(execution.id, reason.message, null, null)
             enqueuer.enqueue(updated, 0)
             ExecutionOutcome.Reenqueued
         }
     }
 
     private suspend fun finishSuccess(
-        execution: SagaExecution,
+        cursor: Cursor,
         workflow: WorkflowDefinition,
         stepResults: List<StepResult>,
     ): ExecutionOutcome {
+        val execution = cursor.execution
         workflow.onSuccessCallback?.let { callback ->
+            ensureLease()
             val context = TemplateContextBuilder.build(execution, "onSuccessCallback", ExecutionPhase.UP, stepResults, execution.payload)
             val httpResult = executeRawCall("onSuccessCallback", callback, context)
             if (!httpResult.success) {
@@ -489,16 +573,23 @@ class WorkflowExecutor(
     // ── Compensation execution ────────────────────────────────────────────────
 
     private suspend fun executeCompensating(
-        execution: SagaExecution,
+        cursor: Cursor,
         workflow: WorkflowDefinition,
         state: ExecutionState.Compensating,
     ): ExecutionOutcome {
+        val execution = cursor.execution
         val remaining = state.compensationStack.toMutableList()
         var retry = state.retry
         var processed = 0
         val pendingCalls = mutableListOf<StepCallEntry>()
         // Load once per execution slice
         val stepResults = store.loadStepResults(execution.id)
+        fun compensating(retry: RetryState = RetryState.None) = ExecutionState.Compensating(
+            compensationStack = remaining.toList(),
+            completedNodes = state.completedNodes,
+            failureReason = state.failureReason,
+            retry = retry,
+        )
 
         while (remaining.isNotEmpty()) {
             val nodeId = remaining.first()
@@ -508,11 +599,10 @@ class WorkflowExecutor(
             }
 
             val stepIdx = state.completedNodes.size - remaining.size
-            val httpResult = taskHandler.compensate(node, execution, execution.payload, stepResults)
+            ensureLease()
+            val httpResult = taskHandler.compensate(node, cursor.execution, execution.payload, stepResults)
 
-            store.insertStepResult(
-                sagaId = execution.id,
-                startedAt = execution.startedAt,
+            val step = StepRecord(
                 stepIdx = stepIdx,
                 stepName = node.id,
                 phase = ExecutionPhase.DOWN,
@@ -538,26 +628,24 @@ class WorkflowExecutor(
             when (val result = httpResult.nodeResult) {
                 is NodeResult.NodeFailed -> {
                     val retryDecision = retryPolicy.next(retry, workflow.failureHandling)
+                    if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                     return if (retryDecision.shouldRetry) {
-                        if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                         Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                             logger.info("compensation retry scheduled", kv("nodeId", nodeId))
                         }
-                        val updated = execution.copy(
-                            state = ExecutionState.Compensating(
-                                compensationStack = remaining,
-                                completedNodes = state.completedNodes,
-                                failureReason = state.failureReason,
-                                retry = RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis),
-                            ),
+                        val updated = advance(
+                            cursor,
+                            compensating(RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis)),
+                            step = step,
+                            handoff = true,
+                            resumeAt = Instant.now().plusMillis(retryDecision.delayMillis),
                         )
-                        retainForDelay(execution, retryDecision.delayMillis)
                         enqueuer.enqueue(updated, retryDecision.delayMillis)
                         ExecutionOutcome.Reenqueued
                     } else {
-                        if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
+                        advance(cursor, compensating(), step = step)
                         val reason = result.reason.message
-                        finalizeAndNotifyParent(execution, "CORRUPTED", reason)
+                        finalizeAndNotifyParent(cursor.execution, "CORRUPTED", reason)
                         metrics.recordSagaDuration(
                             sagaName = execution.definition.name,
                             sagaVersion = execution.definition.version,
@@ -567,26 +655,18 @@ class WorkflowExecutor(
                         ExecutionOutcome.FailedFinal
                     }
                 }
-                is NodeResult.Advanced -> {
-                    retry = RetryState.None
-                    remaining.removeFirst()
-                }
+                // Advanced, or WaitingForCallback (compensate() never returns it; treated as done)
                 else -> {
-                    // compensate() never returns WaitingForCallback; treat as a bug
+                    retry = RetryState.None
                     remaining.removeFirst()
                 }
             }
 
             processed++
-            if (processed >= maxNodesPerExecution && remaining.isNotEmpty()) {
+            val handoff = processed >= maxNodesPerExecution && remaining.isNotEmpty()
+            val updated = advance(cursor, compensating(), step = step, handoff = handoff)
+            if (handoff) {
                 if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
-                val updated = execution.copy(
-                    state = ExecutionState.Compensating(
-                        compensationStack = remaining,
-                        completedNodes = state.completedNodes,
-                        failureReason = state.failureReason,
-                    ),
-                )
                 enqueuer.enqueue(updated, 0)
                 return ExecutionOutcome.Reenqueued
             }
@@ -596,6 +676,7 @@ class WorkflowExecutor(
 
         // All compensations complete → fire failure callback then mark FAILED
         workflow.onFailureCallback?.let { callback ->
+            ensureLease()
             val context = TemplateContextBuilder.build(execution, "onFailureCallback", ExecutionPhase.DOWN, stepResults, execution.payload)
             val httpResult = executeRawCall("onFailureCallback", callback, context)
             if (!httpResult.success) {
@@ -606,7 +687,7 @@ class WorkflowExecutor(
                 }
             }
         }
-        finalizeAndNotifyParent(execution, "FAILED", state.failureReason.message)
+        finalizeAndNotifyParent(cursor.execution, "FAILED", state.failureReason.message)
         metrics.recordSagaDuration(
             sagaName = execution.definition.name,
             sagaVersion = execution.definition.version,
@@ -619,10 +700,11 @@ class WorkflowExecutor(
     // ── Waiting callback (timeout) ────────────────────────────────────────────
 
     private suspend fun executeWaitingCallback(
-        execution: SagaExecution,
+        cursor: Cursor,
         workflow: WorkflowDefinition,
         state: ExecutionState.WaitingCallback,
     ): ExecutionOutcome {
+        val execution = cursor.execution
         if (state.deadlineAt.isAfter(Instant.now())) {
             // Delivered early (clock skew or queue re-ordering) — re-schedule for deadline.
             val delayMillis = (state.deadlineAt.toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(1)
@@ -630,8 +712,7 @@ class WorkflowExecutor(
             return ExecutionOutcome.Reenqueued
         }
 
-        val wasWaiting = store.consumeWaiting(execution.id)
-        if (wasWaiting == null) {
+        if (store.consumeWaiting(execution.id) == null && !stillParkedAs(execution, "WAITING_CALLBACK")) {
             // Callback was received and processed before this sentinel fired — nothing to do.
             Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                 logger.info("callback timeout sentinel consumed but callback already handled", kv("nodeId", state.nodeId))
@@ -639,11 +720,10 @@ class WorkflowExecutor(
             return ExecutionOutcome.Reenqueued
         }
 
-        // Deadline passed without a callback → treat as failure.
+        // Deadline passed without a callback → treat as failure. The checkpoint below is what
+        // decides it: a callback accepted concurrently advances the same seq, and only one wins.
         val reason = FailureReason("callback timeout for node ${state.nodeId}")
-        store.insertStepResult(
-            sagaId = execution.id,
-            startedAt = execution.startedAt,
+        val step = StepRecord(
             stepIdx = state.completedNodes.size,
             stepName = state.nodeId,
             phase = ExecutionPhase.CALLBACK,
@@ -652,33 +732,45 @@ class WorkflowExecutor(
             responseBody = null,
             stepStartedAt = Instant.now(),
         )
-        store.updateFailure(execution.id, reason.message, null, null)
-        metrics.recordCallbackTimeout(execution.definition.name, execution.definition.version)
-        Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
-            logger.warn("callback timeout", kv("nodeId", state.nodeId), kv("attempt", state.attempt))
-        }
-        return handleForwardFailure(
-            execution, workflow,
+        val outcome = handleForwardFailure(
+            cursor, workflow,
             failedNodeId = state.nodeId,
             completedNodes = state.completedNodes,
             compensationStack = state.compensationStack,
             retryState = RetryState.Applying(state.attempt, 0),
             reason = reason,
+            step = step,
         )
+        store.updateFailure(execution.id, reason.message, null, null)
+        metrics.recordCallbackTimeout(execution.definition.name, execution.definition.version)
+        Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+            logger.warn("callback timeout", kv("nodeId", state.nodeId), kv("attempt", state.attempt))
+        }
+        return outcome
+    }
+
+    /**
+     * True when Postgres still shows [execution] parked as [status] at exactly this copy's seq:
+     * nobody advanced it. Lets a resume proceed when its parked-state marker was consumed by a
+     * process that died before advancing (otherwise the execution would stay parked forever).
+     */
+    private suspend fun stillParkedAs(execution: SagaExecution, status: String): Boolean {
+        val persisted = store.readCheckpoint(execution.id) ?: return false
+        return !persisted.legacy && persisted.status == status && persisted.seq == execution.checkpointSeq
     }
 
     // ── Sleep execution ───────────────────────────────────────────────────────
 
     private suspend fun executeSleeping(
-        execution: SagaExecution,
+        cursor: Cursor,
         workflow: WorkflowDefinition,
         state: ExecutionState.Sleeping,
     ): ExecutionOutcome {
+        val execution = cursor.execution
         val now = Instant.now()
         if (state.wakeAt.isAfter(now)) {
-            // Not yet time to wake — check whether the saga:sleep sentinel still exists.
-            // If it's gone, the wake endpoint already fired a fresh InProgress execution;
-            // this queue item is stale → ACK and discard.
+            // Not yet time to wake — check whether the sleep is still pending. If it's gone, the
+            // wake endpoint already fired a fresh execution; this queue item is stale → discard.
             val entry = store.peekSleeping(execution.id)
             if (entry == null) {
                 Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
@@ -700,11 +792,11 @@ class WorkflowExecutor(
             return ExecutionOutcome.Reenqueued
         }
 
-        // wakeAt has passed. Consuming the sentinel is what claims the wake-up: exactly one queue
+        // wakeAt has passed. Consuming the sleep is what claims the wake-up: exactly one queue
         // item per sleep wins. Every other copy — the original chunk arriving after a /wake, or a
         // second concurrent /wake — finds it gone and is a stale duplicate; advancing it would run
         // the next node twice.
-        if (store.consumeSleeping(execution.id) == null) {
+        if (store.consumeSleeping(execution.id) == null && !stillParkedAs(execution, "SLEEPING")) {
             Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                 logger.info("stale sleeping queue item discarded (already woken)", kv("sagaId", execution.id.toString()))
             }
@@ -715,18 +807,20 @@ class WorkflowExecutor(
         }
         return if (state.nextNodeId == null) {
             // Sleep was the terminal node.
-            finishSuccess(execution, workflow, store.loadStepResults(execution.id))
+            advance(cursor, ExecutionState.Succeeded(completedAt = Instant.now()))
+            finishSuccess(cursor, workflow, store.loadStepResults(execution.id))
         } else {
-            val updated = execution.copy(
-                state = ExecutionState.InProgress(
+            // Back to IN_PROGRESS before running anything, so a crash from here on resumes the
+            // walk instead of finding the sleep already consumed.
+            advance(
+                cursor,
+                ExecutionState.InProgress(
                     activeNodeId = state.nextNodeId,
                     completedNodes = state.completedNodes,
                     compensationStack = state.compensationStack,
                 ),
             )
-            // Update Postgres back to IN_PROGRESS before re-entering executeForward
-            store.upsertStart(updated)
-            executeForward(updated, workflow, state.nextNodeId, state.completedNodes, state.compensationStack, RetryState.None)
+            executeForward(cursor, workflow, state.nextNodeId, state.completedNodes, state.compensationStack, RetryState.None)
         }
     }
 
@@ -736,11 +830,6 @@ class WorkflowExecutor(
         metrics.recordNodeDuration(
             execution.definition.name, execution.definition.version, nodeKind, mode, System.nanoTime() - startNanos,
         )
-
-    /** Keeps the store's transient state alive across a delayed retry (no-op for zero delay). */
-    private suspend fun retainForDelay(execution: SagaExecution, delayMillis: Long) {
-        if (delayMillis > 0) store.retainUntil(execution.id, Instant.now().plusMillis(delayMillis))
-    }
 
     /**
      * Resolves the active node id from [InProgress] state.
@@ -823,7 +912,8 @@ class WorkflowExecutor(
         status: String,
         failureDescription: String? = null,
     ) {
-        store.updateFinal(execution.id, status, failureDescription)
+        ensureLease()
+        store.finalize(execution, status, failureDescription)
 
         val parentId = execution.parentExecutionId ?: return
         val parentStartedAt = execution.parentStartedAt ?: return
@@ -838,7 +928,7 @@ class WorkflowExecutor(
     }
 
     /** Everything [resumeAfterJoin] needs to commit, once the (retryable) prep work is done. */
-    private data class PreparedJoinResume(val joinNode: JoinNode, val completedNodes: List<String>)
+    private data class PreparedJoinResume(val joinNode: JoinNode, val completedNodes: List<String>, val step: StepRecord)
 
     /**
      * Runs [resumeAfterJoin] in two phases. Only the *preparation* phase (reading branch
@@ -906,18 +996,6 @@ class WorkflowExecutor(
             },
         )
 
-        store.insertStepResult(
-            sagaId = execution.id,
-            startedAt = execution.startedAt,
-            stepIdx = state.completedNodes.size,
-            stepName = state.joinNodeId,
-            phase = ExecutionPhase.JOIN,
-            statusCode = null,
-            success = true,
-            responseBody = joinBodyJson,
-            stepStartedAt = Instant.now(),
-        )
-
         Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
             logger.info(
                 "join barrier satisfied",
@@ -927,7 +1005,16 @@ class WorkflowExecutor(
             )
         }
 
-        return PreparedJoinResume(joinNode, state.completedNodes + state.joinNodeId)
+        val step = StepRecord(
+            stepIdx = state.completedNodes.size,
+            stepName = state.joinNodeId,
+            phase = ExecutionPhase.JOIN,
+            statusCode = null,
+            success = true,
+            responseBody = joinBodyJson,
+            stepStartedAt = Instant.now(),
+        )
+        return PreparedJoinResume(joinNode, state.completedNodes + state.joinNodeId, step)
     }
 
     /** Point of no return: commits the join's outcome. Not covered by the restore-on-failure catch. */
@@ -935,18 +1022,41 @@ class WorkflowExecutor(
         val workflow = resolveWorkflow(execution)
         val joinNode = prepared.joinNode
         val completedNodes = prepared.completedNodes
+        val cursor = Cursor(execution, execution.checkpointSeq)
         if (joinNode.next == null) {
-            finishSuccess(execution, workflow, store.loadStepResults(execution.id))
+            advance(cursor, ExecutionState.Succeeded(completedAt = Instant.now()), step = prepared.step)
+            finishSuccess(cursor, workflow, store.loadStepResults(execution.id))
             return
         }
-        val updated = execution.copy(
-            state = ExecutionState.InProgress(
+        val updated = advance(
+            cursor,
+            ExecutionState.InProgress(
                 activeNodeId = joinNode.next,
                 completedNodes = completedNodes,
                 compensationStack = state.compensationStack,
             ),
+            step = prepared.step,
+            handoff = true,
         )
         enqueuer.enqueue(updated, 0)
+    }
+
+    /**
+     * A parent parked on a join reached the queue directly. Normally a stray redelivery of the
+     * split's queue item (nothing to do: the last branch or the backstop scanner resumes it). But
+     * when every branch already finished, it is a parent recovered from its checkpoint after the
+     * process resuming it died mid-resume, so the join is resumed here.
+     */
+    private suspend fun recoverWaitingJoin(execution: SagaExecution, state: ExecutionState.WaitingJoin): ExecutionOutcome {
+        val branches = store.getJoinBranches(execution.id, execution.startedAt, state.splitNodeId)
+        val statuses = store.getChildStatuses(branches.map { it.childId })
+        val allFinished = branches.isNotEmpty() && branches.all { statuses[it.childId]?.status in PersistedCheckpoint.TERMINAL_STATUSES }
+        if (!allFinished) {
+            logger.warn("unexpected WaitingJoin execution dequeued directly", kv("sagaId", execution.id.toString()))
+            return ExecutionOutcome.Reenqueued
+        }
+        resumeAfterJoinOrRestore(execution, state)
+        return ExecutionOutcome.Reenqueued
     }
 
     private fun buildSplitTraceJson(children: List<SagaExecution>): String {

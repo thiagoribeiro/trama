@@ -1,0 +1,10 @@
+calls	total_ms	mean_ms	rows	query
+3000	999.6	0.333	3000	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "failure_description", "started_at", "completed_at",
+3000	589.2	0.196	9000	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+3000	528.6	0.176	9000	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+3	19.0	6.334	8285	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+1	4.4	4.417	0	SELECT saga_id, step_name, phase, count(*) FROM saga_step_result WHERE saga_id = ANY($1) GROUP BY 1,2,3 HAVING count(*) > $2
+56	1.0	0.019	0	SET application_name = 'PostgreSQL JDBC Driver'
+5	0.6	0.122	5	SELECT xact_commit, tup_inserted, tup_updated, numbackends FROM pg_stat_database WHERE datname = $1
+1	0.1	0.130	1	SELECT pg_stat_statements_reset()
+1	0.0	0.006	0	SELECT parent_id, child_id FROM saga_join_branch WHERE parent_id = ANY($1)

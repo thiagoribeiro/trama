@@ -73,4 +73,31 @@ class RateLimiterTest {
         limiter.recordFailure("order")
         assertNotNull(limiter.checkDelayMillis("order"))
     }
+
+    @Test
+    fun `rate limiter fails open while Redis is unavailable`() = runBlocking<Unit> {
+        val down = object : RedisCommandsProvider {
+            override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T =
+                throw io.lettuce.core.RedisException("Currently not connected. Commands are rejected.")
+        }
+        val limiter = RedisSagaRateLimiter(down, RateLimitConfig(enabled = true), RedisShardKeyspace("saga:executions", 1024))
+
+        limiter.recordFailure("order")
+        assertNull(limiter.checkDelayMillis("order"), "no delay instead of failing the execution")
+    }
+
+    @Test
+    fun `callbacks skip the nonce check while Redis is unavailable`() = runBlocking<Unit> {
+        val down = object : RedisCommandsProvider {
+            override suspend fun <T> withCommands(block: suspend (RedisBinaryCommands) -> T): T =
+                throw io.lettuce.core.RedisException("Currently not connected. Commands are rejected.")
+        }
+        val store = run.trama.saga.redis.RedisSagaExecutionStore(
+            down,
+            io.mockk.mockk(relaxed = true),
+            RedisShardKeyspace("saga:executions", 1024),
+        )
+
+        kotlin.test.assertTrue(store.claimNonce("n-1", 60), "Postgres still guarantees a single resume")
+    }
 }

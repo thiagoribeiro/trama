@@ -438,7 +438,6 @@ private class FakeSplitJoinStore : SagaExecutionStore {
 
     private fun barrierKey(parentId: UUID, splitNodeId: String) = "$parentId|$splitNodeId"
 
-    override suspend fun upsertStart(execution: SagaExecution) {}
     override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
         finalStatuses[executionId] = status to failureDescription
     }
@@ -465,7 +464,6 @@ private class FakeSplitJoinStore : SagaExecutionStore {
     override suspend fun saveSleeping(execution: SagaExecution, wakeAt: Instant) {}
     override suspend fun peekSleeping(executionId: UUID): SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): SleepEntry? = null
-    override suspend fun updateStatus(executionId: UUID, status: String) {}
 
     override suspend fun registerJoinBarrier(
         parentId: UUID,

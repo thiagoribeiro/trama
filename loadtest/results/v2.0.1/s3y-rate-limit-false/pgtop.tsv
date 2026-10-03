@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+2400	702.0	0.292	2400	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "failure_description", "started_at", "completed_at",
+1800	508.1	0.282	1800	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "started_at", "updated_at", "payload") values (cast(
+1200	342.7	0.286	1200	update "public"."saga_execution" set "waiting_state" = cast($1 as jsonb), "status" = $2, "updated_at" = cast($3 as timestamp(6) with time zo
+600	341.6	0.569	600	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+3064	249.1	0.081	3064	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+1800	148.1	0.082	1800	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+600	128.3	0.214	600	update "public"."saga_execution" set "status" = $1, "updated_at" = cast($2 as timestamp(6) with time zone) where ("public"."saga_execution".
+4	121.1	30.277	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+1800	111.1	0.062	1800	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+600	83.4	0.139	1800	select "public"."saga_execution"."id", "public"."saga_execution"."status", "public"."saga_execution"."failure_description" from "public"."sa
+1200	69.6	0.058	1200	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+536	64.2	0.120	2144	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+600	52.9	0.088	1200	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+600	52.9	0.088	1800	SELECT DISTINCT ON (saga_id) saga_id, response_body FROM saga_step_result WHERE saga_id = ANY($1) AND started_at >= $2 ORDER BY saga_id, cre
+600	50.6	0.084	600	INSERT INTO saga_join_barrier (parent_id, parent_started_at, split_node_id, join_node_id, expected_count, arrived_count, created_at) VALUES 

@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+5874	1981.7	0.337	5874	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "failure_description", "started_at", "completed_at",
+4489	1486.9	0.331	4489	insert into "public"."saga_execution" ("id", "name", "version", "definition", "status", "started_at", "updated_at", "payload") values (cast(
+1454	1396.5	0.960	1454	WITH captured AS ( SELECT id, waiting_state FROM saga_execution WHERE id = $1 AND started_at >= $2 AND waiting_state IS NOT NULL FOR UPDATE 
+2992	1129.3	0.377	2992	update "public"."saga_execution" set "waiting_state" = cast($1 as jsonb), "status" = $2, "updated_at" = cast($3 as timestamp(6) with time zo
+7478	668.0	0.089	7478	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+4446	508.4	0.114	4446	WITH marked AS ( UPDATE saga_join_branch SET arrived_at = now() WHERE parent_id = $1 AND parent_started_at = $2 AND split_node_id = $3 AND c
+4488	437.2	0.097	4488	INSERT INTO saga_join_branch (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at) VALUES ($1, $2
+1496	396.4	0.265	1496	update "public"."saga_execution" set "status" = $1, "updated_at" = cast($2 as timestamp(6) with time zone) where ("public"."saga_execution".
+1454	306.8	0.211	4362	select "public"."saga_execution"."id", "public"."saga_execution"."status", "public"."saga_execution"."failure_description" from "public"."sa
+102	260.5	2.554	155474	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+2990	226.7	0.076	2990	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+1360	202.7	0.149	5440	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+1454	199.9	0.138	4362	SELECT DISTINCT ON (saga_id) saga_id, response_body FROM saga_step_result WHERE saga_id = ANY($1) AND started_at >= $2 ORDER BY saga_id, cre
+1456	152.3	0.105	2912	insert into "public"."saga_step_result" ("saga_id", "step_index", "step_name", "phase", "status_code", "success", "response_body", "step_sta
+12	150.5	12.539	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 

@@ -1,0 +1,16 @@
+calls	total_ms	mean_ms	rows	query
+4500	1263.0	0.281	4500	WITH upd AS ( UPDATE saga_execution SET checkpoint = $1::jsonb, checkpoint_seq = $2, checkpoint_carrier = $3, resume_at = $4, status = $5, w
+1500	397.1	0.265	1500	INSERT INTO saga_execution (id, name, version, definition, status, started_at, updated_at, payload, checkpoint, checkpoint_seq, checkpoint_c
+1500	247.3	0.165	1500	UPDATE saga_execution SET status = $1, failure_description = COALESCE($2, failure_description), completed_at = now(), updated_at = now(), ch
+1500	196.4	0.131	4500	insert into "public"."saga_step_call" ("saga_id", "step_name", "phase", "attempt", "request_url", "request_body", "status_code", "response_b
+1502	191.8	0.128	1502	SELECT status, checkpoint_seq, checkpoint_carrier, updated_at, checkpoint IS NULL AS legacy FROM saga_execution WHERE id = $1 AND started_at
+1500	181.6	0.121	0	select "public"."saga_step_result"."step_index", "public"."saga_step_result"."step_name", "public"."saga_step_result"."phase", "public"."sag
+6	123.4	20.562	0	do $$ declare start_month date := date_trunc('month', now())::date - interval '1 month'; end_month date := date_trunc('month', now())::date 
+36	64.9	1.802	54000	SELECT DISTINCT ON (id) id, status, started_at, completed_at FROM saga_execution WHERE id = ANY($1) ORDER BY id, started_at DESC
+18	21.6	1.198	673	UPDATE saga_execution se SET checkpoint_seq = se.checkpoint_seq + $4, checkpoint_carrier = se.checkpoint_seq + $5, resume_at = now(), update
+3	15.2	5.062	132	select c.relname, (regexp_match(pg_get_expr(c.relpartbound, c.oid), $1))[$2]::timestamptz as lo, (regexp_match(pg_get_expr(c.relpartbound, c
+1	10.1	10.105	0	create table if not exists saga_execution_202711 partition of saga_execution for values from ('2027-11-01T03:00:00Z') to ('2027-12-01T00:00:
+1	9.9	9.946	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_resume ON saga_execution (status, resume_at) WHERE status IN ('IN_PROGRESS', 'SLEEPING', 'WAIT
+1	8.4	8.421	0	CREATE INDEX IF NOT EXISTS idx_saga_step_call_saga_id_step_started_at ON saga_step_call (saga_id, started_at, step_started_at ASC)
+1	7.9	7.923	0	CREATE INDEX IF NOT EXISTS idx_saga_execution_name_started_at ON saga_execution (name, started_at DESC)
+1	7.5	7.467	0	CREATE EXTENSION IF NOT EXISTS pg_stat_statements

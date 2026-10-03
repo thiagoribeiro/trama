@@ -40,7 +40,7 @@ class SagaExecutionProcessorShutdownTest {
                 override suspend fun recordFailure(sagaName: String) = Unit
             },
             metrics = Metrics(SimpleMeterRegistry()),
-            bufferSize = 4,
+            claimCapacity = 4,
             emptyPollDelayMillis = 10,
         )
 
@@ -78,7 +78,7 @@ class SagaExecutionProcessorShutdownTest {
                 override suspend fun recordFailure(sagaName: String) = Unit
             },
             metrics = Metrics(SimpleMeterRegistry()),
-            bufferSize = 4,
+            claimCapacity = 4,
             emptyPollDelayMillis = 10,
         )
 
@@ -93,6 +93,75 @@ class SagaExecutionProcessorShutdownTest {
 
         assertEquals(0, consumer.ackCount.get())
         assertEquals(1, consumer.releaseCount.get())
+    }
+
+    /** Runs one claimed execution through a processor whose executor behaves as [execute]. */
+    private fun processOne(
+        execute: suspend () -> ExecutionOutcome,
+        failures: MutableList<String> = mutableListOf(),
+    ): TestConsumer = runBlocking {
+        val consumer = TestConsumer(sampleExecution())
+        val processor = SagaExecutionProcessor(
+            consumer = consumer,
+            executor = object : SagaExecutor {
+                override suspend fun execute(execution: SagaExecution): ExecutionOutcome {
+                    consumer.executionStarted.complete(Unit)
+                    return execute()
+                }
+            },
+            enqueuer = object : SagaEnqueuer {
+                override suspend fun enqueue(execution: SagaExecution, delayMillis: Long) = Unit
+            },
+            rateLimiter = object : SagaRateLimiter {
+                override suspend fun checkDelayMillis(sagaName: String): Long? = null
+                override suspend fun recordFailure(sagaName: String) { failures += sagaName }
+            },
+            metrics = Metrics(SimpleMeterRegistry()),
+            claimCapacity = 4,
+            emptyPollDelayMillis = 10,
+        )
+        val producerJob = launch { processor.runProducer() }
+        val workerJob = launch { processor.runWorker() }
+        consumer.executionStarted.await()
+        processor.stopPolling()
+        withTimeout(1_000) {
+            producerJob.join()
+            workerJob.join()
+        }
+        consumer
+    }
+
+    @Test
+    fun `a workflow that ends FAILED is acked and does not feed the rate limiter`() {
+        val failures = mutableListOf<String>()
+        val consumer = processOne({ ExecutionOutcome.FailedFinal }, failures)
+        assertEquals(1, consumer.ackCount.get())
+        assertEquals(emptyList(), failures, "business failures must not pause the workflow")
+    }
+
+    @Test
+    fun `a worker exception feeds the rate limiter`() {
+        val failures = mutableListOf<String>()
+        processOne({ error("db down") }, failures)
+        assertEquals(listOf("order"), failures)
+    }
+
+    @Test
+    fun `lost lease releases the claim without failing or acking it`() {
+        val failures = mutableListOf<String>()
+        val consumer = processOne({ throw LeaseLostException() }, failures)
+        assertEquals(0, consumer.ackCount.get(), "the item may already be another worker's")
+        assertEquals(1, consumer.releaseCount.get())
+        assertEquals(emptyList(), failures)
+    }
+
+    @Test
+    fun `stale checkpoint acks the duplicate copy without failing it`() {
+        val failures = mutableListOf<String>()
+        val consumer = processOne({ throw StaleCheckpointException(UUID.randomUUID()) }, failures)
+        assertEquals(1, consumer.ackCount.get())
+        assertEquals(0, consumer.releaseCount.get())
+        assertEquals(emptyList(), failures)
     }
 
     private fun sampleExecution(): SagaExecution =
@@ -128,6 +197,7 @@ class SagaExecutionProcessorShutdownTest {
         override suspend fun runProducer(
             buffer: kotlinx.coroutines.channels.SendChannel<ClaimedExecution>,
             emptyPollDelayMillis: Long,
+            permits: run.trama.saga.redis.ClaimPermits,
         ) {
             if (emitted.compareAndSet(false, true)) {
                 buffer.send(claim)

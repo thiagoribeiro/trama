@@ -1,0 +1,15 @@
+process	level	count	message
+trama-0	WARN	2	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379
+trama-0	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-0	WARN	4	claim poll failed; retrying
+trama-0	WARN	193	run accepted but not queued; the reconciler will deliver it
+trama-1	WARN	3	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379
+trama-1	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-1	WARN	16	claim poll failed; retrying
+trama-1	WARN	1	processing failed
+trama-1	WARN	2	reconciler re-sent stalled executions
+trama-2	WARN	3	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection refused (connect failed): /127.0.0.1:56379
+trama-2	WARN	1	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Consider htt
+trama-2	WARN	16	claim poll failed; retrying
+trama-2	WARN	1	processing failed
+trama-2	WARN	2	reconciler re-sent stalled executions

@@ -1,0 +1,9 @@
+count	level	message	root cause
+333	WARN	processing failed	io.lettuce.core.RedisNoScriptException: NOSCRIPT No matching script. Please use EVAL.
+156	WARN	processing failed	io.lettuce.core.RedisLoadingException: LOADING Redis is loading the dataset in memory
+49	ERROR	Unhandled exception while processing request	io.lettuce.core.RedisNoScriptException: NOSCRIPT No matching script. Please use EVAL.
+22	WARN	claim heartbeat failed	io.lettuce.core.RedisNoScriptException: NOSCRIPT No matching script. Please use EVAL.
+10	ERROR	Unhandled exception while processing request	io.lettuce.core.RedisLoadingException: LOADING Redis is loading the dataset in memory
+8	WARN	Cannot reconnect to [127.0.0.1/<unresolved>:56379]: Connection reset	java.net.SocketException: Connection reset
+6	ERROR	Unhandled exception while processing request	io.lettuce.core.RedisConnectionException: Unable to connect to 127.0.0.1/<unresolved>:56379
+3	WARN	Version mismatch         : Database version is older than what dialect SQLDialect.POSTGRES supports: 15.19. Co	

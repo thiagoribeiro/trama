@@ -252,11 +252,29 @@ X-Callback-Token: <token>
 
 ---
 
+## Delivery and durability
+
+- **At-least-once.** If a worker dies (or pauses past its claim lease) during an HTTP call, the
+  call is made again by the worker that takes over. Make downstream endpoints idempotent, for
+  example with a header like `Idempotency-Key: {{sagaId}}-<nodeId>`.
+- **Postgres is the source of truth.** Every node boundary records the execution's checkpoint in
+  Postgres, and every write is fenced: a worker holding an outdated copy cannot overwrite newer
+  progress or a final status.
+- **Redis holds the queue.** If Redis loses data, the reconciler re-sends executions that stopped
+  advancing, from their last checkpoint (after `reconciler.staleAfterMillis`, default 2 min). AOF
+  persistence (`appendfsync everysec`) keeps that delay short.
+- **API-only processes.** With `RUNTIME_ENABLED=false` a process serves the API (runs, callbacks,
+  queries) and leaves execution to worker processes.
+
+---
+
 ## Observability
 
 - Prometheus metrics at `/metrics`
 - OpenTelemetry tracing
 - Execution-level visibility
+- `/readyz` fails fast when Redis is unreachable or the consumer stalls. `/healthz` fails only
+  after `runtime.livenessStallMillis` (2 min) without consumer progress.
 
 ---
 

@@ -4,6 +4,81 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-02
+
+Fixes every gap found by the durability, recovery and load validation
+(`docs/validation-report.md`, harness in `loadtest/`). No API or definition-format changes.
+
+### Fixed
+- **Consumers stop for good after any Redis error** (outage, restart, timeout) while `/healthz` and
+  `/readyz` keep answering 200. Claim loops now log, back off (100 ms to 5 s) and keep going;
+  `/readyz` reports `consumer_stalled` and `/healthz` fails after `runtime.livenessStallMillis`
+  without progress.
+- **Every Lua script failed with `NOSCRIPT` after a Redis restart**, stopping claims, claim renewal
+  and join arrivals until Trama itself restarted. Scripts now fall back to `EVAL` once, which also
+  reloads them.
+- **Process-wide deadlock above 16 concurrent Redis operations.** The connection pool was borrowed
+  with a blocking call from coroutine threads. Trama now uses one multiplexed Lettuce connection,
+  with a command timeout (`redis.commandTimeoutMillis`, default 5 s) and commands rejected right
+  away while disconnected.
+- **A worker paused past its claim lease could overwrite a `SUCCEEDED` execution with `FAILED` and
+  compensate it.** Executions are now fenced (see *Changed*); a stale worker stops before its next call.
+- **Executions lost or stuck forever after Redis data loss.** Running executions and retry backoffs
+  vanished, and sleeping, callback-waiting and join-waiting ones never resumed. Postgres now holds
+  every execution's resume point, and a reconciler re-sends executions whose queue item disappeared.
+- **Executions stuck after worker crashes or Redis errors in narrow windows:**
+  - a split registered its branches but the worker died before enqueuing them;
+  - a parent was taken off its join barrier but the worker died before resuming it;
+  - a branch finished but its arrival on the join barrier was never recorded. The join backstop
+    scanner now also resumes parents whose branches all finished, and runs every 30 s (was 5 min).
+
+### Changed
+- **Postgres is the source of truth for execution state.** Each node boundary writes a checkpoint
+  (state, sequence number, step result) in one statement, as a compare-and-set on the sequence. A
+  copy of an execution that fell behind (a redelivered or paused worker) can no longer write.
+  Redis keeps the queue, claims and callback nonces; the execution meta, step history and join
+  counters it used to hold now go straight to Postgres. Liquibase changeset `009` (additive).
+- **Claimers only visit shards with due work**, tracked in a due index in Redis, plus a full sweep
+  every `runtime.fullSweepIntervalMillis` (5 s). Idle polling used to scan every owned shard every 50 ms.
+- **A process claims at most `workerCount + prefetch` executions** (`runtime.prefetch`, default
+  `workerCount`). It used to claim up to 200 beyond what its workers could run.
+- **The failure rate limiter only counts worker failures** (exceptions while processing). Executions
+  that end `FAILED` by their own logic no longer pause every execution of their workflow.
+- **`runtime.enabled=false` (API-only) accepts runs and callbacks** and queues them for worker
+  processes. It used to answer `503`.
+- **Redis outages no longer reject work that Postgres can hold:**
+  - runs, accepted callbacks and `/wake` calls succeed once Postgres has recorded them; the
+    reconciler queues them later if Redis cannot take them right away;
+  - callbacks skip the Redis nonce check, since Postgres already lets a callback resume an
+    execution only once;
+  - the failure rate limiter fails open.
+- **Join arrivals are counted in Postgres only.** The Redis fast path duplicated a Postgres write
+  that happened anyway, and could fail on its own.
+- `saga_inmemory_queue_size` now reports claimed executions waiting for a worker.
+
+### Added
+- `ExecutionReconciler` (`reconciler.*`: `enabled`, `intervalMillis` 30 s, `staleAfterMillis` 2 min,
+  `batchSize`). It re-sends running or sleeping executions that stopped advancing.
+- Metrics: `saga_redis_errors_total{operation}`, `saga_fenced_total{reason}`,
+  `saga_reconciled_total{status}`.
+- Environment overrides:
+  - `REDIS_COMMANDTIMEOUTMILLIS`;
+  - `RUNTIME_WORKERCOUNT`, `RUNTIME_PREFETCH`;
+  - `RECONCILER_ENABLED`, `RECONCILER_INTERVALMILLIS`, `RECONCILER_STALEAFTERMILLIS`;
+  - `RATELIMIT_ENABLED`.
+- `loadtest/`: the validation harness (fault injection with Toxiproxy, effect-counting mock,
+  outcome checker) and its scenarios.
+
+### Deprecated
+- `redis.pool.*` and `runtime.bufferSize` are accepted but ignored.
+
+### Upgrade notes
+- Rolling upgrade from 2.0.x is supported. An execution started by 2.0.x has its step history
+  imported from Redis into Postgres the first time 2.1.0 runs it.
+- Redis persistence is no longer needed to avoid losing executions. Without it, a Redis loss delays
+  affected executions until the reconciler re-sends them (about `staleAfterMillis`). AOF `everysec`
+  still keeps that delay short.
+
 ## [2.0.1] - 2026-10-01
 
 ### Fixed
@@ -109,6 +184,7 @@ All notable changes to Trama are documented here. The format follows
 First public release: v2 workflow node graph with async calls and callbacks, the visual definition
 editor, and the sleep node. See the [release notes](https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0).
 
+[2.1.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.1.0
 [2.0.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.1
 [2.0.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.0.0
 [1.0.0]: https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0

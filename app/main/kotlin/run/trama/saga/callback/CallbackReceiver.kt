@@ -8,6 +8,8 @@ import run.trama.saga.RetryState
 import run.trama.saga.SagaEnqueuer
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
+import run.trama.saga.StaleCheckpointException
+import run.trama.saga.StepRecord
 import run.trama.saga.workflow.DefinitionNormalizer
 import run.trama.saga.workflow.JsonLogicEvaluator
 import run.trama.saga.workflow.TaskNode
@@ -179,17 +181,7 @@ class CallbackReceiver(
         node: TaskNode,
         rawBody: String,
     ): CallbackResult {
-        store.insertStepResult(
-            sagaId = execution.id,
-            startedAt = execution.startedAt,
-            stepIdx = state.completedNodes.size,
-            stepName = node.id,
-            phase = ExecutionPhase.CALLBACK,
-            statusCode = null,
-            success = true,
-            responseBody = rawBody.takeIf { it.isNotBlank() },
-            stepStartedAt = Instant.now(),
-        )
+        val step = callbackStep(state, node, rawBody, success = true)
         val completedNodes = state.completedNodes + node.id
         val compensationStack = if (node.compensation != null) {
             listOf(node.id) + state.compensationStack
@@ -203,21 +195,19 @@ class CallbackReceiver(
             // onSuccessCallback, notifies the parent's join barrier (for split branches) and records
             // metrics. Finalizing here with a bare updateFinal skipped all of that, and running the
             // hook inline would block the caller's callback request on a third-party HTTP call.
-            enqueuer.enqueue(execution.copy(state = ExecutionState.Succeeded(completedAt = Instant.now())), 0)
+            if (!resume(execution, ExecutionState.Succeeded(completedAt = Instant.now()), step, 0)) return tooLate()
             logger.info(
                 "saga succeeded via async callback",
                 kv("executionId", execution.id.toString()),
                 kv("nodeId", node.id),
             )
         } else {
-            val updated = execution.copy(
-                state = ExecutionState.InProgress(
-                    activeNodeId = nextNodeId,
-                    completedNodes = completedNodes,
-                    compensationStack = compensationStack,
-                ),
+            val next = ExecutionState.InProgress(
+                activeNodeId = nextNodeId,
+                completedNodes = completedNodes,
+                compensationStack = compensationStack,
             )
-            enqueuer.enqueue(updated, 0)
+            if (!resume(execution, next, step, 0)) return tooLate()
             logger.info(
                 "execution resumed after async callback",
                 kv("executionId", execution.id.toString()),
@@ -235,29 +225,17 @@ class CallbackReceiver(
         node: TaskNode,
         rawBody: String,
     ): CallbackResult {
-        store.insertStepResult(
-            sagaId = execution.id,
-            startedAt = execution.startedAt,
-            stepIdx = state.completedNodes.size,
-            stepName = node.id,
-            phase = ExecutionPhase.CALLBACK,
-            statusCode = null,
-            success = false,
-            responseBody = rawBody.takeIf { it.isNotBlank() },
-            stepStartedAt = Instant.now(),
-        )
+        val step = callbackStep(state, node, rawBody, success = false)
         val reason = FailureReason("callback failure condition matched for node ${node.id}")
         val retryDecision = retryPolicy.next(RetryState.Applying(state.attempt, 0), workflow.failureHandling)
         if (retryDecision.shouldRetry) {
-            val updated = execution.copy(
-                state = ExecutionState.InProgress(
-                    activeNodeId = node.id,
-                    completedNodes = state.completedNodes,
-                    compensationStack = state.compensationStack,
-                    retry = RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis),
-                ),
+            val next = ExecutionState.InProgress(
+                activeNodeId = node.id,
+                completedNodes = state.completedNodes,
+                compensationStack = state.compensationStack,
+                retry = RetryState.Applying(retryDecision.attempt, retryDecision.delayMillis),
             )
-            enqueuer.enqueue(updated, retryDecision.delayMillis)
+            if (!resume(execution, next, step, retryDecision.delayMillis)) return tooLate()
             logger.info(
                 "async callback failure — retry scheduled",
                 kv("executionId", execution.id.toString()),
@@ -265,16 +243,14 @@ class CallbackReceiver(
                 kv("attempt", retryDecision.attempt),
             )
         } else {
+            val next = ExecutionState.Compensating(
+                compensationStack = state.compensationStack,
+                completedNodes = state.completedNodes,
+                failureReason = reason,
+            )
+            if (!resume(execution, next, step, 0)) return tooLate()
             // Only record failure when we're actually giving up and compensating
             store.updateFailure(execution.id, reason.message, null, null)
-            val updated = execution.copy(
-                state = ExecutionState.Compensating(
-                    compensationStack = state.compensationStack,
-                    completedNodes = state.completedNodes,
-                    failureReason = reason,
-                ),
-            )
-            enqueuer.enqueue(updated, 0)
             logger.info(
                 "async callback failure — compensation scheduled",
                 kv("executionId", execution.id.toString()),
@@ -282,6 +258,46 @@ class CallbackReceiver(
             )
         }
         return CallbackResult.Accepted  // HTTP 202 — we accepted the callback, even if it triggered failure
+    }
+
+    private fun callbackStep(state: ExecutionState.WaitingCallback, node: TaskNode, rawBody: String, success: Boolean) =
+        StepRecord(
+            stepIdx = state.completedNodes.size,
+            stepName = node.id,
+            phase = ExecutionPhase.CALLBACK,
+            statusCode = null,
+            success = success,
+            responseBody = rawBody.takeIf { it.isNotBlank() },
+            stepStartedAt = Instant.now(),
+        )
+
+    /**
+     * Makes [state] the execution's checkpoint, then enqueues it. Returns false when the
+     * checkpoint was already advanced by someone else: the callback timeout fired first.
+     */
+    private suspend fun resume(execution: SagaExecution, state: ExecutionState, step: StepRecord, delayMillis: Long): Boolean {
+        val next = execution.copy(state = state, checkpointSeq = execution.checkpointSeq + 1)
+        try {
+            store.checkpoint(next, next.checkpointSeq, Instant.now().plusMillis(delayMillis), step)
+        } catch (_: StaleCheckpointException) {
+            return false
+        }
+        // The checkpoint above is durable: if Redis cannot take the queue item right now, the
+        // reconciler delivers it later. Failing here would only make the sender retry a callback
+        // that has already been applied.
+        try {
+            enqueuer.enqueue(next, delayMillis)
+        } catch (ex: kotlinx.coroutines.CancellationException) {
+            throw ex
+        } catch (ex: Exception) {
+            logger.warn("callback applied but not queued; the reconciler will deliver it", kv("executionId", execution.id.toString()), ex)
+        }
+        return true
+    }
+
+    private fun tooLate(): CallbackResult {
+        metrics.recordCallbackRejected("unknown", "unknown", "no_waiting_entry")
+        return CallbackResult.Rejected(410, "callback expired or already processed")
     }
 
     private fun buildEvalContext(execution: SagaExecution, bodyJson: JsonElement?): Map<String, Any?> {

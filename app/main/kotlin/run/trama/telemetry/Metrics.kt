@@ -115,6 +115,24 @@ class Metrics(
         counter("saga.redis.claim_scans").increment()
     }
 
+    /** A Redis call failed in a background loop that then backed off and retried. */
+    fun recordRedisError(operation: String) {
+        counter("saga.redis.errors", "operation", operation).increment()
+    }
+
+    /**
+     * Work dropped because this worker no longer owned it: its claim lease ran out (a long pause)
+     * or another worker had already advanced the execution's checkpoint. reason = lease_lost | stale_checkpoint.
+     */
+    fun recordFenced(reason: String) {
+        counter("saga.fenced", "reason", reason).increment()
+    }
+
+    /** Executions re-enqueued from their Postgres checkpoint by the reconciler, by persisted status. */
+    fun recordReconciled(status: String, count: Int) {
+        counter("saga.reconciled", "status", status).increment(count.toDouble())
+    }
+
     fun recordSagaDuration(
         sagaName: String,
         sagaVersion: String,
