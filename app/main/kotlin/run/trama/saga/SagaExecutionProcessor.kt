@@ -99,8 +99,8 @@ class SagaExecutionProcessor(
                         "saga.name" to execution.definition.name,
                     )
                 ) { span ->
-                    Tracing.withTraceMdc(span, execution.id.toString()) {
-                        logger.info(
+                    if (logger.isDebugEnabled) Tracing.withTraceMdc(span, execution.id.toString()) {
+                        logger.debug(
                             "processing saga",
                             kv("sagaName", execution.definition.name),
                         )

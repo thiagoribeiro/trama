@@ -1,7 +1,7 @@
 package run.trama.loadtest
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -139,9 +139,16 @@ fun runDriver(opts: Opts) = runBlocking {
     out.parentFile.mkdirs()
     if (!out.exists()) out.writeText("runKey,sagaId,def,fail,submitMs,http,error\n")
 
-    val client = HttpClient(CIO) {
+    // Pooled keep-alive connections: CIO opens one per request, which would charge Trama's API a
+    // TCP accept per submitted run and skew throughput measurements.
+    val client = HttpClient(OkHttp) {
         install(HttpTimeout) { requestTimeoutMillis = 30_000 }
-        engine { maxConnectionsCount = concurrency * 2 }
+        engine {
+            config {
+                dispatcher(okhttp3.Dispatcher().apply { maxRequests = concurrency * 2; maxRequestsPerHost = concurrency * 2 })
+                connectionPool(okhttp3.ConnectionPool(concurrency * 2, 1, java.util.concurrent.TimeUnit.MINUTES))
+            }
+        }
     }
     val records = Collections.synchronizedList(mutableListOf<RunRecord>())
     val gate = Semaphore(concurrency)

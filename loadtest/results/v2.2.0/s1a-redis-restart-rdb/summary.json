@@ -1,0 +1,30 @@
+{
+    "runs": 1500,
+    "submitFailed": 0,
+    "status": {
+        "FAILED": 76,
+        "SUCCEEDED": 1424
+    },
+    "statusByDef": {
+        "mixed": {
+            "FAILED": 76,
+            "SUCCEEDED": 1424
+        }
+    },
+    "stuck": 0,
+    "lost": 0,
+    "wrongOutcome": 0,
+    "childExecutions": 4500,
+    "childrenNotTerminal": 0,
+    "extraExternalCalls": 0,
+    "runsWithDuplicateCalls": 0,
+    "missingEffectsOnCorrectOutcome": 0,
+    "duplicateStepRows": 0,
+    "throughputPerSec": 10.4,
+    "latencyMs": {
+        "p50": 9154,
+        "p95": 14501,
+        "p99": 130258,
+        "max": 136858
+    }
+}

@@ -91,8 +91,8 @@ class WorkflowExecutor(
                 "saga.version" to execution.definition.version,
             ),
         ) { span ->
-            Tracing.withTraceMdc(span, execution.id.toString()) {
-                logger.info(
+            if (logger.isDebugEnabled) Tracing.withTraceMdc(span, execution.id.toString()) {
+                logger.debug(
                     "saga execution started",
                     kv("sagaName", execution.definition.name),
                     kv("sagaVersion", execution.definition.version),
@@ -211,8 +211,9 @@ class WorkflowExecutor(
         val pendingCalls = mutableListOf<StepCallEntry>()
         var processed = 0
         // Load once per execution slice; updated in-memory as each node completes so
-        // subsequent nodes can reference prior results via {{nodes.X.response.body}}.
-        val stepResults = store.loadStepResults(execution.id).toMutableList()
+        // subsequent nodes can reference prior results via {{nodes.X.response.body}}. Nothing to
+        // load before the first node has completed (most executions run in a single slice).
+        val stepResults = (if (initialCompleted.isEmpty()) emptyList() else store.loadStepResults(execution.id)).toMutableList()
 
         while (true) {
             val node = workflow.nodes[activeNodeId]
@@ -914,6 +915,15 @@ class WorkflowExecutor(
     ) {
         ensureLease()
         store.finalize(execution, status, failureDescription)
+        // The one INFO line per execution (per-node detail is at DEBUG).
+        Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+            logger.info(
+                "saga finished",
+                kv("sagaName", execution.definition.name),
+                kv("status", status),
+                kv("durationMs", java.time.Duration.between(execution.startedAt, Instant.now()).toMillis()),
+            )
+        }
 
         val parentId = execution.parentExecutionId ?: return
         val parentStartedAt = execution.parentStartedAt ?: return

@@ -1,0 +1,4 @@
+process	level	count	message
+trama-1	WARN	16	claim lease lost; dropping work
+trama-1	WARN	8	node failed
+trama-1	WARN	1	saga-db-pool - Thread starvation or clock leap detected (housekeeper delta=50s976ms601µs615ns).

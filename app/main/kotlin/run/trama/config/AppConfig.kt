@@ -102,7 +102,12 @@ data class RuntimeConfig(
      * serves the API: it still accepts runs and callbacks and enqueues them for worker processes.
      */
     val enabled: Boolean = true,
-    val workerCount: Int = 4,
+    /**
+     * Executions a process runs at once. Workers are coroutines that mostly wait on HTTP calls,
+     * so this is a concurrency limit, not a thread count; it also bounds the concurrent calls a
+     * process makes to downstream services.
+     */
+    val workerCount: Int = 32,
     /**
      * Executions claimed ahead of a free worker. A process holds at most workerCount + prefetch
      * claimed executions; null means workerCount.

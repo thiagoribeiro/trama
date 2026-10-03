@@ -1,0 +1,15 @@
+# Commandstats
+cmdstat_eval:calls=17,usec=636,usec_per_call=37.41,rejected_calls=0,failed_calls=0
+cmdstat_client|setinfo:calls=10,usec=17,usec_per_call=1.70,rejected_calls=0,failed_calls=0
+cmdstat_info:calls=3,usec=852,usec_per_call=284.00,rejected_calls=0,failed_calls=0
+cmdstat_zrange:calls=15932,usec=11301,usec_per_call=0.71,rejected_calls=0,failed_calls=0
+cmdstat_zcard:calls=6144,usec=4837,usec_per_call=0.79,rejected_calls=0,failed_calls=0
+cmdstat_ping:calls=4,usec=5,usec_per_call=1.25,rejected_calls=0,failed_calls=0
+cmdstat_zrem:calls=6101,usec=73280,usec_per_call=12.01,rejected_calls=0,failed_calls=0
+cmdstat_zadd:calls=10092,usec=79786,usec_per_call=7.91,rejected_calls=0,failed_calls=0
+cmdstat_zrangebyscore:calls=19027,usec=78419,usec_per_call=4.12,rejected_calls=0,failed_calls=0
+cmdstat_zremrangebyscore:calls=101,usec=878,usec_per_call=8.69,rejected_calls=0,failed_calls=0
+cmdstat_get:calls=3000,usec=14867,usec_per_call=4.96,rejected_calls=0,failed_calls=0
+cmdstat_evalsha:calls=14128,usec=780007,usec_per_call=55.21,rejected_calls=0,failed_calls=17
+cmdstat_hello:calls=5,usec=51,usec_per_call=10.20,rejected_calls=0,failed_calls=0
+cmdstat_zscore:calls=8921,usec=30659,usec_per_call=3.44,rejected_calls=0,failed_calls=0

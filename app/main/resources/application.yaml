@@ -29,7 +29,7 @@ database:
 
 runtime:
   enabled: true
-  workerCount: 4
+  workerCount: 32
   emptyPollDelayMillis: 50
   fullSweepIntervalMillis: 5000
   livenessStallMillis: 120000

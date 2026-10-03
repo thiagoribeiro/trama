@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "run.trama"
-version = "2.1.0"
+version = "2.2.0"
 
 repositories {
     mavenCentral()
@@ -39,6 +39,7 @@ dependencies {
     implementation("io.ktor:ktor-server-metrics-micrometer:$ktorVersion")
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
+    implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
     implementation("io.lettuce:lettuce-core:6.8.2.RELEASE")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.11.0")
     implementation("com.ensarsarajcic.kotlinx:serialization-msgpack:$msgpackVersion")
