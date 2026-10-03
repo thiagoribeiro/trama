@@ -43,12 +43,13 @@ Define your workflow as JSON. Trama handles execution, retries, async callbacks,
 
 ## Example
 
-A payment flow with async authorization and sync capture:
+A payment flow: an async authorization, voided if anything later fails, then a sync capture.
 
 ```json
 {
   "name": "payment-flow",
   "version": "v1",
+  "failureHandling": { "type": "retry", "maxAttempts": 3, "delayMillis": 1000 },
   "entrypoint": "authorize",
   "nodes": [
     {
@@ -59,6 +60,7 @@ A payment flow with async authorization and sync capture:
         "request": {
           "url": "http://payments/authorize",
           "verb": "POST",
+          "headers": { "Idempotency-Key": "{{sagaId}}-authorize" },
           "body": {
             "orderId": "{{payload.orderId}}",
             "callbackUrl": "{{runtime.callback.url}}",
@@ -66,9 +68,11 @@ A payment flow with async authorization and sync capture:
           }
         },
         "acceptedStatusCodes": [202],
-        "callback": {
-          "timeoutMillis": 30000
-        }
+        "callback": { "timeoutMillis": 30000 }
+      },
+      "compensation": {
+        "url": "http://payments/authorizations/{{payload.orderId}}",
+        "verb": "DELETE"
       },
       "next": "capture"
     },
@@ -79,7 +83,9 @@ A payment flow with async authorization and sync capture:
         "mode": "sync",
         "request": {
           "url": "http://payments/capture",
-          "verb": "POST"
+          "verb": "POST",
+          "headers": { "Idempotency-Key": "{{sagaId}}-capture" },
+          "body": { "orderId": "{{payload.orderId}}" }
         }
       }
     }
@@ -89,7 +95,31 @@ A payment flow with async authorization and sync capture:
 
 👉 No polling. No cron. No hidden state machines.
 
-Templates are [Mustache](https://mustache.github.io/). `{{ }}` escapes the value for where it lands: inside JSON string literals for JSON bodies (by `Content-Type`, or a body starting with `{`/`[` when none is set), XML entities for XML/HTML bodies, form encoding for `application/x-www-form-urlencoded`, and the literal value in URLs, headers (line breaks removed) and other bodies. `{{{ }}}` always inserts the raw value.
+- **Retries:** if `capture` fails, it is retried up to 3 times.
+- **Compensation:** if it still fails, Trama runs the compensations of the nodes that completed
+  (here it voids the authorization), and the execution ends `FAILED`.
+- **Async callback:** the authorization service answers `202` and calls back later. If no
+  callback arrives within 30 s, the node fails.
+
+### Templates
+
+Requests are [Mustache](https://mustache.github.io/) templates. Available values:
+
+| Value | Meaning |
+|---|---|
+| `{{payload.x}}` (or `{{input.x}}`) | The run's payload |
+| `{{nodes.<id>.response.body.x}}` | The response body of a completed node |
+| `{{prev.body.x}}` | The previous node's response body |
+| `{{sagaId}}`, `{{sagaName}}`, `{{sagaVersion}}` | The execution |
+| `{{runtime.callback.url}}`, `{{runtime.callback.token}}` | Async nodes only: where and how to call back |
+
+`{{ }}` escapes the value for where it lands:
+- inside JSON string literals for JSON bodies (by `Content-Type`, or a body starting with `{`/`[` when none is set);
+- XML entities for XML/HTML bodies;
+- form encoding for `application/x-www-form-urlencoded`;
+- the literal value in URLs, headers (line breaks removed) and other bodies.
+
+`{{{ }}}` always inserts the raw value.
 
 ---
 
@@ -133,7 +163,11 @@ Trama focuses on a different tradeoff:
 docker compose up --build
 ```
 
-API: http://localhost:8080
+- API: http://localhost:9080 (`/readyz` answers `ready` once it can take work)
+- Management UI: http://localhost:9000
+- Postgres on `:5432`, Redis on `:6379`
+
+`scripts/` has runnable demos: mock downstream services plus scripts that drive workflows against them.
 
 ---
 
@@ -150,16 +184,19 @@ Avoid it if:
 
 ## Core capabilities
 
-- JSON-defined workflows (v1 linear, v2 node graph)
-- branching with JSON Logic (`switch` nodes)
-- async HTTP tasks with callback resumption
-- time-based pauses (`sleep` nodes) with early-wake via API
-- retries and compensation strategies
-- Redis-backed execution queue
-- Postgres persistence
-- OpenTelemetry tracing
-- Prometheus metrics
-- visual management UI
+- JSON-defined workflows: v1 linear steps, or a v2 node graph
+- **Branching:** `switch` nodes with JSON Logic
+- **Parallel branches:** `split` / `join`
+- **Async HTTP tasks** resumed by a signed callback, with a deadline
+- **Pauses:** `sleep` nodes, with early wake via the API
+- **Failures:** retries (fixed or exponential backoff) and compensation
+- **Hooks:** `onSuccessCallback` / `onFailureCallback`
+- **Durability:** every execution is checkpointed in Postgres at each node, and recovered after
+  crashes or Redis data loss
+- **Horizontal scaling:** workers share a sharded Redis queue, with no coordinator
+- **Offline validator and dry-run** (`trama-validate`)
+- **Operations:** Prometheus metrics, OpenTelemetry tracing, Grafana dashboard
+- **Visual management UI**
 
 ---
 
@@ -188,12 +225,21 @@ The UI is served by a lightweight Python BFF (`ui/bff/`) and available at `http:
 ```mermaid
 flowchart LR
   C[Client] --> A[API]
-  A --> Q[Queue]
-  Q --> P[Processor]
-  P --> E[Executor]
-  E --> S[Services]
-  E --> ST[State Store]
+  A -- admit --> PG[(Postgres)]
+  A -- enqueue --> Q[(Redis queue)]
+  Q --> W[Workers]
+  W --> S[Your services]
+  W -- checkpoint per node --> PG
+  R[Reconciler] -- re-send stalled --> Q
+  PG -.-> R
 ```
+
+- **Postgres is the source of truth.** It holds definitions, each execution's state and resume
+  point, step history and join barriers.
+- **Redis carries the work queue.** It is split into virtual shards that pods divide among
+  themselves by rendezvous hashing.
+- **Workers are the same binary.** Run as many as you need; a pod can also serve only the API
+  (`RUNTIME_ENABLED=false`).
 
 ---
 
@@ -202,53 +248,96 @@ flowchart LR
 ### Run a workflow
 
 ```bash
-curl -X POST http://localhost:8080/workflows/run \
+curl -X POST http://localhost:9080/workflows/run \
   -H 'Content-Type: application/json' \
   -d '{
     "definition": { ... },
-    "payload": { ... }
+    "payload": { "orderId": "ord-1" }
   }'
+# → {"id": "<execution-id>"}
+```
+
+Or store the definition once and run it by name. Running stored definitions works for the v1
+format only for now.
+
+```bash
+curl -X POST http://localhost:9080/workflows/definitions -H 'Content-Type: application/json' -d @definition.json
+curl -X POST http://localhost:9080/workflows/definitions/payment-flow/v1/run -H 'Content-Type: application/json' -d '{"payload": {...}}'
 ```
 
 ### Check status
 
 ```bash
-curl http://localhost:8080/workflows/<execution-id>
+curl http://localhost:9080/workflows/<execution-id>          # status, failure, timestamps
+curl http://localhost:9080/workflows/<execution-id>/steps    # every node result
 ```
+
+### API
+
+| Endpoint | |
+|---|---|
+| `POST /workflows/run` | Run an inline definition |
+| `GET /workflows?status=&name=` | List executions |
+| `GET /workflows/{id}` | Status |
+| `GET /workflows/{id}/steps`, `/steps/calls` | Step results and the HTTP calls behind them |
+| `POST /workflows/{id}/retry` | Re-run a `FAILED` execution (v1 definitions) |
+| `POST /workflows/{id}/wake` | Wake a sleeping execution now |
+| `POST /workflows/{id}/node/{nodeId}/callback` | Async callback (`X-Callback-Token` header) |
+| `/workflows/definitions` | Create, list, get, update and delete stored definitions; run by name/version |
+| `GET /healthz`, `/readyz`, `/metrics` | Probes and Prometheus metrics |
+
+Full contract: [`openapi.json`](openapi.json).
 
 ---
 
 ## Definition formats
 
-Trama supports two formats:
+Trama supports two formats.
 
-### Linear steps
-Simple sequential workflows with compensation.
+### Linear steps (v1)
 
-### Node graph
-Supports:
+A list of `steps`, each with an `up` call and an optional `down` compensation, run in order.
 
-- branching (`switch`)
-- async tasks
-- time-based pauses (`sleep`)
-- DAG-style execution
+### Node graph (v2)
+
+`entrypoint` plus `nodes`, each with a `kind`:
+
+| Kind | What it does |
+|---|---|
+| `task` | An HTTP call: `sync`, or `async` (waits for a callback). Optional `compensation`. |
+| `switch` | Picks the next node with JSON Logic `cases` and a `default` |
+| `sleep` | Pauses for `durationMillis` |
+| `split` | Runs `branches` in parallel, each as its own execution |
+| `join` | Continues once every branch of its `split` has finished |
+
+Both formats require `failureHandling`:
+- `{"type": "retry", "maxAttempts": 3, "delayMillis": 1000}`; or
+- `{"type": "backoff", "maxAttempts": 5, "initialDelayMillis": 500, "maxDelayMillis": 30000}`.
+
+Validate a definition offline with [`trama-validate`](#cli-tools) before deploying it.
 
 ---
 
 ## Async callbacks
 
-Async tasks pause execution and resume via callback.
-
-Trama injects:
-
-- `callbackUrl`
-- `callbackToken` (HMAC signed)
-
-The external service must call back using:
+An `async` task sends its request, expects one of `acceptedStatusCodes` (e.g. `202`), and parks
+the execution. The request should pass `{{runtime.callback.url}}` and
+`{{runtime.callback.token}}` to the service, which later calls back:
 
 ```
-X-Callback-Token: <token>
+POST <callback url>                   # /workflows/{executionId}/node/{nodeId}/callback
+X-Callback-Token: <token>             # HMAC-signed, single use
+Content-Type: application/json
+
+{ ...any body... }
 ```
+
+- **Outcome.** The callback succeeds unless `callback.failureWhen` matches; `callback.successWhen`
+  can require a condition instead. Both are JSON Logic over `callback.body` and `payload`.
+- **Timeout.** No callback before `callback.timeoutMillis` fails the node, which is then retried
+  or compensated.
+- **Configuration.** Callbacks need `RUNTIME_CALLBACK_BASEURL` (the public URL of the API) and
+  `RUNTIME_CALLBACK_HMACSECRET`.
 
 ---
 
@@ -268,21 +357,54 @@ X-Callback-Token: <token>
 
 ---
 
+## Configuration
+
+Defaults live in [`app/main/resources/application.yaml`](app/main/resources/application.yaml); the most common ones can be set through the environment:
+
+| Variable | Default | |
+|---|---|---|
+| `PORT` | `8080` | HTTP port |
+| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_DATABASE`, `DATABASE_USER`, `DATABASE_PASSWORD` | | Postgres (migrated on startup) |
+| `REDIS_URL`, `REDIS_TOPOLOGY`, `REDIS_CLUSTER_NODES` | `redis://localhost:6379`, `STANDALONE` | Redis, standalone or cluster |
+| `RUNTIME_ENABLED` | `true` | `false` = API-only pod |
+| `RUNTIME_WORKERCOUNT` | `32` | Executions a pod runs at once, which also bounds its concurrent downstream calls |
+| `RUNTIME_CALLBACK_BASEURL`, `RUNTIME_CALLBACK_HMACSECRET` | | Required for async tasks |
+| `RECONCILER_STALEAFTERMILLIS` | `120000` | How long before a stalled execution is re-sent |
+| `RATELIMIT_ENABLED` | `true` | Per-workflow breaker on worker failures |
+| `METRICS_ENABLED`, `TELEMETRY_ENABLED` | `true`, `false` | Prometheus, OpenTelemetry |
+
+---
+
 ## Observability
 
-- Prometheus metrics at `/metrics`
-- OpenTelemetry tracing
-- Execution-level visibility
-- `/readyz` fails fast when Redis is unreachable or the consumer stalls. `/healthz` fails only
-  after `runtime.livenessStallMillis` (2 min) without consumer progress.
+- **Prometheus metrics** at `/metrics`, with a ready-made Grafana dashboard in
+  [`grafana/`](grafana/). Series cover:
+  - throughput: `saga_processed_total`, `saga_failed_total`, `saga_retried_total`;
+  - durations: `saga_duration_seconds`, `saga_node_duration_seconds`;
+  - callbacks: `saga_callback_*`;
+  - recovery: `saga_reconciled_total`, `saga_fenced_total`, `saga_redis_errors_total`.
+- **OpenTelemetry tracing** (OTLP), one span per execution and per HTTP call.
+- **Structured JSON logs.** INFO has one line per execution (`saga finished`, with status and
+  duration); per-node detail is at DEBUG.
+- **Health probes:**
+  - `/readyz` fails fast when Redis is unreachable or the consumer stalls;
+  - `/healthz` fails only after `runtime.livenessStallMillis` (2 min) without consumer progress.
 
 ---
 
 ## Development
 
 ```bash
-./gradlew run
+./gradlew run                       # needs Postgres and Redis (see docker-compose.yml)
+./gradlew test                      # needs Docker or Podman for Testcontainers
+cd ui/management-ui && npm install && npm run dev
 ```
+
+With Podman, point Testcontainers at its socket, e.g.
+`DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock ./gradlew test`.
+
+[`loadtest/`](loadtest/README.md) holds the fault-injection and load harness. Results of each
+release's validation are in [`docs/validation-report.md`](docs/validation-report.md).
 
 ---
 
