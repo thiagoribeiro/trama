@@ -103,7 +103,9 @@ A payment flow: an async authorization, voided if anything later fails, then a s
 
 ### Templates
 
-Requests are [Mustache](https://mustache.github.io/) templates. Available values:
+JSON request bodies use typed substitution. URLs, headers and non-JSON bodies use
+[Mustache](https://mustache.github.io/) templates with destination-specific escaping.
+Available values:
 
 | Value | Meaning |
 |---|---|
@@ -113,13 +115,21 @@ Requests are [Mustache](https://mustache.github.io/) templates. Available values
 | `{{sagaId}}`, `{{sagaName}}`, `{{sagaVersion}}` | The execution |
 | `{{runtime.callback.url}}`, `{{runtime.callback.token}}` | Async nodes only: where and how to call back |
 
-`{{ }}` escapes the value for where it lands:
-- inside JSON string literals for JSON bodies (by `Content-Type`, or a body starting with `{`/`[` when none is set);
+In JSON bodies, an entire `"{{path}}"` value preserves the referenced JSON type,
+including numbers, booleans, null, arrays and objects. References within text accept
+scalars only. Missing keys, out-of-range indexes and traversal through null fail
+before task HTTP dispatch, with the node, JSON field and reference in the diagnostic.
+JSON rendering has no mode header or legacy path. Declare a JSON `Content-Type`;
+when no content type is set, bodies starting with `{` or `[` are also treated as JSON.
+
+In text destinations, `{{ }}` escapes the value for where it lands:
 - XML entities for XML/HTML bodies;
 - form encoding for `application/x-www-form-urlencoded`;
 - the literal value in URLs, headers (line breaks removed) and other bodies.
 
-`{{{ }}}` always inserts the raw value.
+`{{{ }}}` inserts raw values in text destinations only. JSON bodies reject triple
+braces, sections and lambdas. See [typed JSON transport](docs/typed-json-transport.md)
+for examples and migration requirements.
 
 ---
 

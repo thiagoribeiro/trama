@@ -2,6 +2,7 @@ package run.trama.cli
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
 import run.trama.saga.FailureHandling
 import run.trama.saga.HttpCall
 import run.trama.saga.HttpVerb
@@ -12,9 +13,39 @@ import run.trama.saga.TaskMode
 import run.trama.saga.TemplateString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DryRunSimulatorTest {
+
+    private fun jsonDefinition(body: String) = SagaDefinitionV2(
+        name = "typed-json",
+        version = "1",
+        failureHandling = FailureHandling.Retry(1, 0),
+        entrypoint = "a",
+        nodes = listOf(NodeDefinition.Task("a", NodeActionDef(TaskMode.SYNC,
+            HttpCall(TemplateString("http://a"), HttpVerb.POST, body = TemplateString(body))))),
+    )
+
+    @Test
+    fun `dry run preserves typed JSON request values without a mode header`() {
+        val scenario = DryRunScenario(payload = Json.parseToJsonElement("""{"count":3,"state":{"samples":[1,2]}}""") as JsonObject)
+        val result = DryRunSimulator().run(
+            jsonDefinition("""{"count":"{{payload.count}}","state":"{{payload.state}}"}"""), scenario,
+        )
+        assertEquals(SimOutcome.SUCCEEDED, result.outcome)
+        val task = result.entries.filterIsInstance<TraceEntry.Task>().single()
+        assertEquals(scenario.payload, Json.parseToJsonElement(task.renderedBody!!))
+    }
+
+    @Test
+    fun `dry run rejects missing JSON references instead of simulating a null value`() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            DryRunSimulator().run(jsonDefinition("""{"value":"{{payload.missing}}"}"""), DryRunScenario())
+        }
+        assertTrue(failure.message!!.contains("$.value"))
+        assertTrue(failure.message!!.contains("payload.missing"))
+    }
 
     private fun httpCall(url: String) = HttpCall(TemplateString(url), HttpVerb.POST)
 

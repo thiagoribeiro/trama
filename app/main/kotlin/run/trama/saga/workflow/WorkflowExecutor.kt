@@ -1089,12 +1089,13 @@ class WorkflowExecutor(
         call: HttpCall,
         context: Map<String, Any?>,
     ): RawCallResult {
-        val url = renderer.render(call.url, context, TemplateEscaping.NONE)
         return try {
+            val url = renderer.render(call.url, context, TemplateEscaping.NONE)
+            val renderedBody = renderer.renderBody(call, context)
             val response = httpClient.client.request(url) {
                 method = call.verb.toKtorMethod()
                 call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
-                renderer.renderBody(call, context)?.let { setBody(it) }
+                renderedBody?.let { setBody(it) }
             }
             RawCallResult(
                 success = response.status.value in call.successStatusCodes,

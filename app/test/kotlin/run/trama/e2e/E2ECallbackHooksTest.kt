@@ -2,6 +2,8 @@ package run.trama.e2e
 
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
@@ -37,10 +39,15 @@ class E2ECallbackHooksTest {
         val def = v2DefinitionMap(
             uniqueName("hook-ok"),
             listOf(taskNodeMap("a", svc("/step/a"))),
-            onSuccess = httpCallMap(svc("/hooks/success"), mapOf("sagaId" to "{{sagaId}}", "order" to "{{payload.orderId}}")),
+            onSuccess = httpCallMap(svc("/hooks/success"), mapOf(
+                "sagaId" to "{{sagaId}}", "order" to "{{payload.orderId}}",
+                "remaining" to "{{payload.remaining}}", "state" to "{{payload.state}}",
+            )),
             onFailure = httpCallMap(svc("/hooks/failure")),
         )
-        val id = client.runInline(def, mapOf("orderId" to "ord-42"))
+        val id = client.runInline(def, mapOf(
+            "orderId" to "ord-42", "remaining" to 3, "state" to mapOf("samples" to listOf(1, 2)),
+        ))
 
         val final = awaitSagaTerminal(client, id)
         assertEquals("SUCCEEDED", final["status"]?.jsonPrimitive?.content)
@@ -48,8 +55,31 @@ class E2ECallbackHooksTest {
         val body = testJson.parseToJsonElement(hook.bodyAsString).jsonObject
         assertEquals(id, body["sagaId"]?.jsonPrimitive?.content)
         assertEquals("ord-42", body["order"]?.jsonPrimitive?.content)
+        assertEquals(JsonPrimitive(3), body["remaining"])
+        assertEquals(Json.parseToJsonElement("""{"samples":[1,2]}"""), body["state"])
         assertEquals(0, wm.requestsTo("/hooks/failure").size)
         assertNull(final["callbackWarning"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `missing JSON reference in completion hook records warning without dispatch`() = e2eTest {
+        val def = v2DefinitionMap(
+            uniqueName("hook-missing"),
+            listOf(taskNodeMap("a", svc("/step/a"))),
+            onSuccess = httpCallMap(svc("/hooks/success"), mapOf("required" to "{{payload.missing}}")),
+        )
+        val id = client.runInline(def)
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, id)["status"]?.jsonPrimitive?.content)
+        var warning: String? = null
+        val deadline = System.currentTimeMillis() + 5_000
+        while (warning == null && System.currentTimeMillis() < deadline) {
+            val (_, body) = client.getJson("/workflows/$id")
+            warning = body?.jsonObject?.get("callbackWarning")?.jsonPrimitive?.content
+            if (warning == null) kotlinx.coroutines.delay(50)
+        }
+        assertTrue(warning?.contains("payload.missing") == true, "expected a reference diagnostic, got $warning")
+        assertTrue(warning.contains("$.required"), "expected a JSON field diagnostic, got $warning")
+        assertEquals(0, wm.requestsTo("/hooks/success").size)
     }
 
     @Test

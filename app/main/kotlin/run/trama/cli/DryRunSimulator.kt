@@ -11,6 +11,7 @@ import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.TemplateEscaping
+import run.trama.saga.renderBody
 import run.trama.saga.toAny
 import run.trama.saga.workflow.DefinitionNormalizer
 import run.trama.saga.workflow.JoinNode
@@ -170,7 +171,7 @@ class DryRunSimulator {
                     val isAsync = node.action.mode == TaskMode.ASYNC
                     val ctx     = buildContext(definition, payload, stepResults, node.id, isAsync)
                     val url     = renderer.render(node.action.request.url, ctx, TemplateEscaping.NONE)
-                    val body    = node.action.request.body?.let { renderer.render(it, ctx, TemplateEscaping.forBody(node.action.request)) }
+                    val body    = renderer.renderBody(node.action.request, ctx)
                     val verb    = node.action.request.verb.name
                     val mock    = scenario.steps[node.id] ?: StepMock()
 
