@@ -32,6 +32,7 @@ import run.trama.runtime.JoinResumer
 import run.trama.saga.TemplateContextBuilder
 import run.trama.saga.TemplateEscaping
 import run.trama.saga.TemplateRenderer
+import run.trama.saga.renderBody
 import run.trama.saga.callback.CallbackTokenService
 import run.trama.saga.callback.CallbackUrlFactory
 import run.trama.telemetry.Metrics
@@ -1093,7 +1094,7 @@ class WorkflowExecutor(
             val response = httpClient.client.request(url) {
                 method = call.verb.toKtorMethod()
                 call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
-                call.body?.let { setBody(renderer.render(it, context, TemplateEscaping.forBody(call))) }
+                renderer.renderBody(call, context)?.let { setBody(it) }
             }
             RawCallResult(
                 success = response.status.value in call.successStatusCodes,

@@ -50,6 +50,21 @@ enum class TemplateEscaping {
 
 interface TemplateRenderer {
     fun render(template: TemplateString, context: Map<String, Any?>, escaping: TemplateEscaping): String
+
+    fun renderTypedJson(template: TemplateString, context: Map<String, Any?>): String =
+        throw UnsupportedOperationException("Typed JSON rendering is not supported by this renderer")
+}
+
+/** Opt-in transport: legacy Mustache requests retain their existing behavior. */
+fun TemplateRenderer.renderBody(call: HttpCall, context: Map<String, Any?>): String? {
+    val mode = call.headers.entries.firstOrNull {
+        it.key.equals("X-Trama-Template-Mode", ignoreCase = true)
+    }?.value?.value ?: return call.body?.let { render(it, context, TemplateEscaping.forBody(call)) }
+    require(mode == "typed-json-v1") { "Unsupported template mode: $mode" }
+    require(TemplateEscaping.forBody(call) == TemplateEscaping.JSON_STRING) {
+        "Typed JSON rendering requires a JSON request body"
+    }
+    return call.body?.let { renderTypedJson(it, context) }
 }
 
 class MustacheTemplateRenderer : TemplateRenderer {
@@ -69,6 +84,9 @@ class MustacheTemplateRenderer : TemplateRenderer {
     }
 
     private val factories = TemplateEscaping.entries.associateWith { EscapingFactory(it) }
+
+    override fun renderTypedJson(template: TemplateString, context: Map<String, Any?>): String =
+        TypedJsonTemplate.render(template.value, context)
 
     override fun render(template: TemplateString, context: Map<String, Any?>, escaping: TemplateEscaping): String {
         val factory = factories.getValue(escaping)
