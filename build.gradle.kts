@@ -49,7 +49,7 @@ dependencies {
     implementation("org.jooq:jooq:$jooqVersion")
     implementation("org.postgresql:postgresql:42.7.13")
     implementation("com.zaxxer:HikariCP:5.1.0")
-    implementation("org.liquibase:liquibase-core:4.33.0")
+    implementation("org.liquibase:liquibase-core:5.0.3")
     implementation("com.sksamuel.hoplite:hoplite-core:2.9.0")
     implementation("com.sksamuel.hoplite:hoplite-yaml:2.9.0")
     implementation("io.opentelemetry:opentelemetry-api:1.64.0")
