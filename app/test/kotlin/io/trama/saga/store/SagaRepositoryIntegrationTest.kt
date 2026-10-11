@@ -154,6 +154,22 @@ class SagaRepositoryIntegrationTest {
     }
 
     @Test
+    fun `a node after a switch keeps its own template result when reloaded`() = runBlocking<Unit> {
+        // A switch does not advance the step index, so the next node shares it. Reloading
+        // after a sleep must still expose both nodes by name (regression: the task was lost).
+        val startedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        val id = newExecution("switch-${UUID.randomUUID()}", startedAt)
+        repo.insertStepResult(id, startedAt, 0, "fetch", ExecutionPhase.UP, 200, true, """{"output":{"rate":5.0}}""", startedAt)
+        repo.insertStepResult(id, startedAt, 1, "check", ExecutionPhase.SWITCH, null, true, """{"target":"tick","usedDefault":true}""", startedAt)
+        repo.insertStepResult(id, startedAt, 1, "tick", ExecutionPhase.UP, 200, true, """{"output":{"state":{"baseline":4.99}}}""", startedAt)
+
+        val template = repo.loadStepResultsForTemplate(id).associateBy { it.name }
+        assertEquals(setOf("fetch", "check", "tick"), template.keys)
+        assertTrue(template.getValue("tick").upBody.toString().contains("baseline"))
+        assertTrue(template.getValue("check").upBody.toString().contains("usedDefault"))
+    }
+
+    @Test
     fun `stalled join barrier is found only while the parent is still WAITING_JOIN`() = runBlocking<Unit> {
         val startedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
         val parent = newExecution("join-${UUID.randomUUID()}", startedAt)

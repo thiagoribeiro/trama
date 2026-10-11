@@ -4,6 +4,17 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.0.1] - 2026-10-11
+
+### Fixed
+- **A node that ran right after a switch lost its result once the execution resumed** (after a
+  sleep or a callback). A switch does not advance the step index, so the next node shares it.
+  Reloading results for templates merged the two by index and kept only the switch, so
+  `{{ nodes.<that node>.response.body }}` was missing. 2.x rendered the reference as empty text;
+  3.0.0 fails the execution with `missing key`. Results are now keyed by index and node name;
+  already stored results are read correctly, with no migration. Executions in the first slice
+  (no resume) were not affected.
+
 ## [3.0.0] - 2026-10-10
 
 Breaking release: JSON request bodies now have a single typed rendering path. Workflows that
