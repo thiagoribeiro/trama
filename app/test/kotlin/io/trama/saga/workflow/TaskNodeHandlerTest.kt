@@ -14,6 +14,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
+import run.trama.saga.StepResult
 import run.trama.saga.ExecutionState
 import run.trama.saga.FailureHandling
 import run.trama.saga.HttpCall
@@ -46,6 +48,54 @@ class TaskNodeHandlerTest {
 
     private fun task(call: HttpCall, mode: TaskMode = TaskMode.SYNC, accepted: Set<Int>? = null, callback: CallbackConfig? = null) =
         TaskNode(id = "a", action = TaskAction(mode, call, accepted, callback))
+
+    @Test
+    fun `invalid typed templates fail before HTTP without retrying transport`() = runBlocking<Unit> {
+        val http = RecordingHttp { error("must not dispatch") }
+        val call = httpCall("http://svc/x", body = """{"value":"{{#payload}}unsupported{{/payload}}"}""",
+            headers = mapOf("Content-Type" to "application/json"))
+        val result = handler(http).execute(task(call), v2Execution(def), emptyMap(), emptyList())
+        val failed = assertIs<NodeResult.NodeFailed>(result.nodeResult)
+        assertFalse(failed.retryable)
+        assertTrue(failed.reason.message.contains("template rendering failed"))
+        assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
+    fun `typed transport sends joined numeric values and continuation state through HTTP`() = runBlocking<Unit> {
+        val http = RecordingHttp { respond("{}", HttpStatusCode.OK) }
+        val call = httpCall("http://ritesmith/trama/execute", body = """{"input":{"price":"{{nodes.join.response.body.branches.0.result.output.price}}","state":"{{payload.state}}","iteration":"{{payload.iteration}}"}}""",
+            headers = mapOf("Content-Type" to "application/json"))
+        val typedPayload = mapOf(
+            "state" to PayloadValue(Json.parseToJsonElement("""{"minimum":7,"samples":[1,2]}""")),
+            "iteration" to PayloadValue(JsonPrimitive(0)),
+        )
+        val steps = listOf(StepResult(0, "join", Json.parseToJsonElement("""{"branches":[{"result":{"output":{"price":111111}}}]}"""), null))
+        val result = handler(http).execute(task(call), v2Execution(def, typedPayload), typedPayload, steps)
+        assertIs<NodeResult.Advanced>(result.nodeResult)
+        assertEquals(Json.parseToJsonElement("""{"input":{"price":111111,"state":{"minimum":7,"samples":[1,2]},"iteration":0}}"""), Json.parseToJsonElement(String(http.requests.single().body.toByteArray())))
+        val compensation = task(httpCall("http://svc/x")).copy(compensation = call)
+        assertIs<NodeResult.Advanced>(handler(http).compensate(compensation, v2Execution(def, typedPayload), typedPayload, steps).nodeResult)
+    }
+
+    @Test
+    fun `missing JSON reference prevents task and compensation HTTP dispatch`() = runBlocking<Unit> {
+        val http = RecordingHttp { error("must not dispatch") }
+        val call = httpCall("http://svc/x", body = """{"input":{"iteration":"{{payload.missing}}"}}""")
+        val executor = handler(http)
+        val results = listOf(
+            executor.execute(task(call), v2Execution(def), emptyMap(), emptyList()),
+            executor.compensate(task(httpCall("http://svc/x")).copy(compensation = call), v2Execution(def), emptyMap(), emptyList()),
+        )
+        for (result in results) {
+            val failure = assertIs<NodeResult.NodeFailed>(result.nodeResult)
+            assertFalse(failure.retryable)
+            assertTrue(failure.reason.message.contains("node=a"))
+            assertTrue(failure.reason.message.contains("$.input.iteration"))
+            assertTrue(failure.reason.message.contains("payload.missing"))
+        }
+        assertTrue(http.requests.isEmpty())
+    }
 
     @Test
     fun `url, headers and body are rendered from payload`() = runBlocking<Unit> {

@@ -8,6 +8,13 @@ import kotlinx.serialization.json.JsonElement
 
 class JsonLogicEvaluatorTest {
 
+    @Test
+    fun `joined list references and nullable counters match generated conditions`() {
+        val data = mapOf("nodes" to mapOf("join" to mapOf("response" to mapOf("body" to mapOf("branches" to listOf(mapOf("result" to mapOf("output" to mapOf("price" to 111111)))))))))
+        assertTrue(JsonLogicEvaluator.evaluateBool(rule("""{">":[{"var":"nodes.join.response.body.branches.0.result.output.price"},100000]}"""), data))
+        assertTrue(JsonLogicEvaluator.evaluateBool(rule("""{"==":[{"var":"missing"},null]}"""), data))
+    }
+
     private fun rule(raw: String): JsonElement = Json.parseToJsonElement(raw)
 
     @Test

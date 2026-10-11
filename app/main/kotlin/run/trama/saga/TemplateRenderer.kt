@@ -10,17 +10,15 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.JsonElement
 
 /**
- * How `{{ }}` values are escaped, chosen by where the rendered text ends up. `{{{ }}}` (and
- * `{{& }}`) always write the raw value. Mustache's default HTML escaping is only right for
- * XML/HTML bodies: in a JSON body it corrupted values (`'` → `&#39;`) and let `\` or newlines
- * through, producing invalid JSON; in URLs and headers it mangled `&`, `=`, quotes.
+ * Rendering is selected by destination. JSON bodies use typed replacement;
+ * text destinations use Mustache with their corresponding escaping.
  */
 enum class TemplateEscaping {
     /** Literal value (URLs: templates may build whole URLs/paths, so nothing is encoded). */
     NONE,
     /** Literal value with CR/LF removed, so a value can never split a header. */
     HEADER_VALUE,
-    /** Escaped for inclusion inside a JSON string literal. */
+    /** A complete JSON body, parsed and rendered with typed replacement. */
     JSON_STRING,
     /** XML/HTML entity escaping (the previous behavior, correct for XML bodies). */
     XML,
@@ -50,7 +48,14 @@ enum class TemplateEscaping {
 
 interface TemplateRenderer {
     fun render(template: TemplateString, context: Map<String, Any?>, escaping: TemplateEscaping): String
+
+    fun renderTypedJson(template: TemplateString, context: Map<String, Any?>): String =
+        render(template, context, TemplateEscaping.JSON_STRING)
 }
+
+/** JSON bodies always use typed replacement; no request-level mode is available. */
+fun TemplateRenderer.renderBody(call: HttpCall, context: Map<String, Any?>): String? =
+    call.body?.let { render(it, context, TemplateEscaping.forBody(call)) }
 
 class MustacheTemplateRenderer : TemplateRenderer {
     /** A compiled template keeps a reference to its factory's encoder, so each escaping has its own. */
@@ -61,16 +66,21 @@ class MustacheTemplateRenderer : TemplateRenderer {
             when (escaping) {
                 TemplateEscaping.NONE -> writer.write(value)
                 TemplateEscaping.HEADER_VALUE -> value.forEach { if (it != '\r' && it != '\n') writer.write(it.code) }
-                TemplateEscaping.JSON_STRING -> writeJsonStringContent(value, writer)
+                TemplateEscaping.JSON_STRING -> error("JSON bodies must use typed replacement")
                 TemplateEscaping.XML -> super.encode(value, writer)
                 TemplateEscaping.FORM_URLENCODED -> writer.write(URLEncoder.encode(value, Charsets.UTF_8))
             }
         }
     }
 
-    private val factories = TemplateEscaping.entries.associateWith { EscapingFactory(it) }
+    private val factories = TemplateEscaping.entries
+        .filterNot { it == TemplateEscaping.JSON_STRING }
+        .associateWith { EscapingFactory(it) }
 
     override fun render(template: TemplateString, context: Map<String, Any?>, escaping: TemplateEscaping): String {
+        if (escaping == TemplateEscaping.JSON_STRING) {
+            return TypedJsonTemplate.render(template.value, context)
+        }
         val factory = factories.getValue(escaping)
         val mustache = factory.templates.computeIfAbsent(template.value) { key ->
             factory.compile(StringReader(key), "saga-template")
@@ -78,27 +88,6 @@ class MustacheTemplateRenderer : TemplateRenderer {
         val writer = StringWriter()
         mustache.execute(writer, context).flush()
         return writer.toString()
-    }
-
-    private companion object {
-        fun writeJsonStringContent(value: String, writer: Writer) {
-            for (c in value) {
-                when (c) {
-                    '"' -> writer.write("\\\"")
-                    '\\' -> writer.write("\\\\")
-                    '\n' -> writer.write("\\n")
-                    '\r' -> writer.write("\\r")
-                    '\t' -> writer.write("\\t")
-                    '\b' -> writer.write("\\b")
-                    '\u000C' -> writer.write("\\f")
-                    else -> if (c < ' ' || c == ' ' || c == ' ') {
-                        writer.write("\\u%04x".format(c.code))
-                    } else {
-                        writer.write(c.code)
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -20,6 +20,7 @@ import run.trama.saga.TaskMode
 import run.trama.saga.TemplateContextBuilder
 import run.trama.saga.TemplateEscaping
 import run.trama.saga.TemplateRenderer
+import run.trama.saga.renderBody
 import run.trama.saga.callback.CallbackTokenService
 import run.trama.saga.callback.CallbackUrlFactory
 import run.trama.telemetry.Metrics
@@ -147,8 +148,19 @@ class TaskNodeHandler(
         context: Map<String, Any?>,
         execution: SagaExecution,
     ): TaskHttpResult {
-        val url = renderer.render(call.url, context, TemplateEscaping.NONE)
-        val renderedBody = call.body?.let { renderer.render(it, context, TemplateEscaping.forBody(call)) }
+        val (url, renderedBody) = try {
+            renderer.render(call.url, context, TemplateEscaping.NONE) to renderer.renderBody(call, context)
+        } catch (ex: RuntimeException) {
+            return TaskHttpResult(
+                statusCode = null,
+                responseBody = null,
+                nodeResult = NodeResult.NodeFailed(
+                    retryable = false,
+                    reason = FailureReason("node=$nodeName template rendering failed: ${ex.message}"),
+                ),
+                error = ex.message,
+            )
+        }
         val stepStartedAt = Instant.now()
         return Tracing.withSpan(
             tracer = tracer,

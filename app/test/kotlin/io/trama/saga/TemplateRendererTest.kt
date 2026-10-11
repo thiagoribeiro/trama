@@ -23,7 +23,7 @@ class TemplateRendererTest {
         payload: Map<String, PayloadValue> = emptyMap(),
     ) = TemplateContextBuilder.build(execution, "current", ExecutionPhase.UP, steps, payload)
 
-    private fun render(t: String, context: Map<String, Any?>, escaping: TemplateEscaping = TemplateEscaping.JSON_STRING) =
+    private fun render(t: String, context: Map<String, Any?>, escaping: TemplateEscaping = TemplateEscaping.NONE) =
         renderer.render(TemplateString(t), context, escaping)
 
     @Test
@@ -106,9 +106,9 @@ class TemplateRendererTest {
     }
 
     @Test
-    fun `triple mustache is always raw`() {
+    fun `triple mustache is raw for text destinations`() {
         val payload = mapOf("q" to PayloadValue(JsonPrimitive("a&\"b")))
-        TemplateEscaping.entries.forEach { escaping ->
+        TemplateEscaping.entries.filterNot { it == TemplateEscaping.JSON_STRING }.forEach { escaping ->
             assertEquals("a&\"b", render("{{{payload.q}}}", ctx(payload = payload), escaping), "escaping=$escaping")
         }
     }

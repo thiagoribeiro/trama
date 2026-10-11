@@ -60,12 +60,12 @@ class E2EExecutionQueryTest {
     fun `list filters by name and status and paginates newest first`() = e2eTest {
         wm.stubPath("/fail/b", 500)
         val name = uniqueName("query")
-        val ok1 = client.runInline(def(name, failing = false))
-        awaitSagaTerminal(client, ok1)
-        val failed = client.runInline(def(name, failing = true))
-        awaitSagaTerminal(client, failed)
-        val ok2 = client.runInline(def(name, failing = false))
-        awaitSagaTerminal(client, ok2)
+        val ok1 = client.runInline(def(name, failing = false), mapOf("orderId" to "o-1"))
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, ok1)["status"]?.jsonPrimitive?.content)
+        val failed = client.runInline(def(name, failing = true), mapOf("orderId" to "o-2"))
+        assertEquals("FAILED", awaitSagaTerminal(client, failed)["status"]?.jsonPrimitive?.content)
+        val ok2 = client.runInline(def(name, failing = false), mapOf("orderId" to "o-3"))
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, ok2)["status"]?.jsonPrimitive?.content)
 
         fun ids(body: kotlinx.serialization.json.JsonElement?) = (body as JsonArray).map { it.jsonObject["id"]!!.jsonPrimitive.content }
 

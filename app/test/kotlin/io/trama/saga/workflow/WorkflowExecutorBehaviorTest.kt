@@ -12,6 +12,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
 import run.trama.saga.ExecutionOutcome
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.ExecutionState
@@ -203,6 +204,35 @@ class WorkflowExecutorBehaviorTest {
     }
 
     // ── Success / failure hooks ─────────────────────────────────────────────
+
+    @Test
+    fun `completion hooks preserve typed JSON values without mode selection`() = runBlocking<Unit> {
+        val store = RecordingStore()
+        val http = http()
+        val d = def(syncTask("a", "http://svc/a"),
+            onSuccess = httpCall("http://hooks/success", body = """{"count":"{{payload.count}}","state":"{{payload.state}}"}"""))
+        val payload = mapOf(
+            "count" to PayloadValue(JsonPrimitive(3)),
+            "state" to PayloadValue(Json.parseToJsonElement("""{"samples":[1,2]}""")),
+        )
+        testExecutor(store, RecordingEnqueuer(), http.provider).execute(v2Execution(d, payload))
+        assertEquals("SUCCEEDED", store.finalStatus)
+        assertEquals(Json.parseToJsonElement("""{"count":3,"state":{"samples":[1,2]}}"""),
+            Json.parseToJsonElement(String(http.requests.last().body.toByteArray())))
+    }
+
+    @Test
+    fun `missing reference in completion hook records a warning without HTTP dispatch`() = runBlocking<Unit> {
+        val store = RecordingStore()
+        val http = http()
+        val d = def(syncTask("a", "http://svc/a"),
+            onSuccess = httpCall("http://hooks/success", body = """{"value":"{{payload.missing}}"}"""))
+        testExecutor(store, RecordingEnqueuer(), http.provider).execute(v2Execution(d))
+        assertEquals("SUCCEEDED", store.finalStatus)
+        assertEquals(listOf("/a"), http.urls())
+        assertTrue(store.callbackWarnings.single().contains("payload.missing"))
+        assertTrue(store.callbackWarnings.single().contains("$.value"))
+    }
 
     @Test
     fun `onSuccessCallback fires with rendered body after the last node`() = runBlocking<Unit> {

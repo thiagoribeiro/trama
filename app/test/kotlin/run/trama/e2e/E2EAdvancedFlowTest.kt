@@ -5,6 +5,7 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import kotlin.test.Test
@@ -110,6 +111,35 @@ class E2EAdvancedFlowTest {
         val body = testJson.parseToJsonElement(b.bodyAsString).jsonObject
         assertEquals("A-1", body["fromA"]?.jsonPrimitive?.content)
         assertEquals("7", body["prev"]?.jsonPrimitive?.content)
+        assertEquals(false, body["prev"]?.jsonPrimitive?.isString)
+    }
+
+    @Test
+    fun `task HTTP bodies preserve typed values without a mode header`() = e2eTest {
+        val def = v2DefinitionMap(uniqueName("typed"), listOf(taskNodeMap("a", svc("/step/a"),
+            body = mapOf("quantity" to "{{payload.quantity}}", "flag" to "{{payload.flag}}",
+                "state" to "{{payload.state}}", "optional" to "{{payload.optional}}"))))
+        val id = client.runInline(def, mapOf("quantity" to 8, "flag" to false,
+            "state" to mapOf("samples" to listOf(1, 2)), "optional" to null))
+        assertEquals("SUCCEEDED", awaitSagaTerminal(client, id)["status"]?.jsonPrimitive?.content)
+        val request = wm.requestsTo("/step/a").single()
+        assertEquals(Json.parseToJsonElement("""{"quantity":8,"flag":false,"state":{"samples":[1,2]},"optional":null}"""),
+            Json.parseToJsonElement(request.bodyAsString))
+    }
+
+    @Test
+    fun `missing JSON references fail the workflow without HTTP calls or retries`() = e2eTest {
+        val def = v2DefinitionMap(uniqueName("missing-json"), listOf(taskNodeMap("a", svc("/step/a"),
+            body = mapOf("required" to "{{payload.missing}}"))),
+            failureHandling = mapOf("type" to "retry", "maxAttempts" to 2, "delayMillis" to 10))
+        val id = client.runInline(def)
+        val terminal = awaitSagaTerminal(client, id)
+        assertEquals("FAILED", terminal["status"]?.jsonPrimitive?.content)
+        val diagnostic = terminal["failureDescription"]?.jsonPrimitive?.content ?: ""
+        assertTrue(diagnostic.contains("node=a"), diagnostic)
+        assertTrue(diagnostic.contains("payload.missing"), diagnostic)
+        assertTrue(diagnostic.contains("$.required"), diagnostic)
+        assertTrue(wm.requestsTo("/step/a").isEmpty())
     }
 
     @Test
