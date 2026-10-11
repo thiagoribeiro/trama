@@ -4,6 +4,45 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-10-10
+
+Breaking release: JSON request bodies now have a single typed rendering path. Workflows that
+relied on text substitution or on missing references rendering as empty/null need changes; see
+Upgrade notes.
+
+### Changed
+- **JSON bodies are rendered with typed substitution only.** A whole-value reference
+  (`"{{ nodes.a.response.body.output.price }}"`) keeps its JSON type: numbers, booleans, objects
+  and arrays are no longer turned into strings or Java collection text. Partial text accepts
+  scalars only. Resolved values are never re-read as templates. This applies to tasks, async
+  requests, compensation, completion hooks and CLI dry runs; URLs, headers and non-JSON bodies
+  keep their previous rendering.
+- **Missing references are errors.** A missing key, an invalid index or traversal through null
+  or a scalar fails with the JSON field and the full reference. Task and compensation failures
+  name the node and are not dispatched or retried. An explicit `null` leaf is still valid.
+- **Invalid completion hooks are not sent.** The execution keeps its terminal status and
+  records `callbackWarning`.
+- **`X-Trama-Template-Mode` is ignored.** It cannot restore the legacy renderer.
+
+### Added
+- **Indexed join references.** Dot and bracket indexes (`branches.0.result`,
+  `branches[0].result`) resolve the actual join result envelope.
+- **Literal envelope.** `{"__trama_literal_json__": ...}` passes a value through unrendered
+  (e.g. cached plans containing future placeholders); the envelope is removed before dispatch.
+- Invalid JSON templates, Mustache sections, lambdas and triple braces are rejected with
+  diagnostics. See `docs/typed-json-transport.md`.
+
+### Upgrade notes
+- **Initialize counters and state explicitly.** A node cannot read its own result on the first
+  pass; an absent reference no longer becomes null. Rewrite JSON templates that relied on raw
+  substitution or Mustache sections.
+- **Check persisted and running workflows before upgrading (and before rolling back).** Bodies
+  without templates, or with whole-value references to completed nodes, are unaffected.
+  Workflows written for 3.0.0 typed rendering (typed collections, literal envelopes) are not
+  compatible with 2.x.
+- **RiteSmith 0.2.0 or later** is the matching consumer release; deploy the two together.
+- No database migration and no configuration change are required.
+
 ## [2.3.0] - 2026-10-03
 
 ### Changed
