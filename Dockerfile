@@ -3,7 +3,8 @@ WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY app app
 RUN gradle clean installDist --no-daemon
-FROM eclipse-temurin:21-jre
+# OpenJ9: ~1/3 of the HotSpot footprint on the r2d2 Pi (2026-10-17)
+FROM ibm-semeru-runtimes:open-21-jre
 WORKDIR /app
 COPY --from=build /app/build/install/trama/ /app/
 EXPOSE 8080
