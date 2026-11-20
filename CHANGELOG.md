@@ -4,7 +4,10 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.1.0] - 2026-11-20
+
+Dependency release. No change to the API, definition format, template rendering or database
+schema. **Requires Redis 6.2 or later.**
 
 ### Changed
 - **Redis 6.2 or later is required.** Lettuce 7 dropped `ZRANGEBYSCORE`, `SETEX` and `PSETEX`;
@@ -18,6 +21,15 @@ All notable changes to Trama are documented here. The format follows
 ### Security
 - Management UI: Vite 8.3.8 and Vue 3.5.46, with nanoid and source-map-js refreshed, fix the
   open advisories in its build toolchain.
+
+### Upgrade notes
+- **Check your Redis version before upgrading** (`INFO server`, `redis_version`). On Redis older
+  than 6.2, `ZRANGE ... BYSCORE` fails with a syntax error, so pods cannot refresh the active-pod
+  list or find shards with due work, and executions stop being picked up. Redis 7 (as in
+  `docker-compose.yml`) is recommended.
+- No database migration and no configuration change are required. Redis keys and stored data are
+  unchanged (only the command forms changed), so 3.0.x and 3.1.0 pods can run side by side
+  during a rolling upgrade.
 
 ## [3.0.1] - 2026-10-11
 
@@ -298,6 +310,9 @@ Fixes every gap found by the durability, recovery and load validation
 First public release: v2 workflow node graph with async calls and callbacks, the visual definition
 editor, and the sleep node. See the [release notes](https://github.com/thiagoribeiro/trama/releases/tag/v1.0.0).
 
+[3.1.0]: https://github.com/thiagoribeiro/trama/releases/tag/v3.1.0
+[3.0.1]: https://github.com/thiagoribeiro/trama/releases/tag/v3.0.1
+[3.0.0]: https://github.com/thiagoribeiro/trama/releases/tag/v3.0.0
 [2.3.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.3.0
 [2.2.1]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.1
 [2.2.0]: https://github.com/thiagoribeiro/trama/releases/tag/v2.2.0
