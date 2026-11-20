@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version: 3.0.1" src="https://img.shields.io/badge/version-3.0.1-41d9b8">
+  <img alt="version: 3.1.0" src="https://img.shields.io/badge/version-3.1.0-41d9b8">
   <img alt="license: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-9fb5c8">
   <img alt="runtime: JVM 21" src="https://img.shields.io/badge/runtime-JVM%2021-9fb5c8">
   <img alt="fault validation: 0 lost, 0 stuck" src="https://img.shields.io/badge/fault%20validation-0%20lost%20%C2%B7%200%20stuck-41d9b8">
