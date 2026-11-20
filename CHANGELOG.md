@@ -4,6 +4,21 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Redis 6.2 or later is required.** Lettuce 7 dropped `ZRANGEBYSCORE`, `SETEX` and `PSETEX`;
+  Trama now uses `ZRANGE ... BYSCORE` and `SET` with `EX`/`PX`. The bundled compose file
+  already runs Redis 7.
+- Dependencies: Kotlin 2.4.21, Ktor 3.6.1, Lettuce 7.9.0, HikariCP 7.1.0, Hoplite 3.0.7,
+  jOOQ 3.21.10, Micrometer 1.18.0, OpenTelemetry 1.68.0, Logback 1.6.8,
+  logstash-logback-encoder 9.0, PostgreSQL JDBC 42.7.14; Gradle 9.9. Liquibase stays on 4.33
+  (5.x is not Apache-licensed).
+
+### Security
+- Management UI: Vite 8.3.8 and Vue 3.5.46, with nanoid and source-map-js refreshed, fix the
+  open advisories in its build toolchain.
+
 ## [3.0.1] - 2026-10-11
 
 ### Fixed
