@@ -5,6 +5,7 @@ package run.trama.saga.redis
 import io.lettuce.core.ClientOptions
 import io.lettuce.core.Limit
 import io.lettuce.core.Range
+import io.lettuce.core.ZRange
 import io.lettuce.core.ScanArgs
 import io.lettuce.core.RedisClient
 import io.lettuce.core.SetArgs
@@ -175,9 +176,9 @@ private class StandaloneBinaryCommands(
     ): List<ByteArray> {
         val range = Range.create(min, max)
         return if (limit == null) {
-            delegate.zrangebyscore(key, range).toList()
+            delegate.zrange(key, ZRange.byScore(range)).toList()
         } else {
-            delegate.zrangebyscore(key, range, Limit.create(0, limit.toLong())).toList()
+            delegate.zrange(key, ZRange.byScore(range).limit(Limit.create(0, limit.toLong()))).toList()
         }
     }
 
@@ -206,10 +207,10 @@ private class StandaloneBinaryCommands(
         delegate.pexpire(key, milliseconds)
 
     override suspend fun psetex(key: ByteArray, milliseconds: Long, value: ByteArray): String? =
-        delegate.psetex(key, milliseconds, value)
+        delegate.set(key, value, SetArgs().px(milliseconds))
 
     override suspend fun setex(key: ByteArray, seconds: Long, value: ByteArray): String? =
-        delegate.setex(key, seconds, value)
+        delegate.set(key, value, SetArgs().ex(seconds))
 
     override suspend fun expire(key: ByteArray, seconds: Long): Boolean? =
         delegate.expire(key, seconds)
@@ -271,9 +272,9 @@ private class ClusterBinaryCommands(
     ): List<ByteArray> {
         val range = Range.create(min, max)
         return if (limit == null) {
-            delegate.zrangebyscore(key, range).toList()
+            delegate.zrange(key, ZRange.byScore(range)).toList()
         } else {
-            delegate.zrangebyscore(key, range, Limit.create(0, limit.toLong())).toList()
+            delegate.zrange(key, ZRange.byScore(range).limit(Limit.create(0, limit.toLong()))).toList()
         }
     }
 
@@ -302,10 +303,10 @@ private class ClusterBinaryCommands(
         delegate.pexpire(key, milliseconds)
 
     override suspend fun psetex(key: ByteArray, milliseconds: Long, value: ByteArray): String? =
-        delegate.psetex(key, milliseconds, value)
+        delegate.set(key, value, SetArgs().px(milliseconds))
 
     override suspend fun setex(key: ByteArray, seconds: Long, value: ByteArray): String? =
-        delegate.setex(key, seconds, value)
+        delegate.set(key, value, SetArgs().ex(seconds))
 
     override suspend fun expire(key: ByteArray, seconds: Long): Boolean? =
         delegate.expire(key, seconds)
