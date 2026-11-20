@@ -1,15 +1,15 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val ktorVersion = "3.5.2"
+val ktorVersion = "3.6.1"
 val kotlinxSerializationVersion = "1.9.0"
 val msgpackVersion = "0.6.1"
-val jooqVersion = "3.21.7"
+val jooqVersion = "3.21.10"
 
 plugins {
-    kotlin("jvm") version "2.4.10"
-    kotlin("plugin.serialization") version "2.4.10"
+    kotlin("jvm") version "2.4.21"
+    kotlin("plugin.serialization") version "2.4.21"
     application
-    id("nu.studer.jooq") version "9.0"
+    id("nu.studer.jooq") version "10.2.1"
 }
 
 group = "run.trama"
@@ -40,40 +40,40 @@ dependencies {
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
-    implementation("io.lettuce:lettuce-core:6.8.2.RELEASE")
+    implementation("io.lettuce:lettuce-core:7.9.0.RELEASE")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.11.0")
     implementation("com.ensarsarajcic.kotlinx:serialization-msgpack:$msgpackVersion")
     implementation("com.github.spullara.mustache.java:compiler:0.9.14")
-    implementation("io.micrometer:micrometer-registry-prometheus:1.17.0")
-    implementation("io.micrometer:micrometer-core:1.17.0")
+    implementation("io.micrometer:micrometer-registry-prometheus:1.18.0")
+    implementation("io.micrometer:micrometer-core:1.18.0")
     implementation("org.jooq:jooq:$jooqVersion")
-    implementation("org.postgresql:postgresql:42.7.13")
-    implementation("com.zaxxer:HikariCP:5.1.0")
+    implementation("org.postgresql:postgresql:42.7.14")
+    implementation("com.zaxxer:HikariCP:7.1.0")
     implementation("org.liquibase:liquibase-core:4.33.0")
-    implementation("com.sksamuel.hoplite:hoplite-core:2.9.0")
-    implementation("com.sksamuel.hoplite:hoplite-yaml:2.9.0")
-    implementation("io.opentelemetry:opentelemetry-api:1.64.0")
-    implementation("io.opentelemetry:opentelemetry-sdk:1.64.0")
-    implementation("io.opentelemetry:opentelemetry-sdk-trace:1.64.0")
-    implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.64.0")
+    implementation("com.sksamuel.hoplite:hoplite-core:3.0.7")
+    implementation("com.sksamuel.hoplite:hoplite-yaml:3.0.7")
+    implementation("io.opentelemetry:opentelemetry-api:1.68.0")
+    implementation("io.opentelemetry:opentelemetry-sdk:1.68.0")
+    implementation("io.opentelemetry:opentelemetry-sdk-trace:1.68.0")
+    implementation("io.opentelemetry:opentelemetry-exporter-otlp:1.68.0")
     implementation("io.opentelemetry:opentelemetry-semconv:1.30.1-alpha")
-    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+    implementation("net.logstash.logback:logstash-logback-encoder:9.0")
     implementation("io.github.jamsesso:json-logic-java:1.1.0")
 
     jooqGenerator("org.jooq:jooq-meta:$jooqVersion")
     jooqGenerator("org.jooq:jooq-codegen:$jooqVersion")
-    jooqGenerator("org.postgresql:postgresql:42.7.13")
+    jooqGenerator("org.postgresql:postgresql:42.7.14")
 
-    runtimeOnly("ch.qos.logback:logback-classic:1.5.38")
+    runtimeOnly("ch.qos.logback:logback-classic:1.6.8")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:6.1.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
-    testImplementation("org.testcontainers:junit-jupiter:1.21.4")
-    testImplementation("org.testcontainers:postgresql:1.21.4")
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
+    testImplementation("org.testcontainers:testcontainers-postgresql:2.0.5")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
-    testImplementation("io.mockk:mockk:1.14.11")
+    testImplementation("io.mockk:mockk:1.14.12")
     testImplementation("org.wiremock:wiremock-standalone:3.13.2")
 }
 

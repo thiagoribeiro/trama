@@ -28,7 +28,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.PostgreSQLContainer
+import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import run.trama.app.module
 import java.util.UUID
@@ -39,7 +39,7 @@ import java.util.UUID
  * [runtime.enabled=true] gets the correct database and Redis coordinates.
  */
 object E2EContainers {
-    val postgres: PostgreSQLContainer<*> by lazy {
+    val postgres: PostgreSQLContainer by lazy {
         PostgreSQLContainer("postgres:15-alpine").also { it.start() }
     }
 

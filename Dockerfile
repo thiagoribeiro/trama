@@ -1,4 +1,4 @@
-FROM gradle:8.10.2-jdk21 AS build
+FROM gradle:9.9.1-jdk21 AS build
 WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY app app
