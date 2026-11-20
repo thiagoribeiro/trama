@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" width="900" height="300" role="img" aria-label="Trama: a workflow graph with a task, a split into an async branch waiting for its callback and a sleep branch, and a join">
+  <defs>
+    <radialGradient id="bg" cx="15%" cy="10%" r="95%">
+      <stop offset="0%" stop-color="#143154"/>
+      <stop offset="55%" stop-color="#0a1828"/>
+      <stop offset="100%" stop-color="#07131f"/>
+    </radialGradient>
+    <radialGradient id="pulse" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#eafff9"/>
+      <stop offset="45%" stop-color="#41d9b8"/>
+      <stop offset="100%" stop-color="#41d9b8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pulseAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff4dd"/>
+      <stop offset="45%" stop-color="#f7b955"/>
+      <stop offset="100%" stop-color="#f7b955" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="weave" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M0 6 H24 M0 18 H24" stroke="#9fb5c8" stroke-width="0.6" opacity="0.07"/>
+      <path d="M6 0 V24 M18 0 V24" stroke="#9fb5c8" stroke-width="0.6" opacity="0.04"/>
+    </pattern>
+    <path id="routeUp" d="M40 150 H175 C175 100 205 95 255 95 C315 95 335 110 335 150 H400"/>
+    <path id="routeDown" d="M40 150 H175 C175 200 205 205 255 205 C315 205 335 190 335 150 H400"/>
+  </defs>
+
+  <rect width="900" height="300" rx="18" fill="url(#bg)"/>
+  <rect width="900" height="300" rx="18" fill="url(#weave)"/>
+
+  <!-- threads -->
+  <g fill="none" stroke="#41d9b8" stroke-width="1.6" stroke-linecap="round" opacity="0.55">
+    <use href="#routeUp"/>
+    <use href="#routeDown"/>
+  </g>
+  <g fill="none" stroke="#41d9b8" stroke-width="1" stroke-dasharray="2 7" opacity="0.9">
+    <use href="#routeUp"><animate attributeName="stroke-dashoffset" from="0" to="-90" dur="4s" repeatCount="indefinite"/></use>
+    <use href="#routeDown"><animate attributeName="stroke-dashoffset" from="0" to="-90" dur="4s" repeatCount="indefinite"/></use>
+  </g>
+
+  <!-- callback arc into the async node -->
+  <g>
+    <path d="M300 52 C285 40 262 42 258 76" fill="none" stroke="#f7b955" stroke-width="1.3" stroke-dasharray="4 4"/>
+    <path d="M253 70 L258 79 L263 70" fill="none" stroke="#f7b955" stroke-width="1.3"/>
+    <text x="304" y="56" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="10" fill="#f7b955">callback</text>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.5;0.58;0.72;1" dur="7s" repeatCount="indefinite"/>
+  </g>
+
+  <!-- pulses: drawn under the nodes so they pass through them -->
+  <circle r="9" fill="url(#pulse)">
+    <animateMotion dur="7s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0.52;0.52;1" keyTimes="0;0.35;0.68;1">
+      <mpath href="#routeUp"/>
+    </animateMotion>
+  </circle>
+  <circle r="9" fill="url(#pulseAmber)">
+    <animateMotion dur="7s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0.52;0.52;1" keyTimes="0;0.35;0.48;1">
+      <mpath href="#routeDown"/>
+    </animateMotion>
+  </circle>
+
+  <!-- nodes -->
+  <g font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="11" text-anchor="middle">
+    <circle cx="40" cy="150" r="6" fill="#07131f" stroke="#9fb5c8" stroke-width="1.4"/>
+
+    <rect x="66" y="137" width="62" height="26" rx="7" fill="#102235" stroke="#41d9b8"/>
+    <text x="97" y="154" fill="#eaf5ff">task</text>
+
+    <path d="M175 132 L193 150 L175 168 L157 150 Z" fill="#102235" stroke="#41d9b8"/>
+    <path d="M171 144 V156 M179 144 V156" stroke="#eaf5ff" stroke-width="1.6" stroke-linecap="round"/>
+    <text x="175" y="186" fill="#9fb5c8" font-size="9">split</text>
+
+    <rect x="222" y="82" width="66" height="26" rx="7" fill="#102235" stroke="#f7b955"/>
+    <text x="255" y="99" fill="#eaf5ff">async</text>
+    <g>
+      <rect x="236" y="112" width="38" height="14" rx="4" fill="#07131f" stroke="#f7b955" stroke-width="0.8"/>
+      <text x="255" y="122" fill="#f7b955" font-size="8">waiting</text>
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.34;0.36;0.66;0.68;1" dur="7s" repeatCount="indefinite"/>
+    </g>
+
+    <rect x="222" y="192" width="66" height="26" rx="7" fill="#102235" stroke="#41d9b8"/>
+    <text x="255" y="209" fill="#eaf5ff">sleep</text>
+
+    <rect x="306" y="137" width="58" height="26" rx="7" fill="#102235" stroke="#41d9b8"/>
+    <text x="335" y="154" fill="#eaf5ff">join</text>
+
+    <circle cx="400" cy="150" r="11" fill="#0d1b2c" stroke="#41d9b8" stroke-width="1.4"/>
+    <path d="M394.5 150.5 L398.5 154.5 L405.5 146" fill="none" stroke="#41d9b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="Space Grotesk, Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
+    <text x="458" y="124" font-size="50" font-weight="700" letter-spacing="1" fill="#eaf5ff">Trama</text>
+    <text x="460" y="162" font-size="19" fill="#9fb5c8">Workflows and sagas over plain HTTP,</text>
+    <text x="460" y="188" font-size="19" fill="#9fb5c8">defined as JSON, durable in Postgres.</text>
+  </g>
+  <g font-family="JetBrains Mono, ui-monospace, Menlo, monospace" font-size="12.5" text-anchor="middle">
+    <rect x="460" y="212" width="104" height="28" rx="7" fill="#0d1b2c" stroke="#41d9b8"/>
+    <text x="512" y="230" fill="#eaf5ff">no SDK</text>
+    <rect x="574" y="212" width="146" height="28" rx="7" fill="#0d1b2c" stroke="#41d9b8"/>
+    <text x="647" y="230" fill="#eaf5ff">retry + compensate</text>
+    <rect x="730" y="212" width="134" height="28" rx="7" fill="#0d1b2c" stroke="#f7b955"/>
+    <text x="797" y="230" fill="#eaf5ff">signed callbacks</text>
+  </g>
+</svg>

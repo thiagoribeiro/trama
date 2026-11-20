@@ -1,45 +1,45 @@
-# Trama
+<p align="center">
+  <a href="https://trama.run"><img src="assets/img/banner.svg" alt="Trama — workflows and sagas over plain HTTP, defined as JSON, durable in Postgres" width="100%"></a>
+</p>
 
-> Stop building orchestration logic inside your services.
+<p align="center">
+  <a href="https://trama.run"><b>Website</b></a> ·
+  <a href="openapi.json">OpenAPI</a> ·
+  <a href="docs/validation-report.md">Validation report</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-Trama is a lightweight way to orchestrate distributed workflows using HTTP — without heavy infrastructure, complex runtimes, or vendor lock-in.
-
----
-
-## The problem
-
-Most systems don’t lack orchestration — they implement it implicitly.
-
-Teams start with event-driven choreography:
-
-- Service A emits an event  
-- Service B reacts and emits another event  
-- Service C continues the flow  
-
-At first, it works.
-
-As complexity grows, teams start adding:
-
-- retries inside each service  
-- ad-hoc logic to handle async flows  
-- cron jobs to recover inconsistencies  
-
-Over time, this becomes an **implicit workflow engine**:
-
-- no single place to understand the flow  
-- no clear execution state  
-- hard to debug and reason about  
-- difficult to evolve safely  
+<p align="center">
+  <img alt="version: 3.0.1" src="https://img.shields.io/badge/version-3.0.1-41d9b8">
+  <img alt="license: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-9fb5c8">
+  <img alt="runtime: JVM 21" src="https://img.shields.io/badge/runtime-JVM%2021-9fb5c8">
+  <img alt="fault validation: 0 lost, 0 stuck" src="https://img.shields.io/badge/fault%20validation-0%20lost%20%C2%B7%200%20stuck-41d9b8">
+</p>
 
 ---
 
-## The solution
+**Stop building orchestration logic inside your services.**
 
-Make orchestration explicit.
+Most systems already have a workflow engine. It is just implicit: service A emits an event, B
+reacts, C continues, and over time each service grows its own retries, its own async handling
+and a cron job to repair what got stuck. Nobody can say where a given order is, or why it
+stopped.
 
-Define your workflow as JSON. Trama handles execution, retries, async callbacks, and state.
+Trama makes that flow explicit. You describe it as JSON (HTTP calls, branches, parallel
+branches, waits for callbacks, pauses, compensations) and send it to Trama's HTTP API. Trama
+runs it, retries it, rolls it back when it has to, and records every step. Your services stay
+plain HTTP endpoints: there is no SDK, no worker library and no new programming model.
 
----
+## What you get
+
+| | |
+|---|---|
+| **JSON workflows** | A linear list of steps, or a node graph with `task`, `switch` (JSON Logic), `split`/`join`, `sleep` and async tasks. Validate and dry-run a definition offline before deploying it. |
+| **Failure handling** | Fixed or exponential retries, then compensation of the completed nodes in reverse order. Completion hooks (`onSuccessCallback`, `onFailureCallback`) tell your system how it ended. |
+| **Async callbacks** | An async task hands your service an HMAC-signed, single-use callback URL and parks the execution until it is called or its deadline passes. |
+| **Durable by design** | Postgres is the source of truth: every node boundary is checkpointed, and every write is fenced so a stale worker cannot overwrite newer progress. Executions survive worker crashes and Redis data loss. |
+| **Scales out without a coordinator** | Workers are the same binary. They split a sharded Redis queue among themselves by rendezvous hashing. A pod can also serve only the API. |
+| **Operable** | Prometheus metrics and a Grafana dashboard, OpenTelemetry traces, structured JSON logs, readiness and liveness probes, and a management UI with a graph view and a Gantt timeline of each execution. |
 
 ## Example
 
@@ -133,40 +133,6 @@ for examples and migration requirements.
 
 ---
 
-## Why not just use events and queues?
-
-Event-driven systems are great — but choreography has limits.
-
-As flows become complex, you end up with:
-
-- implicit execution order  
-- duplicated retry logic  
-- inconsistent recovery strategies  
-- no global visibility of the workflow  
-
-You already built an orchestrator — just not an explicit one.
-
----
-
-## Why not Temporal?
-
-Temporal is powerful — but often too heavy for most teams.
-
-It introduces:
-
-- new programming model  
-- dedicated infrastructure  
-- operational complexity  
-
-Trama focuses on a different tradeoff:
-
-- minimal setup  
-- HTTP-first integration  
-- simple mental model  
-- fast adoption  
-
----
-
 ## Quick start
 
 ```bash
@@ -177,36 +143,51 @@ docker compose up --build
 - Management UI: http://localhost:9000
 - Postgres on `:5432`, Redis on `:6379`
 
-`scripts/` has runnable demos: mock downstream services plus scripts that drive workflows against them.
+Then run the example above inline:
+
+```bash
+curl -X POST http://localhost:9080/workflows/run \
+  -H 'Content-Type: application/json' \
+  -d '{"definition": <the JSON above>, "payload": {"orderId": "ord-1"}}'
+# → {"id": "<execution-id>"}
+
+curl http://localhost:9080/workflows/<execution-id>/steps
+```
+
+`scripts/` has runnable demos: mock downstream services plus scripts that drive workflows
+against them.
 
 ---
 
-## When NOT to use Trama
+## Where it fits
 
-Trama is not for every case.
+| | How it works | Trade-off |
+|---|---|---|
+| **Choreography** (events and queues) | Each service reacts to the previous one's event. | Fast to start. The order of the flow, its retries and its recovery end up spread across services, with no single place to see an execution. |
+| **Trama** | One runtime runs the flow your JSON describes and calls your services over HTTP. | You run Trama, Postgres and Redis. Your services only need to be idempotent HTTP endpoints. |
+| **Workflow platforms** (Temporal, Cadence) | Workflows are code, written against an SDK and run by dedicated workers. | Arbitrary logic and long histories, at the cost of a new programming model, SDKs in every service and a platform to operate. |
 
-Avoid it if:
-
-- you need full event sourcing
-- you already run Temporal/Cadence successfully  
+**Don't use Trama** if you need event sourcing, if your workflow needs logic that does not fit
+in JSON Logic conditions and templates, or if you already run Temporal or Cadence
+successfully.
 
 ---
 
-## Core capabilities
+## Measured
 
-- JSON-defined workflows: v1 linear steps, or a v2 node graph
-- **Branching:** `switch` nodes with JSON Logic
-- **Parallel branches:** `split` / `join`
-- **Async HTTP tasks** resumed by a signed callback, with a deadline
-- **Pauses:** `sleep` nodes, with early wake via the API
-- **Failures:** retries (fixed or exponential backoff) and compensation
-- **Hooks:** `onSuccessCallback` / `onFailureCallback`
-- **Durability:** every execution is checkpointed in Postgres at each node, and recovered after
-  crashes or Redis data loss
-- **Horizontal scaling:** workers share a sharded Redis queue, with no coordinator
-- **Offline validator and dry-run** (`trama-validate`)
-- **Operations:** Prometheus metrics, OpenTelemetry tracing, Grafana dashboard
-- **Visual management UI**
+Every release since 2.1 is checked by a fault-injection and load harness
+([`loadtest/`](loadtest/README.md)) against Postgres, Redis and a mock downstream on one
+8-thread host, with every setting at its default. Full method and results:
+[`docs/validation-report.md`](docs/validation-report.md) (2.2.0).
+
+| | |
+|---|---|
+| **Faults** | 20 scenario runs (Redis restarts with and without persistence, a 30 s Redis outage, `FLUSHALL`, workers killed or frozen past their lease mid-call, a kill storm, overload): **0 lost, 0 stuck, 0 wrong outcomes.** |
+| **Load + faults** | 5,000 of 5,000 workflows finished with the expected outcome across a worker kill, a Redis cut and a Postgres cut in the same run. |
+| **Throughput** | One process, 64 workers: **229 workflows/s** of 3 sync HTTP tasks each, at 12 ms of Trama CPU per workflow. |
+| **Repeated calls** | Only the calls in flight when a worker died were made again (at-least-once; see [Delivery and durability](#delivery-and-durability)). |
+
+The harness shares cores with Postgres, Redis and the mock, so treat the throughput as relative.
 
 ---
 
@@ -267,12 +248,12 @@ curl -X POST http://localhost:9080/workflows/run \
 # → {"id": "<execution-id>"}
 ```
 
-Or store the definition once and run it by name. Running stored definitions works for the v1
-format only for now.
+Or store a definition once and run it by name and version. Running stored definitions works
+for linear `steps` (v1) definitions only for now; a stored node graph answers `422`.
 
 ```bash
-curl -X POST http://localhost:9080/workflows/definitions -H 'Content-Type: application/json' -d @definition.json
-curl -X POST http://localhost:9080/workflows/definitions/payment-flow/v1/run -H 'Content-Type: application/json' -d '{"payload": {...}}'
+curl -X POST http://localhost:9080/workflows/definitions -H 'Content-Type: application/json' -d @steps-definition.json
+curl -X POST http://localhost:9080/workflows/definitions/<name>/<version>/run -H 'Content-Type: application/json' -d '{"payload": {...}}'
 ```
 
 ### Check status
@@ -422,7 +403,7 @@ release's validation are in [`docs/validation-report.md`](docs/validation-report
 
 ### validate
 
-Validates a saga definition offline — no running server needed. Takes two phases:
+Validates a node-graph definition offline, with no running server. It has two phases:
 
 1. **Structural check** — parses the JSON, verifies node IDs are unique, all `next`/`target` references resolve to existing nodes, switch nodes have a `default`, async nodes have a positive `timeoutMillis`, and all required fields are present.
 2. **Execution simulation** *(optional)* — walks the node graph using mock responses, renders Mustache templates, evaluates JSON Logic conditions, and prints the full execution trace. Catches bugs that structural checks miss (wrong variable names in templates, switch conditions that never match, etc.).
@@ -436,22 +417,6 @@ Validates a saga definition offline — no running server needed. Takes two phas
 | `definition.json` | yes | v2 saga definition (must contain `nodes`) |
 | `scenario.json` | no | mock responses per node; enables simulation |
 | `--validate-only` | no | skip simulation even if a scenario is provided |
-
-**Structural check only:**
-
-```
-$ ./gradlew trama-validate --args="definition.json --validate-only"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  trama validate  ·  checkout-full-demo / v1
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-[1/1] Structural validation
-  ✓ 5 nodes  (3 task, 1 switch, 1 async)
-  ✓ all node references resolve
-
-OK
-```
 
 **Full dry-run with scenario:**
 
@@ -521,6 +486,38 @@ For async nodes the simulator renders the outbound request, marks it as `[async]
 ```
 
 **Exit codes:** `0` = all checks passed · `1` = validation or simulation failed
+
+---
+
+## Used by
+
+**[RiteSmith](https://ritesmith.run)** turns a natural-language intent into a workflow once,
+validates it, and hands it to Trama, which runs it from then on without calling an LLM again.
+RiteSmith compiles its plans into Trama nodes in code and exposes `POST /trama/execute`, so
+task nodes can call its capabilities and its sandboxed Luau scripts.
+
+---
+
+## Known limitations
+
+- **Node-graph (v2) definitions** can be run inline and stored, but not yet run by name
+  (`POST /workflows/definitions/{name}/{version}/run`) or retried
+  (`POST /workflows/{id}/retry`); both answer `422` for v2.
+- **At-least-once.** A call in flight when its worker dies is made again. Downstream endpoints
+  must be idempotent.
+- **A failed branch does not roll back its siblings.** A `join` reports each branch's outcome;
+  reacting to a partial failure (for example with a `switch` after the join) is up to the
+  workflow.
+- **Conditions are JSON Logic and data flows through templates.** There is no scripting inside
+  a workflow; put that logic in a service.
+
+---
+
+## The name
+
+*Trama* is Portuguese for the weft, the thread woven across the warp to make fabric, and also
+for a plot. Your services are the warp; Trama is the thread that runs across them and holds
+the flow together.
 
 ---
 
