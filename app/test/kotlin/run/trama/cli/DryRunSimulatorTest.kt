@@ -208,4 +208,43 @@ class DryRunSimulatorTest {
             "expected the nested split to appear inside the outer branch's own trace",
         )
     }
+
+    @Test
+    fun `split branches resolve payload_nodes from the trunk's simulated results, as at runtime`() {
+        val def = SagaDefinitionV2(
+            name = "dry-nodes",
+            version = "1",
+            failureHandling = FailureHandling.Retry(0, 0),
+            entrypoint = "load",
+            nodes = listOf(
+                NodeDefinition.Task("load", NodeActionDef(TaskMode.SYNC, httpCall("http://load")), next = "fan-out"),
+                NodeDefinition.Split(id = "fan-out", branches = listOf("route"), join = "fan-in"),
+                NodeDefinition.Switch(
+                    id = "route",
+                    cases = listOf(
+                        run.trama.saga.SwitchCaseDef(
+                            name = "known",
+                            whenExpression = Json.parseToJsonElement("""{"==":[{"var":"payload._nodes.load.customer"},"c-9"]}"""),
+                            target = "charge",
+                        ),
+                    ),
+                    default = "reject",
+                ),
+                NodeDefinition.Task("charge", NodeActionDef(TaskMode.SYNC, httpCall("http://charge/{{payload._nodes.load.customer}}/{{payload.orderId}}"))),
+                NodeDefinition.Task("reject", NodeActionDef(TaskMode.SYNC, httpCall("http://reject"))),
+                NodeDefinition.Join(id = "fan-in"),
+            ),
+        )
+        val scenario = DryRunScenario(
+            payload = JsonObject(mapOf("orderId" to JsonPrimitive("o-1"))),
+            steps = mapOf("load" to StepMock(body = JsonObject(mapOf("customer" to JsonPrimitive("c-9"))))),
+        )
+
+        val result = DryRunSimulator().run(def, scenario)
+
+        assertEquals(SimOutcome.SUCCEEDED, result.outcome)
+        val branch = result.entries.filterIsInstance<TraceEntry.Split>().single().branches.getValue("route")
+        assertEquals("charge", branch.filterIsInstance<TraceEntry.Switch>().single().targetNodeId)
+        assertEquals("http://charge/c-9/o-1", branch.filterIsInstance<TraceEntry.Task>().single().renderedUrl)
+    }
 }

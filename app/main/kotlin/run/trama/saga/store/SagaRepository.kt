@@ -273,7 +273,9 @@ class SagaRepository(
             // Keyed by (index, name): a switch does not advance the step index, so the node
             // after it shares the switch's index. Keying by index alone merged the two and
             // dropped that node from {{nodes.X}} after a sleep/resume reload. In memory the
-            // switch trace is the up body (WorkflowExecutor); mirror that here.
+            // switch trace is the up body (WorkflowExecutor); mirror that here. A join's body (the
+            // branch summary) is the result of that node too, so it is the up body as well; it is
+            // only ever read back from here, since a join always resumes in a fresh slice.
             val latestByStep = linkedMapOf<Pair<Int, String>, StepResult>()
             connection.prepareStatement(sql).use { ps ->
                 ps.setObject(1, sagaId)
@@ -287,7 +289,7 @@ class SagaRepository(
                         val key = index to name
                         val current = latestByStep[key] ?: StepResult(index = index, name = name, upBody = null, downBody = null)
                         latestByStep[key] = when (phase) {
-                            ExecutionPhase.UP.name, ExecutionPhase.SWITCH.name -> current.copy(upBody = body)
+                            ExecutionPhase.UP.name, ExecutionPhase.SWITCH.name, ExecutionPhase.JOIN.name -> current.copy(upBody = body)
                             ExecutionPhase.DOWN.name -> current.copy(downBody = body)
                             else -> current
                         }

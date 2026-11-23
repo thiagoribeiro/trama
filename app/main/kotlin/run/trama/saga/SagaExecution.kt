@@ -49,6 +49,13 @@ data class SagaExecution(
     val checkpointSeq: Long = 0,
 )
 
+/**
+ * Payload key reserved for the parent's node results that a split hands to each branch
+ * (`payload._nodes.<node>` = that node's response body). Rejected on saga start, so a client can
+ * never forge it; see [run.trama.saga.workflow.BranchPayload].
+ */
+const val RESERVED_NODES_KEY = "_nodes"
+
 @Serializable
 data class PayloadValue(
     @Serializable(with = JsonElementAsStringSerializer::class)

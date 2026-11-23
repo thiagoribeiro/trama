@@ -1281,6 +1281,7 @@
           "payload": {
             "type": "object",
             "default": {},
+            "description": "Input payload. The top-level key `_nodes` is reserved (split branches receive the parent's node results under it) and is rejected with 400.",
             "additionalProperties": {
               "$ref": "#/components/schemas/AnyJson"
             }
@@ -1293,6 +1294,7 @@
           "payload": {
             "type": "object",
             "default": {},
+            "description": "Input payload. The top-level key `_nodes` is reserved (split branches receive the parent's node results under it) and is rejected with 400.",
             "additionalProperties": {
               "$ref": "#/components/schemas/AnyJson"
             }

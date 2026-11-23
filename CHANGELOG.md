@@ -4,6 +4,23 @@ All notable changes to Trama are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Split branches see the parent's earlier results.** A branch's initial payload is now the
+  parent's payload plus a reserved `_nodes` object with the response body of each node the
+  parent ran before the split (`{{payload._nodes.load.customer}}`,
+  `{"var": "payload._nodes.load.customer"}`). Nested splits merge the inherited `_nodes` with
+  the inner parent's nodes. Only the nodes the branches reference are carried; a reference
+  that cannot be resolved statically carries them all. The dry-run simulator does the same.
+
+### Changed
+- `_nodes` is a reserved payload key: `POST /workflows/run` and
+  `POST /workflows/definitions/{name}/{version}/run` answer `400` when the payload has it.
+  Retrying an execution reuses its stored payload and is unaffected.
+- After a reload from Postgres (a later slice, a sleep, a join), `nodes.<join>.response.body`
+  now holds the join's branch summary instead of null.
+
 ## [3.1.0] - 2026-11-20
 
 Dependency release. No change to the API, definition format, template rendering or database

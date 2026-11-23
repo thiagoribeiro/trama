@@ -378,6 +378,10 @@ class WorkflowExecutor(
                     if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                     completedNodes.add(node.id)
 
+                    // The branches see what the parent computed so far under payload._nodes. Built
+                    // only from the parent's results (already checkpointed), so a redelivered split
+                    // rebuilds the same payload, just as it rebuilds the same ids below.
+                    val childPayload = BranchPayload.build(execution.payload, stepResults, workflow, node)
                     val children = node.branches.map { branchNodeId ->
                         // Deterministic id/startedAt (not random/now()) so a redelivery of this
                         // very split step — e.g. the worker crashed mid-spawn and the parent's
@@ -393,7 +397,7 @@ class WorkflowExecutor(
                             startedAt = execution.startedAt,
                             currentStepIndex = 0,
                             state = ExecutionState.InProgress(activeNodeId = branchNodeId),
-                            payload = execution.payload,
+                            payload = childPayload,
                             parentExecutionId = execution.id,
                             parentStartedAt = execution.startedAt,
                             parentSplitNodeId = node.id,

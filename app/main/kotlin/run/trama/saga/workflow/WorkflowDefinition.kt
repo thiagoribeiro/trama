@@ -18,7 +18,17 @@ data class WorkflowDefinition(
     val nodes: Map<String, WorkflowNode>,
     val onSuccessCallback: HttpCall? = null,
     val onFailureCallback: HttpCall? = null,
-)
+) {
+    /**
+     * Per split node id, which parent node results its branches receive under `payload._nodes`.
+     * Computed on first use and kept with this IR, which [DefinitionNormalizer] caches per
+     * definition, so the analysis runs once per definition rather than once per split.
+     */
+    private val branchNodeSelections: Map<String, BranchNodeSelection> by lazy { SplitNodeReferences.analyze(this) }
+
+    fun branchNodeSelection(splitNodeId: String): BranchNodeSelection =
+        branchNodeSelections[splitNodeId] ?: BranchNodeSelection.ALL
+}
 
 sealed class WorkflowNode {
     abstract val id: String

@@ -12,6 +12,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -82,6 +83,47 @@ class ApplicationTest {
             val id = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("id").jsonPrimitive.content
             val status = runBlocking { SagaRepository(IntegrationDb.client).getExecutionStatus(UUID.fromString(id)) }
             assertEquals("IN_PROGRESS", assertNotNull(status, "the run's row is written at admission").status)
+        }
+    }
+
+    @Test
+    fun `starting a saga whose payload carries the reserved _nodes key is rejected with 400`() {
+        apiOnlyAgainstTestContainers()
+        testApplication {
+            application { module() }
+            val reserved = """{"_nodes": {"pre": {"x": 1}}, "orderId": "o-1"}"""
+            val v2 = client.post("/workflows/run") {
+                contentType(ContentType.Application.Json)
+                setBody(
+                    """
+                    {"definition": {"name": "reserved-${UUID.randomUUID()}", "version": "1",
+                      "failureHandling": {"type": "retry", "maxAttempts": 0, "delayMillis": 0},
+                      "entrypoint": "t1",
+                      "nodes": [{"kind": "task", "id": "t1",
+                        "action": {"mode": "sync", "request": {"url": "http://localhost:1/x", "verb": "POST"}}}]},
+                     "payload": $reserved}
+                    """.trimIndent()
+                )
+            }
+            assertEquals(400, v2.status.value, v2.bodyAsText())
+            assertTrue("_nodes" in v2.bodyAsText(), v2.bodyAsText())
+
+            val v1Definition = """
+                {"name": "reserved-v1-${UUID.randomUUID()}", "version": "1",
+                 "failureHandling": {"type": "retry", "maxAttempts": 0, "delayMillis": 0},
+                 "steps": [{"name": "s1", "up": {"url": "http://localhost:1/x", "verb": "POST"}}]}
+            """.trimIndent()
+            val v1 = client.post("/workflows/run") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"definition": $v1Definition, "payload": $reserved}""")
+            }
+            assertEquals(400, v1.status.value, v1.bodyAsText())
+
+            val stored = client.post("/workflows/definitions/any-name/1/run") {
+                contentType(ContentType.Application.Json)
+                setBody("""{"payload": $reserved}""")
+            }
+            assertEquals(400, stored.status.value, stored.bodyAsText())
         }
     }
 }

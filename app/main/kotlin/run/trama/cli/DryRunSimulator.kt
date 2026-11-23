@@ -13,6 +13,7 @@ import run.trama.saga.TaskMode
 import run.trama.saga.TemplateEscaping
 import run.trama.saga.renderBody
 import run.trama.saga.toAny
+import run.trama.saga.workflow.BranchPayload
 import run.trama.saga.workflow.DefinitionNormalizer
 import run.trama.saga.workflow.JoinNode
 import run.trama.saga.workflow.JsonLogicEvaluator
@@ -94,7 +95,10 @@ sealed class TraceEntry {
         val targetNodeId: String,
     ) : TraceEntry()
 
-    /** A split node: fans out into independent branches, each simulated from a clean context. */
+    /**
+     * A split node: fans out into independent branches, each simulated from a clean step history
+     * whose payload carries the trunk's results under `payload._nodes`, as at runtime.
+     */
     data class Split(
         val nodeId: String,
         val branches: Map<String, List<TraceEntry>>,
@@ -143,7 +147,8 @@ class DryRunSimulator {
      * terminal node, a failure, a cycle, or the node-count cap is reached. Used both for
      * the main trunk and, recursively, for each branch of a split (with a fresh
      * [visited]/[stepResults] scope, since a branch is an independent child execution
-     * and does not see the parent's prior step results).
+     * and does not see the parent's prior step results — only their bodies, under
+     * `payload._nodes`, built by the same [BranchPayload] as the runtime).
      */
     private fun walk(
         workflow: WorkflowDefinition,
@@ -206,12 +211,14 @@ class DryRunSimulator {
 
                 is SplitNode -> {
                     val branchTraces = linkedMapOf<String, List<TraceEntry>>()
+                    val branchPayload = BranchPayload.build(payload.mapValues { PayloadValue(it.value) }, stepResults, workflow, node)
+                        .mapValues { it.value.value }
                     var allSucceeded = true
                     var firstFailure: SimulationResult? = null
                     for (branchId in node.branches) {
                         // Each branch is an independent child execution: fresh visited set and
-                        // step-result history, seeded only by the parent's payload.
-                        val branchResult = walk(workflow, definition, payload, scenario, branchId, mutableSetOf(), mutableListOf())
+                        // step-result history, seeded only by the parent's payload plus `_nodes`.
+                        val branchResult = walk(workflow, definition, branchPayload, scenario, branchId, mutableSetOf(), mutableListOf())
                         branchTraces[branchId] = branchResult.entries
                         if (branchResult.outcome != SimOutcome.SUCCEEDED) {
                             allSucceeded = false
