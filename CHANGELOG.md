@@ -18,8 +18,13 @@ All notable changes to Trama are documented here. The format follows
 - `_nodes` is a reserved payload key: `POST /workflows/run` and
   `POST /workflows/definitions/{name}/{version}/run` answer `400` when the payload has it.
   Retrying an execution reuses its stored payload and is unaffected.
-- After a reload from Postgres (a later slice, a sleep, a join), `nodes.<join>.response.body`
-  now holds the join's branch summary instead of null.
+- After a reload from Postgres (a later slice, a sleep, a join), a join's step result is its
+  branch summary instead of null. This shows in `nodes.<join>.response.body`,
+  `step.<join>.body`, the join's entry in `steps[]`, and `prev.body` in the node right after the
+  join (templates and switch conditions alike).
+- The dry-run simulator records the same results as the runtime for switches (the routing
+  trace) and joins (the branch summary), so templates and conditions that read them simulate as
+  they run.
 
 ## [3.1.0] - 2026-11-20
 

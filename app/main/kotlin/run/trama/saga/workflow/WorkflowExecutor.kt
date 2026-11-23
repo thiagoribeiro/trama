@@ -879,18 +879,8 @@ class WorkflowExecutor(
         return ExecutionOutcome.FailedFinal
     }
 
-    private fun buildSwitchTraceJson(evalResult: SwitchNodeHandler.EvaluationResult): String {
-        val obj = buildJsonObject {
-            put("target", evalResult.targetNodeId)
-            if (evalResult.matchedCaseName != null) {
-                put("matchedCase", evalResult.matchedCaseName)
-            } else {
-                put("matchedCase", JsonNull)
-            }
-            put("usedDefault", evalResult.usedDefault)
-        }
-        return kotlinx.serialization.json.Json.encodeToString(JsonObject.serializer(), obj)
-    }
+    private fun buildSwitchTraceJson(evalResult: SwitchNodeHandler.EvaluationResult): String =
+        kotlinx.serialization.json.Json.encodeToString(JsonObject.serializer(), SwitchNodeHandler.traceJson(evalResult))
 
     // ── Split / join ───────────────────────────────────────────────────────────
 
