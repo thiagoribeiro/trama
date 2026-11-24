@@ -82,7 +82,7 @@ fun main(args: Array<String>) {
     val totalSteps = if (!validateOnly && scenarioPath != null) 2 else 1
     println("[1/$totalSteps] Structural validation")
 
-    val errors = WorkflowDefinitionValidator.validate(definition)
+    val errors = WorkflowDefinitionValidator.validate(definition, run.trama.config.ConfigLoader.load().split.maxDepth)
     if (errors.isNotEmpty()) {
         errors.forEach { println("  ✗ $it") }
         println()

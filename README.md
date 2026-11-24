@@ -341,6 +341,10 @@ count also runs across Trama instances that start each other's sagas over HTTP:
   node with `split depth N exceeds split.maxDepth M`. The failure is not retried (the depth
   would be the same); the saga compensates and ends `FAILED`. Inside a branch, that fails the
   branch, which its `join` reports like any other branch failure.
+- A definition whose own splits nest deeper than `split.maxDepth`, counting every path from
+  depth 0, is refused with `400` when it is registered or started (`split nesting depth N
+  exceeds split.maxDepth M`). So is a branch that leads back into its own split, which would
+  nest forever. `trama-validate` applies the same check, with the same config.
 - A start request whose `X-Trama-Split-Depth` is not a non-negative integer is rejected with
   `400`.
 

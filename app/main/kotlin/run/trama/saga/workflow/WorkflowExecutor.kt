@@ -26,6 +26,7 @@ import run.trama.saga.StepCallEntry
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.SagaExecutor
+import run.trama.saga.SplitDepth
 import run.trama.runtime.JoinResumer
 import run.trama.saga.TemplateContextBuilder
 import run.trama.saga.TemplateEscaping
@@ -63,7 +64,7 @@ class WorkflowExecutor(
     private val sleepMaxChunkMillis: Long = 12 * 3_600_000L,
     private val sleepJitterMillis: Long = 60_000L,
     /** `split.maxDepth`: a split whose branches would be deeper fails instead of spawning them. */
-    private val maxSplitDepth: Int = 3,
+    private val maxSplitDepth: Int = SplitDepth.DEFAULT_MAX,
     callbackTokenService: CallbackTokenService? = null,
     callbackUrlFactory: CallbackUrlFactory? = null,
 ) : SagaExecutor, JoinResumer {

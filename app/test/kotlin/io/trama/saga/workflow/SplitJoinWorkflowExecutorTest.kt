@@ -630,7 +630,7 @@ class SplitJoinWorkflowExecutorTest {
         store: SagaExecutionStore,
         enqueuer: FakeEnqueuer,
         calls: MutableList<Pair<String, List<String>>>,
-        maxSplitDepth: Int = 3,
+        maxSplitDepth: Int = SplitDepth.DEFAULT_MAX,
         failureHandling: FailureHandling? = null,
         status: (String) -> HttpStatusCode = { HttpStatusCode.OK },
     ) = WorkflowExecutor(

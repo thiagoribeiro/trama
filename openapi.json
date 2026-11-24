@@ -537,6 +537,7 @@
       "post": {
         "summary": "Run an inline saga definition",
         "operationId": "runSagaInline",
+        "description": "Validates the definition first: a v2 definition whose splits nest deeper than `split.maxDepth` (default 3) is rejected with 400.",
         "parameters": [
           {
             "$ref": "#/components/parameters/SplitDepthHeader"
@@ -564,7 +565,7 @@
             }
           },
           "400": {
-            "description": "Validation error or invalid `X-Trama-Split-Depth`",
+            "description": "Validation error (including split nesting past `split.maxDepth`) or invalid `X-Trama-Split-Depth`",
             "content": {
               "application/json": {
                 "schema": {
@@ -615,7 +616,7 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "Validation error, including a v2 definition whose splits nest deeper than `split.maxDepth` (default 3)",
             "content": {
               "application/json": {
                 "schema": {
@@ -773,7 +774,7 @@
             }
           },
           "400": {
-            "description": "Validation error or invalid id",
+            "description": "Validation error (including split nesting past `split.maxDepth`) or invalid id",
             "content": {
               "application/json": {
                 "schema": {

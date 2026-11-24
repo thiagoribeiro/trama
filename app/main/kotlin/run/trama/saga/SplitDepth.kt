@@ -7,6 +7,7 @@ package run.trama.saga
  */
 object SplitDepth {
     const val HEADER = "X-Trama-Split-Depth"
+    const val DEFAULT_MAX = 3
 
     /** The start depth a request asks for: 0 without [HEADER], null when it is not a non-negative integer. */
     fun parseHeader(value: String?): Int? =

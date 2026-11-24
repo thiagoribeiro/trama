@@ -182,4 +182,12 @@
         </sql>
     </changeSet>
 
+    <!-- An execution's split nesting depth (X-Trama-Split-Depth, see SplitDepth). Set once when
+         the execution is admitted and never changed, so a FAILED row still has it for /retry. -->
+    <changeSet id="010-execution-split-depth" author="trama">
+        <sql>
+            ALTER TABLE saga_execution ADD COLUMN IF NOT EXISTS split_depth integer NOT NULL DEFAULT 0;
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

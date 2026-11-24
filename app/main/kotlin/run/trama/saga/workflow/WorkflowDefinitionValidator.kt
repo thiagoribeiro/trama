@@ -2,11 +2,13 @@ package run.trama.saga.workflow
 
 import run.trama.saga.NodeDefinition
 import run.trama.saga.SagaDefinitionV2
+import run.trama.saga.SplitDepth
 import run.trama.saga.TaskMode
 
 object WorkflowDefinitionValidator {
 
-    fun validate(definition: SagaDefinitionV2): List<String> {
+    /** [maxSplitDepth]: `split.maxDepth`; a definition whose splits nest deeper is refused. */
+    fun validate(definition: SagaDefinitionV2, maxSplitDepth: Int = SplitDepth.DEFAULT_MAX): List<String> {
         val errors = mutableListOf<String>()
 
         if (definition.name.isBlank()) errors.add("name must not be blank")
@@ -164,7 +166,42 @@ object WorkflowDefinitionValidator {
             errors.add("compensation is not allowed in cyclic workflows")
         }
 
+        if (definition.entrypoint in nodeMap) {
+            val depth = splitNesting(nodeMap, definition.entrypoint)
+            if (depth == null) errors.add("a split is reachable from its own branches, so its nesting is unbounded")
+            else if (depth > maxSplitDepth) errors.add("split nesting depth $depth exceeds split.maxDepth $maxSplitDepth")
+        }
+
         return errors
+    }
+
+    /**
+     * Deepest split nesting one execution walking from [start] reaches: a split's branches are one
+     * level deeper, and the walk goes on at its join. Null when a split is reachable from its own
+     * branches ([enclosing]), which nests without bound. Counts from 0: the depth a start request
+     * brings in `X-Trama-Split-Depth` is only known at run time, where the split enforces the limit.
+     */
+    private fun splitNesting(nodes: Map<String, NodeDefinition>, start: String, enclosing: Set<String> = emptySet()): Int? {
+        var deepest = 0
+        val seen = mutableSetOf<String>()
+        val pending = ArrayDeque(listOf(start))
+        while (pending.isNotEmpty()) {
+            val node = nodes[pending.removeLast()] ?: continue
+            if (!seen.add(node.id)) continue
+            pending += when (node) {
+                is NodeDefinition.Task -> listOfNotNull(node.next)
+                is NodeDefinition.Sleep -> listOfNotNull(node.next)
+                is NodeDefinition.Join -> listOfNotNull(node.next)
+                is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
+                is NodeDefinition.Split -> {
+                    if (node.id in enclosing) return null
+                    val inner = node.branches.maxOfOrNull { splitNesting(nodes, it, enclosing + node.id) ?: return null } ?: 0
+                    deepest = maxOf(deepest, inner + 1)
+                    listOf(node.join)
+                }
+            }
+        }
+        return deepest
     }
 
     private fun hasCycle(definition: SagaDefinitionV2): Boolean {

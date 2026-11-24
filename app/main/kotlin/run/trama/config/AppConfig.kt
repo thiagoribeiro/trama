@@ -18,10 +18,11 @@ data class AppConfig(
 
 /**
  * [maxDepth]: how deep splits may nest, counted across trama instances that start each other's
- * sagas over HTTP (see [run.trama.saga.SplitDepth]). A split whose branches would be deeper fails its node.
+ * sagas over HTTP (see [run.trama.saga.SplitDepth]). A split whose branches would be deeper fails its
+ * node; a definition that nests deeper is refused when registered or started.
  */
 data class SplitConfig(
-    val maxDepth: Int = 3,
+    val maxDepth: Int = run.trama.saga.SplitDepth.DEFAULT_MAX,
 ) {
     init {
         require(maxDepth >= 0) { "split.maxDepth must not be negative (got $maxDepth)" }

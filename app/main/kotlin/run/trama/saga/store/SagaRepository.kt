@@ -792,13 +792,13 @@ class SagaRepository(
                 startedAt = record.get(SAGA_EXECUTION.STARTED_AT).toInstant(),
                 status = record.get(SAGA_EXECUTION.STATUS) ?: "UNKNOWN",
                 payloadJson = record.get(SAGA_EXECUTION.PAYLOAD)?.data(),
-                splitDepth = record.get(RETRY_SPLIT_DEPTH)?.toIntOrNull() ?: 0,
+                splitDepth = record.get(RETRY_SPLIT_DEPTH),
             )
         }
     }
 
-    /** The checkpoint's split depth, so a retried execution keeps sending the depth it ran at. */
-    private val RETRY_SPLIT_DEPTH = DSL.field("checkpoint->>'splitDepth'", String::class.java)
+    /** Changeset 010; not in the generated jOOQ tables. A retried execution keeps the depth it ran at. */
+    private val RETRY_SPLIT_DEPTH = DSL.field(DSL.name("split_depth"), Int::class.java)
 
     suspend fun insertDefinition(id: UUID, name: String, version: String, definitionJson: String): Boolean {
         val now = Instant.now().toOffset()
@@ -1162,8 +1162,8 @@ class SagaRepository(
             val sql = """
                 INSERT INTO saga_execution
                     (id, name, version, definition, status, started_at, updated_at, payload,
-                     checkpoint, checkpoint_seq, checkpoint_carrier, resume_at)
-                VALUES (?, ?, ?, ?::jsonb, 'IN_PROGRESS', ?, now(), ?::jsonb, ?::jsonb, ?, ?, now())
+                     checkpoint, checkpoint_seq, checkpoint_carrier, resume_at, split_depth)
+                VALUES (?, ?, ?, ?::jsonb, 'IN_PROGRESS', ?, now(), ?::jsonb, ?::jsonb, ?, ?, now(), ?)
                 ON CONFLICT (id, started_at) DO NOTHING
             """.trimIndent()
             connection.prepareStatement(sql).use { ps ->
@@ -1177,6 +1177,7 @@ class SagaRepository(
                     ps.setString(7, checkpointJson(execution))
                     ps.setLong(8, execution.checkpointSeq)
                     ps.setLong(9, execution.checkpointSeq)
+                    ps.setInt(10, execution.splitDepth)
                     ps.addBatch()
                 }
                 ps.executeBatch()
@@ -1234,7 +1235,7 @@ class SagaRepository(
     suspend fun loadCheckpoint(executionId: UUID): SagaExecution? =
         db.withConnection { connection ->
             val sql = """
-                SELECT checkpoint, checkpoint_seq, definition, payload, name, version
+                SELECT checkpoint, checkpoint_seq, definition, payload, name, version, split_depth
                 FROM saga_execution WHERE id = ? AND started_at >= ? AND checkpoint IS NOT NULL
             """.trimIndent()
             connection.prepareStatement(sql).use { ps ->
@@ -1364,7 +1365,7 @@ class SagaRepository(
                     LIMIT ? FOR UPDATE SKIP LOCKED
                 ) c
                 WHERE se.id = c.id AND se.started_at = c.started_at
-                RETURNING se.id, se.checkpoint, se.checkpoint_seq, se.definition, se.payload, se.name, se.version, se.waiting_state
+                RETURNING se.id, se.checkpoint, se.checkpoint_seq, se.definition, se.payload, se.name, se.version, se.waiting_state, se.split_depth
             """.trimIndent()
             connection.prepareStatement(sql).use { ps ->
                 ps.setObject(1, cutoff())
@@ -1440,7 +1441,7 @@ class SagaRepository(
             parentJoinNodeId = state.parentJoinNodeId,
             branchId = state.branchId,
             checkpointSeq = rs.getLong("checkpoint_seq"),
-            splitDepth = state.splitDepth,
+            splitDepth = rs.getInt("split_depth"),
         )
     }.getOrNull()
 
@@ -1462,7 +1463,6 @@ class SagaRepository(
                 parentSplitNodeId = execution.parentSplitNodeId,
                 parentJoinNodeId = execution.parentJoinNodeId,
                 branchId = execution.branchId,
-                splitDepth = execution.splitDepth,
             ),
         )
 
@@ -1500,7 +1500,6 @@ class SagaRepository(
         val parentSplitNodeId: String? = null,
         val parentJoinNodeId: String? = null,
         val branchId: String? = null,
-        val splitDepth: Int = 0,
     )
 
     /**
@@ -1537,7 +1536,7 @@ class SagaRepository(
         val startedAt: Instant,
         val status: String,
         val payloadJson: String?,
-        val splitDepth: Int = 0,
+        val splitDepth: Int,
     )
 
     data class SagaDefinitionRecord(
