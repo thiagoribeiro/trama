@@ -29,6 +29,7 @@ import run.trama.saga.StepCallEntry
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.SagaExecutor
+import run.trama.saga.SplitDepth
 import run.trama.runtime.JoinResumer
 import run.trama.saga.TemplateContextBuilder
 import run.trama.saga.TemplateEscaping
@@ -65,6 +66,8 @@ class WorkflowExecutor(
     private val maxNodesPerExecution: Int = 25,
     private val sleepMaxChunkMillis: Long = 12 * 3_600_000L,
     private val sleepJitterMillis: Long = 60_000L,
+    /** `split.maxDepth`: a split whose branches would be deeper fails instead of spawning them. */
+    private val maxSplitDepth: Int = SplitDepth.DEFAULT_MAX,
     callbackTokenService: CallbackTokenService? = null,
     callbackUrlFactory: CallbackUrlFactory? = null,
 ) : SagaExecutor, JoinResumer {
@@ -372,6 +375,30 @@ class WorkflowExecutor(
 
                 is SplitNode -> {
                     if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
+                    SplitDepth.exceeded(execution.splitDepth, maxSplitDepth)?.let { message ->
+                        // Too deep (the depth came in with the start request, from a trama
+                        // calling this one): spawning nothing, the node fails like any other.
+                        // Not retried: the depth will not change on a retry.
+                        val reason = FailureReason("node=${node.id} $message")
+                        Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
+                            logger.warn("split refused", kv("nodeId", node.id), kv("splitDepth", execution.splitDepth), kv("maxDepth", maxSplitDepth))
+                        }
+                        return handleForwardFailure(
+                            cursor, workflow, activeNodeId,
+                            completedNodes, compensationStack,
+                            retry, reason,
+                            StepRecord(
+                                stepIdx = stepIdx,
+                                stepName = node.id,
+                                phase = ExecutionPhase.SPLIT,
+                                statusCode = null,
+                                success = false,
+                                responseBody = null,
+                                stepStartedAt = Instant.now(),
+                            ),
+                            retryable = false,
+                        )
+                    }
                     completedNodes.add(node.id)
 
                     // The branches see what the parent computed so far under payload._nodes. Built
@@ -399,6 +426,7 @@ class WorkflowExecutor(
                             parentSplitNodeId = node.id,
                             parentJoinNodeId = node.join,
                             branchId = branchNodeId,
+                            splitDepth = execution.splitDepth + 1,
                         )
                     }
 
@@ -497,10 +525,12 @@ class WorkflowExecutor(
         retryState: RetryState,
         reason: FailureReason,
         step: StepRecord,
+        /** False for a failure a retry cannot fix: compensation starts at once. */
+        retryable: Boolean = true,
     ): ExecutionOutcome {
         val execution = cursor.execution
         val retryDecision = retryPolicy.next(retryState, workflow.failureHandling)
-        return if (retryDecision.shouldRetry) {
+        return if (retryable && retryDecision.shouldRetry) {
             Span.current().addEvent("saga.retry")
             Tracing.withTraceMdc(Span.current(), execution.id.toString()) {
                 logger.info(
@@ -553,7 +583,7 @@ class WorkflowExecutor(
         workflow.onSuccessCallback?.let { callback ->
             ensureLease()
             val context = TemplateContextBuilder.build(execution, "onSuccessCallback", ExecutionPhase.UP, stepResults, execution.payload)
-            val httpResult = executeRawCall("onSuccessCallback", callback, context)
+            val httpResult = executeRawCall("onSuccessCallback", callback, context, execution.splitDepth)
             if (!httpResult.success) {
                 val warning = "success callback failed: node=onSuccessCallback status=${httpResult.statusCode ?: httpResult.error}"
                 store.updateCallbackWarning(execution.id, warning)
@@ -680,7 +710,7 @@ class WorkflowExecutor(
         workflow.onFailureCallback?.let { callback ->
             ensureLease()
             val context = TemplateContextBuilder.build(execution, "onFailureCallback", ExecutionPhase.DOWN, stepResults, execution.payload)
-            val httpResult = executeRawCall("onFailureCallback", callback, context)
+            val httpResult = executeRawCall("onFailureCallback", callback, context, execution.splitDepth)
             if (!httpResult.success) {
                 val warning = "failure callback failed: node=onFailureCallback status=${httpResult.statusCode ?: httpResult.error}"
                 store.updateCallbackWarning(execution.id, warning)
@@ -1078,6 +1108,7 @@ class WorkflowExecutor(
         name: String,
         call: HttpCall,
         context: Map<String, Any?>,
+        splitDepth: Int,
     ): RawCallResult {
         return try {
             val url = renderer.render(call.url, context, TemplateEscaping.NONE)
@@ -1085,6 +1116,7 @@ class WorkflowExecutor(
             val response = httpClient.client.request(url) {
                 method = call.verb.toKtorMethod()
                 call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
+                splitDepthHeader(splitDepth)
                 renderedBody?.let { setBody(it) }
             }
             RawCallResult(

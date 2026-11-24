@@ -43,6 +43,7 @@ import run.trama.saga.SagaEnqueuer
 import run.trama.saga.SagaExecution
 import run.trama.saga.SagaExecutionStore
 import run.trama.saga.SleepEntry
+import run.trama.saga.SplitDepth
 import run.trama.saga.StepCallEntry
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
@@ -620,6 +621,172 @@ class SplitJoinWorkflowExecutorTest {
             Json.encodeToString(SagaExecution.serializer(), first.single()),
             Json.encodeToString(SagaExecution.serializer(), second.single()),
         )
+    }
+
+    // ── split.maxDepth: nesting depth across splits and trama-to-trama calls ──────
+
+    /** Records every outgoing call as (url, X-Trama-Split-Depth header values); answers [status]. */
+    private fun depthExecutor(
+        store: SagaExecutionStore,
+        enqueuer: FakeEnqueuer,
+        calls: MutableList<Pair<String, List<String>>>,
+        maxSplitDepth: Int = SplitDepth.DEFAULT_MAX,
+        failureHandling: FailureHandling? = null,
+        status: (String) -> HttpStatusCode = { HttpStatusCode.OK },
+    ) = WorkflowExecutor(
+        store = store,
+        renderer = MustacheTemplateRenderer(),
+        retryPolicy = DefaultRetryPolicy(),
+        enqueuer = enqueuer,
+        httpClient = FakeHttpClientProvider(
+            HttpClient(
+                MockEngine { request ->
+                    calls += request.url.toString() to request.headers.getAll(SplitDepth.HEADER).orEmpty()
+                    respond("{}", status(request.url.host), headersOf("Content-Type" to listOf("application/json")))
+                },
+            ),
+        ),
+        metrics = Metrics(SimpleMeterRegistry()),
+        maxSplitDepth = maxSplitDepth,
+    )
+
+    private fun nestedSplits(name: String) = v2(
+        name, "outer",
+        NodeDefinition.Split(id = "outer", branches = listOf("mid", "plain"), join = "outer-join"),
+        task("mid", "http://mid", next = "inner"),
+        NodeDefinition.Split(id = "inner", branches = listOf("leaf", "leaf2"), join = "inner-join"),
+        task("leaf", "http://leaf"),
+        task("leaf2", "http://leaf2"),
+        NodeDefinition.Join(id = "inner-join"),
+        task("plain", "http://plain"),
+        NodeDefinition.Join(id = "outer-join"),
+    )
+
+    @Test
+    fun `each split branch is one deeper than its parent`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = depthExecutor(store, enqueuer, mutableListOf())
+        val root = executionOf(nestedSplits("depth-propagation"), "outer").copy(splitDepth = 1)
+
+        executor.execute(root)
+        assertEquals(2, enqueuer.branch("mid").splitDepth)
+        assertEquals(2, enqueuer.branch("plain").splitDepth)
+
+        executor.execute(enqueuer.branch("mid"))
+        assertEquals(3, enqueuer.branch("leaf").splitDepth)
+        assertEquals(3, enqueuer.branch("leaf2").splitDepth)
+    }
+
+    @Test
+    fun `task calls send the execution's split depth, replacing a header of that name in the definition`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val calls = mutableListOf<Pair<String, List<String>>>()
+        val executor = depthExecutor(store, enqueuer, calls)
+        val def = v2(
+            "depth-header", "pre",
+            NodeDefinition.Task(
+                "pre",
+                NodeActionDef(TaskMode.SYNC, HttpCall(TemplateString("http://pre"), HttpVerb.GET, headers = mapOf("x-trama-split-depth" to TemplateString("0")))),
+                next = "fan-out",
+            ),
+            NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a", "branch-b"), join = "fan-in"),
+            task("branch-a", "http://a"),
+            task("branch-b", "http://b"),
+            NodeDefinition.Join(id = "fan-in"),
+        )
+
+        executor.execute(executionOf(def, "pre").copy(splitDepth = 2))
+        executor.execute(enqueuer.branch("branch-a"))
+
+        assertEquals(listOf("http://pre" to listOf("2"), "http://a" to listOf("3")), calls)
+    }
+
+    @Test
+    fun `compensations and workflow callbacks send the split depth too`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val calls = mutableListOf<Pair<String, List<String>>>()
+        val executor = depthExecutor(store, enqueuer, calls, status = { host -> if (host == "boom") HttpStatusCode.InternalServerError else HttpStatusCode.OK })
+        val def = v2(
+            "depth-header-compensation", "pre",
+            NodeDefinition.Task("pre", NodeActionDef(TaskMode.SYNC, httpCall("http://pre")), compensation = httpCall("http://undo-pre"), next = "boom"),
+            task("boom", "http://boom"),
+        ).copy(onFailureCallback = httpCall("http://on-failure"))
+
+        executor.execute(executionOf(def, "pre").copy(splitDepth = 1))
+        val compensating = enqueuer.enqueued.last()
+        assertIs<ExecutionState.Compensating>(compensating.state)
+        executor.execute(compensating)
+
+        assertEquals(
+            listOf("pre", "boom", "undo-pre", "on-failure").map { "http://$it" to listOf("1") },
+            calls,
+        )
+    }
+
+    @Test
+    fun `the success callback sends the split depth`() = runBlocking {
+        val calls = mutableListOf<Pair<String, List<String>>>()
+        val executor = depthExecutor(FakeSplitJoinStore(), FakeEnqueuer(), calls)
+        val def = v2("depth-header-success", "only", task("only", "http://only"))
+            .copy(onSuccessCallback = httpCall("http://on-success"))
+
+        assertEquals(ExecutionOutcome.Succeeded, executor.execute(executionOf(def, "only")))
+
+        assertEquals(listOf("http://only" to listOf("0"), "http://on-success" to listOf("0")), calls)
+    }
+
+    @Test
+    fun `a split past split maxDepth fails its node without retrying and compensates`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val calls = mutableListOf<Pair<String, List<String>>>()
+        val executor = depthExecutor(store, enqueuer, calls, maxSplitDepth = 3)
+        // Retries configured: they must not be used, the depth would be the same on every attempt.
+        val def = v2(
+            "depth-exceeded", "pre",
+            NodeDefinition.Task("pre", NodeActionDef(TaskMode.SYNC, httpCall("http://pre")), compensation = httpCall("http://undo-pre"), next = "fan-out"),
+            NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a", "branch-b"), join = "fan-in"),
+            task("branch-a", "http://a"),
+            task("branch-b", "http://b"),
+            NodeDefinition.Join(id = "fan-in"),
+        ).copy(failureHandling = FailureHandling.Retry(maxAttempts = 5, delayMillis = 1_000))
+        // Started by another trama whose execution was already at the limit.
+        val parent = executionOf(def, "pre").copy(splitDepth = 3)
+
+        assertEquals(ExecutionOutcome.Reenqueued, executor.execute(parent))
+
+        assertTrue(store.admittedChildren.isEmpty(), "no branch may be spawned past the limit")
+        val compensating = enqueuer.enqueued.single()
+        val state = assertIs<ExecutionState.Compensating>(compensating.state)
+        assertEquals("node=fan-out split depth 4 exceeds split.maxDepth 3", state.failureReason.message)
+        assertEquals(listOf("pre"), state.completedNodes)
+        val splitStep = store.stepResults.getValue(parent.id).single { it.stepName == "fan-out" }
+        assertEquals(ExecutionPhase.SPLIT, splitStep.phase)
+
+        executor.execute(compensating)
+        assertEquals(listOf("http://pre", "http://undo-pre"), calls.map { it.first })
+        assertEquals("FAILED" to "node=fan-out split depth 4 exceeds split.maxDepth 3", store.finalStatuses.getValue(parent.id))
+    }
+
+    @Test
+    fun `a nested split at the limit fails only its own branch`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = depthExecutor(store, enqueuer, mutableListOf(), maxSplitDepth = 1)
+        val root = executionOf(nestedSplits("depth-nested-exceeded"), "outer")
+
+        executor.execute(root)
+        val mid = enqueuer.branch("mid")
+        assertEquals(1, mid.splitDepth)
+        executor.execute(mid)
+
+        val compensating = enqueuer.enqueued.last { it.id == mid.id }
+        val state = assertIs<ExecutionState.Compensating>(compensating.state)
+        assertEquals("node=inner split depth 2 exceeds split.maxDepth 1", state.failureReason.message)
+        assertTrue(store.admittedChildren.none { it.parentExecutionId == mid.id })
     }
 }
 

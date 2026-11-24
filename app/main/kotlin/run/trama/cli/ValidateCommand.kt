@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import run.trama.saga.NodeDefinition
 import run.trama.saga.SagaDefinitionV2
+import run.trama.saga.SplitDepth
 import run.trama.saga.TaskMode
 import run.trama.saga.workflow.WorkflowDefinitionValidator
 import java.io.File
@@ -82,7 +83,9 @@ fun main(args: Array<String>) {
     val totalSteps = if (!validateOnly && scenarioPath != null) 2 else 1
     println("[1/$totalSteps] Structural validation")
 
-    val errors = WorkflowDefinitionValidator.validate(definition)
+    // Same limit as the server: split.maxDepth from SPLIT_MAXDEPTH, else the default.
+    val maxSplitDepth = System.getenv("SPLIT_MAXDEPTH")?.toIntOrNull()?.coerceAtLeast(0) ?: SplitDepth.DEFAULT_MAX
+    val errors = WorkflowDefinitionValidator.validate(definition, maxSplitDepth)
     if (errors.isNotEmpty()) {
         errors.forEach { println("  ✗ $it") }
         println()

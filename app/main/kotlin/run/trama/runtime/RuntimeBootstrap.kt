@@ -170,6 +170,7 @@ class RuntimeBootstrap(
             maxNodesPerExecution = config.runtime.maxStepsPerExecution,
             sleepMaxChunkMillis = config.sleep.maxChunkMillis,
             sleepJitterMillis = config.sleep.jitterMillis,
+            maxSplitDepth = config.split.maxDepth,
             callbackTokenService = callbackTokenService,
             callbackUrlFactory = callbackUrlFactory,
         )

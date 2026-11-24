@@ -13,7 +13,21 @@ data class AppConfig(
     val joinCompletionScanner: JoinCompletionScannerConfig = JoinCompletionScannerConfig(),
     val sleep: SleepConfig = SleepConfig(),
     val reconciler: ReconcilerConfig = ReconcilerConfig(),
+    val split: SplitConfig = SplitConfig(),
 )
+
+/**
+ * [maxDepth]: how deep splits may nest, counted across trama instances that start each other's
+ * sagas over HTTP (see [run.trama.saga.SplitDepth]). A split whose branches would be deeper fails
+ * its node; a definition that nests deeper is refused when registered or started.
+ */
+data class SplitConfig(
+    val maxDepth: Int = run.trama.saga.SplitDepth.DEFAULT_MAX,
+) {
+    init {
+        require(maxDepth >= 0) { "split.maxDepth must not be negative (got $maxDepth)" }
+    }
+}
 
 data class RedisConfig(
     val topology: RedisTopology = RedisTopology.STANDALONE,

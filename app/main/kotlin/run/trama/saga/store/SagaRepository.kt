@@ -774,6 +774,7 @@ class SagaRepository(
                 SAGA_EXECUTION.STARTED_AT,
                 SAGA_EXECUTION.STATUS,
                 SAGA_EXECUTION.PAYLOAD,
+                RETRY_SPLIT_DEPTH,
             )
                 .from(SAGA_EXECUTION)
                 .where(SAGA_EXECUTION.ID.eq(sagaId))
@@ -791,9 +792,13 @@ class SagaRepository(
                 startedAt = record.get(SAGA_EXECUTION.STARTED_AT).toInstant(),
                 status = record.get(SAGA_EXECUTION.STATUS) ?: "UNKNOWN",
                 payloadJson = record.get(SAGA_EXECUTION.PAYLOAD)?.data(),
+                splitDepth = record.get(RETRY_SPLIT_DEPTH)?.toIntOrNull() ?: 0,
             )
         }
     }
+
+    /** The checkpoint's split depth, so a retried execution keeps sending the depth it ran at. */
+    private val RETRY_SPLIT_DEPTH = DSL.field("checkpoint->>'splitDepth'", String::class.java)
 
     suspend fun insertDefinition(id: UUID, name: String, version: String, definitionJson: String): Boolean {
         val now = Instant.now().toOffset()
@@ -1435,6 +1440,7 @@ class SagaRepository(
             parentJoinNodeId = state.parentJoinNodeId,
             branchId = state.branchId,
             checkpointSeq = rs.getLong("checkpoint_seq"),
+            splitDepth = state.splitDepth,
         )
     }.getOrNull()
 
@@ -1456,6 +1462,7 @@ class SagaRepository(
                 parentSplitNodeId = execution.parentSplitNodeId,
                 parentJoinNodeId = execution.parentJoinNodeId,
                 branchId = execution.branchId,
+                splitDepth = execution.splitDepth,
             ),
         )
 
@@ -1493,6 +1500,7 @@ class SagaRepository(
         val parentSplitNodeId: String? = null,
         val parentJoinNodeId: String? = null,
         val branchId: String? = null,
+        val splitDepth: Int = 0,
     )
 
     /**
@@ -1529,6 +1537,7 @@ class SagaRepository(
         val startedAt: Instant,
         val status: String,
         val payloadJson: String?,
+        val splitDepth: Int = 0,
     )
 
     data class SagaDefinitionRecord(

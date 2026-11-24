@@ -1,5 +1,6 @@
 package run.trama.saga.workflow
 
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -15,6 +16,7 @@ import run.trama.saga.HttpVerb
 import run.trama.saga.PayloadValue
 import run.trama.saga.RetryState
 import run.trama.saga.SagaExecution
+import run.trama.saga.SplitDepth
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.TemplateContextBuilder
@@ -191,6 +193,7 @@ class TaskNodeHandler(
                     method = call.verb.toKtorMethod()
                     Tracing.injectHeaders { k, v -> header(k, v) }
                     call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
+                    splitDepthHeader(execution.splitDepth)
                     renderedBody?.let { setBody(it) }
                 }
                 val body = response.bodyAsText()
@@ -254,6 +257,16 @@ class TaskNodeHandler(
 }
 
 /** Maps [HttpVerb] to the Ktor [HttpMethod] counterpart. Shared across all node handlers. */
+/**
+ * Sends the execution's split depth ([SplitDepth.HEADER]) so a trama that this call starts a
+ * saga on keeps counting. Replaces a header of that name from the definition: the depth is
+ * trama's own, a definition cannot reset it.
+ */
+fun HttpRequestBuilder.splitDepthHeader(depth: Int) {
+    headers.remove(SplitDepth.HEADER)
+    header(SplitDepth.HEADER, depth.toString())
+}
+
 fun HttpVerb.toKtorMethod(): HttpMethod = when (this) {
     HttpVerb.GET -> HttpMethod.Get
     HttpVerb.POST -> HttpMethod.Post

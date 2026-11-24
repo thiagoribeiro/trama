@@ -51,6 +51,7 @@ import run.trama.saga.SagaRetryResponse
 import run.trama.saga.SagaStatusResponse
 import run.trama.saga.SagaStepCallResponse
 import run.trama.saga.SagaStepResultResponse
+import run.trama.saga.SplitDepth
 import run.trama.saga.ValidationErrorResponse
 import run.trama.saga.callback.CallbackReceiver
 import run.trama.saga.workflow.WorkflowDefinitionValidator
@@ -99,13 +100,27 @@ private suspend fun io.ktor.server.application.ApplicationCall.rejectReservedPay
     return true
 }
 
-private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject): ParsedDefinitionBody {
+/**
+ * The split depth a saga start request begins at ([SplitDepth.HEADER], 0 without it). Responds 400
+ * and returns null when the header is not a non-negative integer.
+ */
+private suspend fun io.ktor.server.application.ApplicationCall.startSplitDepthOrReject(): Int? {
+    val raw = request.headers[SplitDepth.HEADER]
+    SplitDepth.parseHeader(raw)?.let { return it }
+    respond(
+        HttpStatusCode.BadRequest,
+        ValidationErrorResponse(listOf("${SplitDepth.HEADER} must be a non-negative integer (got '$raw')")),
+    )
+    return null
+}
+
+private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject, maxSplitDepth: Int): ParsedDefinitionBody {
     return if (body.containsKey("nodes")) {
         val def = json.decodeFromJsonElement(SagaDefinitionV2.serializer(), body)
         ParsedDefinitionBody(
             name = def.name,
             version = def.version,
-            errors = WorkflowDefinitionValidator.validate(def),
+            errors = WorkflowDefinitionValidator.validate(def, maxSplitDepth),
             definitionJson = json.encodeToString(SagaDefinitionV2.serializer(), def),
         )
     } else {
@@ -381,6 +396,7 @@ fun Application.module() {
                 payload = retryData.payloadJson
                     ?.let { raw -> json.parseToJsonElement(raw).jsonObject.mapValues { PayloadValue(it.value) } }
                     ?: emptyMap(),
+                splitDepth = retryData.splitDepth,
             )
             if (!bootstrap.retry(execution)) {
                 call.respond(HttpStatusCode.Conflict, ValidationErrorResponse(listOf("only FAILED executions can be retried")))
@@ -410,6 +426,7 @@ fun Application.module() {
         }
 
         post("/workflows/run") {
+            val splitDepth = call.startSplitDepthOrReject() ?: return@post
             val rawBody = call.receive<JsonObject>()
             val definitionObj = rawBody["definition"] as? JsonObject
             if (definitionObj != null && definitionObj.containsKey("nodes")) {
@@ -420,7 +437,7 @@ fun Application.module() {
                     call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid v2 definition: ${it.message}")))
                     return@post
                 }
-                val errors = WorkflowDefinitionValidator.validate(def)
+                val errors = WorkflowDefinitionValidator.validate(def, appConfig.split.maxDepth)
                 if (errors.isNotEmpty()) {
                     call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                     return@post
@@ -447,6 +464,7 @@ fun Application.module() {
                     currentStepIndex = 0,
                     state = ExecutionState.InProgress(activeNodeId = def.entrypoint),
                     payload = payload.mapValues { PayloadValue(it.value) },
+                    splitDepth = splitDepth,
                 )
                 bootstrap.submit(execution)
                 call.respond(SagaCreateResponse(execution.id.toString()))
@@ -473,6 +491,7 @@ fun Application.module() {
                         activeNodeId = req.definition.steps.first().name,
                     ),
                     payload = req.payload.mapValues { PayloadValue(it.value) },
+                    splitDepth = splitDepth,
                 )
                 if (bootstrap.repositoryOrNull() == null) {
                     call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
@@ -484,7 +503,7 @@ fun Application.module() {
         }
         post("/workflows/definitions") {
             val body = call.receive<JsonObject>()
-            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
+            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body, appConfig.split.maxDepth)
             if (errors.isNotEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                 return@post
@@ -568,7 +587,7 @@ fun Application.module() {
                 return@put
             }
             val body = call.receive<JsonObject>()
-            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
+            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body, appConfig.split.maxDepth)
             if (errors.isNotEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                 return@put
@@ -643,6 +662,7 @@ fun Application.module() {
             )
         }
         post("/workflows/definitions/{name}/{version}/run") {
+            val splitDepth = call.startSplitDepthOrReject() ?: return@post
             val name = call.parameters["name"]?.trim().orEmpty()
             val version = call.parameters["version"]?.trim().orEmpty()
             if (name.isBlank() || version.isBlank()) {
@@ -683,6 +703,7 @@ fun Application.module() {
                     activeNodeId = definition.steps.first().name,
                 ),
                 payload = req.payload.mapValues { PayloadValue(it.value) },
+                splitDepth = splitDepth,
             )
             bootstrap.submit(execution)
             call.respond(SagaCreateResponse(execution.id.toString()))

@@ -325,6 +325,29 @@ parent). A branch reads it like any other payload value:
   rejected with `400`.
 - The `trama-validate` simulation gives branches the same `_nodes`, built from the simulated trunk results.
 
+#### Split nesting depth
+
+Splits may nest at most `split.maxDepth` levels deep (default `3`, `SPLIT_MAXDEPTH`). The
+count also runs across Trama instances that start each other's sagas over HTTP:
+
+- Every execution has a depth. A run starts at the depth in its start request's
+  `X-Trama-Split-Depth` header, or `0` without it; each branch of a split is one deeper than
+  its parent.
+- Trama sends `X-Trama-Split-Depth` with the execution's depth on every call it makes (task
+  nodes, compensations, `onSuccessCallback`/`onFailureCallback`). A header of that name in the
+  definition is replaced. So when a task starts a saga on another Trama, that saga starts at
+  the caller's depth.
+- A split whose branches would be deeper than `split.maxDepth` spawns nothing and fails its
+  node with `split depth N exceeds split.maxDepth M`. The failure is not retried (the depth
+  would be the same); the saga compensates and ends `FAILED`. Inside a branch, that fails the
+  branch, which its `join` reports like any other branch failure.
+- A definition whose own splits nest deeper than `split.maxDepth`, counting every path, is
+  refused with `400` when it is registered or started (`split nesting depth N exceeds
+  split.maxDepth M`). So is a branch that leads back into its own split, which would nest
+  forever. `trama-validate` applies the same check (`SPLIT_MAXDEPTH`, default 3).
+- A start request whose `X-Trama-Split-Depth` is not a non-negative integer is rejected with
+  `400`.
+
 Both formats require `failureHandling`:
 - `{"type": "retry", "maxAttempts": 3, "delayMillis": 1000}`; or
 - `{"type": "backoff", "maxAttempts": 5, "initialDelayMillis": 500, "maxDelayMillis": 30000}`.
@@ -386,6 +409,7 @@ Defaults live in [`app/main/resources/application.yaml`](app/main/resources/appl
 | `RUNTIME_CALLBACK_BASEURL`, `RUNTIME_CALLBACK_HMACSECRET` | | Required for async tasks |
 | `RECONCILER_STALEAFTERMILLIS` | `120000` | How long before a stalled execution is re-sent |
 | `RATELIMIT_ENABLED` | `true` | Per-workflow breaker on worker failures |
+| `SPLIT_MAXDEPTH` | `3` | How deep splits may nest, across Trama instances too ([details](#split-nesting-depth)) |
 | `METRICS_ENABLED`, `TELEMETRY_ENABLED` | `true`, `false` | Prometheus, OpenTelemetry |
 
 ---

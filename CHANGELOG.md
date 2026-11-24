@@ -13,11 +13,26 @@ All notable changes to Trama are documented here. The format follows
   `{"var": "payload._nodes.load.customer"}`). Nested splits merge the inherited `_nodes` with
   the inner parent's nodes. Only the nodes the branches reference are carried; a reference
   that cannot be resolved statically carries them all. The dry-run simulator does the same.
+- **Split nesting is limited, across Trama instances too.** New config `split.maxDepth`
+  (`SPLIT_MAXDEPTH`, default `3`). Every execution has a depth: a run starts at the depth in the
+  start request's `X-Trama-Split-Depth` header (`0` without it), and each split branch is one
+  deeper than its parent. Trama sends `X-Trama-Split-Depth` with the execution's depth on every
+  outgoing call (task nodes, compensations, workflow callbacks), so a saga that one Trama starts
+  on another keeps counting. A split whose branches would pass the limit fails its node with
+  `split depth N exceeds split.maxDepth M`, without retries, and the saga compensates.
 
 ### Changed
 - `_nodes` is a reserved payload key: `POST /workflows/run` and
   `POST /workflows/definitions/{name}/{version}/run` answer `400` when the payload has it.
   Retrying an execution reuses its stored payload and is unaffected.
+- A v2 definition whose splits nest deeper than `split.maxDepth`, or whose branch leads back
+  into its own split, is now refused with `400` by `POST /workflows/definitions`,
+  `PUT /workflows/definitions/{id}`, `POST /workflows/run` and `trama-validate`. Definitions
+  already stored are not re-checked.
+- `POST /workflows/run` and `POST /workflows/definitions/{name}/{version}/run` answer `400`
+  when `X-Trama-Split-Depth` is not a non-negative integer.
+- Outgoing calls always carry `X-Trama-Split-Depth`; a header of that name set in a definition
+  is replaced by Trama's value.
 - After a reload from Postgres (a later slice, a sleep, a join), a join's step result is its
   branch summary instead of null. This shows in `nodes.<join>.response.body`,
   `step.<join>.body`, the join's entry in `steps[]`, and `prev.body` in the node right after the
