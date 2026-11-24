@@ -378,6 +378,13 @@ class WorkflowExecutor(
                     // only from the parent's results (already checkpointed), so a redelivered split
                     // rebuilds the same payload, just as it rebuilds the same ids below.
                     val childPayload = BranchPayload.build(execution.payload, stepResults, workflow, node)
+                    // The join barrier of this pass of the split. stepIdx tells the passes of a
+                    // split inside a loop apart (it grows with every node the parent runs) and is
+                    // the same on a redelivery of this pass. It is what the parked parent
+                    // (WaitingJoin.splitNodeId) and the branches (parentSplitNodeId) carry, so each
+                    // pass gets its own barrier rows. Barriers registered before the pass was part
+                    // of the key hold the bare node id, and their parent and branches carry it too.
+                    val barrier = "${node.id}@$stepIdx"
                     val children = node.branches.map { branchNodeId ->
                         // Deterministic id/startedAt (not random/now()) so a redelivery of this
                         // very split step — e.g. the worker crashed mid-spawn and the parent's
@@ -385,7 +392,7 @@ class WorkflowExecutor(
                         // a brand new batch. Combined with the ON CONFLICT on saga_join_branch and
                         // the idempotent markChildArrived, this means a retried split can never
                         // corrupt the barrier's bookkeeping or spawn extra untracked children.
-                        val childId = UUID.nameUUIDFromBytes("${execution.id}:${node.id}:$branchNodeId".toByteArray())
+                        val childId = UUID.nameUUIDFromBytes("${execution.id}:$barrier:$branchNodeId".toByteArray())
                         SagaExecution(
                             definition = execution.definition,
                             definitionV2 = execution.definitionV2,
@@ -396,7 +403,7 @@ class WorkflowExecutor(
                             payload = childPayload,
                             parentExecutionId = execution.id,
                             parentStartedAt = execution.startedAt,
-                            parentSplitNodeId = node.id,
+                            parentSplitNodeId = barrier,
                             parentJoinNodeId = node.join,
                             branchId = branchNodeId,
                         )
@@ -413,14 +420,14 @@ class WorkflowExecutor(
                     val newlyRegisteredBranches = store.registerJoinBarrier(
                         parentId = execution.id,
                         parentStartedAt = execution.startedAt,
-                        splitNodeId = node.id,
+                        splitNodeId = barrier,
                         joinNodeId = node.join,
                         branches = children.map { child -> JoinBranchLink(child.branchId!!, child.id, child.startedAt) },
                     )
                     advance(
                         cursor,
                         ExecutionState.WaitingJoin(
-                            splitNodeId = node.id,
+                            splitNodeId = barrier,
                             joinNodeId = node.join,
                             expectedBranches = children.size,
                             completedNodes = completedNodes.toList(),

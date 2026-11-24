@@ -36,6 +36,7 @@ data class SagaExecution(
      */
     val parentExecutionId: @Serializable(with = UuidAsStringSerializer::class) UUID? = null,
     val parentStartedAt: @Serializable(with = InstantAsStringSerializer::class) Instant? = null,
+    /** Key of the join barrier this branch arrives on: `<split node id>@<parent step index>` (see [ExecutionState.WaitingJoin.splitNodeId]). */
     val parentSplitNodeId: String? = null,
     val parentJoinNodeId: String? = null,
     /** This branch's stable identifier — equal to its entry node id in the split's `branches` list. */
@@ -153,6 +154,11 @@ sealed class ExecutionState {
     @Serializable
     @SerialName("waiting_join")
     data class WaitingJoin(
+        /**
+         * Key of the join barrier this execution waits on: the split node id plus `@` and the
+         * step index at which the split ran, so each pass of a split inside a loop has its own
+         * barrier and branches. Barriers registered by older versions use the bare node id.
+         */
         val splitNodeId: String,
         val joinNodeId: String,
         val expectedBranches: Int,
