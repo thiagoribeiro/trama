@@ -1,5 +1,10 @@
 package run.trama.saga.workflow
 
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import run.trama.saga.PayloadValue
 import run.trama.saga.SagaExecution
 import run.trama.saga.StepResult
@@ -41,6 +46,16 @@ object SwitchNodeHandler {
             matchedCaseName = null,
             usedDefault = true,
         )
+    }
+
+    /**
+     * The switch's step result: what later nodes read as `nodes.<switch>.response.body` (and
+     * branches as `payload._nodes.<switch>`). Also used by the CLI dry-run.
+     */
+    fun traceJson(result: EvaluationResult): JsonObject = buildJsonObject {
+        put("target", result.targetNodeId)
+        put("matchedCase", result.matchedCaseName?.let(::JsonPrimitive) ?: JsonNull)
+        put("usedDefault", result.usedDefault)
     }
 
     /**

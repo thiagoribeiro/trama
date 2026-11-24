@@ -9,6 +9,7 @@ import run.trama.saga.ExecutionOutcome
 import run.trama.saga.Parking
 import run.trama.saga.PersistedCheckpoint
 import run.trama.saga.StaleCheckpointException
+import run.trama.saga.StepBody
 import run.trama.saga.StepRecord
 import run.trama.saga.ensureLease
 import run.trama.saga.ExecutionPhase
@@ -43,7 +44,6 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -71,10 +71,6 @@ class WorkflowExecutor(
     private val logger = LoggerFactory.getLogger(WorkflowExecutor::class.java)
     private val tracer = Tracing.tracer("workflow-executor")
     private val taskHandler = TaskNodeHandler(renderer, httpClient, metrics, callbackTokenService, callbackUrlFactory)
-    private val json = Json { ignoreUnknownKeys = true }
-
-    private fun parseBodyOrNull(raw: String?): JsonElement? =
-        raw?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
 
     /**
      * The copy of an execution this call is advancing: its latest checkpointed state, and the seq
@@ -267,7 +263,7 @@ class WorkflowExecutor(
                         is NodeResult.Advanced -> {
                             retry = RetryState.None
                             completedNodes.add(node.id)
-                            stepResults.add(StepResult(stepIdx, node.id, parseBodyOrNull(httpResult.responseBody), null))
+                            stepResults.add(StepResult(stepIdx, node.id, StepBody.value(httpResult.responseBody), null))
                             if (node.compensation != null) {
                                 compensationStack.add(0, node.id)
                             }
@@ -325,7 +321,7 @@ class WorkflowExecutor(
                         responseBody = traceJson,
                         stepStartedAt = switchStartedAt,
                     )
-                    stepResults.add(StepResult(stepIdx, node.id, parseBodyOrNull(traceJson), null))
+                    stepResults.add(StepResult(stepIdx, node.id, StepBody.value(traceJson), null))
                     retry = RetryState.None
                     activeNodeId = evalResult.targetNodeId
                     metrics.recordSwitchEvaluated(
@@ -378,6 +374,10 @@ class WorkflowExecutor(
                     if (pendingCalls.isNotEmpty()) store.insertStepCalls(pendingCalls)
                     completedNodes.add(node.id)
 
+                    // The branches see what the parent computed so far under payload._nodes. Built
+                    // only from the parent's results (already checkpointed), so a redelivered split
+                    // rebuilds the same payload, just as it rebuilds the same ids below.
+                    val childPayload = BranchPayload.build(execution.payload, stepResults, workflow, node)
                     val children = node.branches.map { branchNodeId ->
                         // Deterministic id/startedAt (not random/now()) so a redelivery of this
                         // very split step — e.g. the worker crashed mid-spawn and the parent's
@@ -393,7 +393,7 @@ class WorkflowExecutor(
                             startedAt = execution.startedAt,
                             currentStepIndex = 0,
                             state = ExecutionState.InProgress(activeNodeId = branchNodeId),
-                            payload = execution.payload,
+                            payload = childPayload,
                             parentExecutionId = execution.id,
                             parentStartedAt = execution.startedAt,
                             parentSplitNodeId = node.id,
@@ -875,18 +875,8 @@ class WorkflowExecutor(
         return ExecutionOutcome.FailedFinal
     }
 
-    private fun buildSwitchTraceJson(evalResult: SwitchNodeHandler.EvaluationResult): String {
-        val obj = buildJsonObject {
-            put("target", evalResult.targetNodeId)
-            if (evalResult.matchedCaseName != null) {
-                put("matchedCase", evalResult.matchedCaseName)
-            } else {
-                put("matchedCase", JsonNull)
-            }
-            put("usedDefault", evalResult.usedDefault)
-        }
-        return kotlinx.serialization.json.Json.encodeToString(JsonObject.serializer(), obj)
-    }
+    private fun buildSwitchTraceJson(evalResult: SwitchNodeHandler.EvaluationResult): String =
+        kotlinx.serialization.json.Json.encodeToString(JsonObject.serializer(), SwitchNodeHandler.traceJson(evalResult))
 
     // ── Split / join ───────────────────────────────────────────────────────────
 
@@ -995,7 +985,7 @@ class WorkflowExecutor(
                 put("executionId", link.childId.toString())
                 put("status", statusStr)
                 childStatus?.failureDescription?.let { put("failureDescription", it) }
-                childStatus?.lastResultJson?.let { raw -> parseBodyOrNull(raw)?.let { put("result", it) } }
+                childStatus?.lastResultJson?.let { raw -> StepBody.value(raw)?.let { put("result", it) } }
             }
         }
         val joinBodyJson = Json.encodeToString(

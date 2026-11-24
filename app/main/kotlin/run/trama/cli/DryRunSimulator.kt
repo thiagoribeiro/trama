@@ -3,7 +3,10 @@ package run.trama.cli
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import run.trama.saga.MustacheTemplateRenderer
 import run.trama.saga.NodeDefinition
 import run.trama.saga.PayloadValue
@@ -13,6 +16,7 @@ import run.trama.saga.TaskMode
 import run.trama.saga.TemplateEscaping
 import run.trama.saga.renderBody
 import run.trama.saga.toAny
+import run.trama.saga.workflow.BranchPayload
 import run.trama.saga.workflow.DefinitionNormalizer
 import run.trama.saga.workflow.JoinNode
 import run.trama.saga.workflow.JsonLogicEvaluator
@@ -94,7 +98,10 @@ sealed class TraceEntry {
         val targetNodeId: String,
     ) : TraceEntry()
 
-    /** A split node: fans out into independent branches, each simulated from a clean context. */
+    /**
+     * A split node: fans out into independent branches, each simulated from a clean step history
+     * whose payload carries the trunk's results under `payload._nodes`, as at runtime.
+     */
     data class Split(
         val nodeId: String,
         val branches: Map<String, List<TraceEntry>>,
@@ -143,7 +150,8 @@ class DryRunSimulator {
      * terminal node, a failure, a cycle, or the node-count cap is reached. Used both for
      * the main trunk and, recursively, for each branch of a split (with a fresh
      * [visited]/[stepResults] scope, since a branch is an independent child execution
-     * and does not see the parent's prior step results).
+     * and does not see the parent's prior step results — only their bodies, under
+     * `payload._nodes`, built by the same [BranchPayload] as the runtime).
      */
     private fun walk(
         workflow: WorkflowDefinition,
@@ -197,6 +205,9 @@ class DryRunSimulator {
                     val matched = node.cases.firstOrNull { JsonLogicEvaluator.evaluateBool(it.whenExpression, ctx) }
                     val target  = matched?.target ?: node.defaultTarget
                     entries += TraceEntry.Switch(node.id, matched?.name, matched == null, target)
+                    // As at runtime: the switch's trace is its result, sharing the next node's index.
+                    val evaluation = SwitchNodeHandler.EvaluationResult(target, matched?.name, matched == null)
+                    stepResults += StepResult(stepIndex, node.id, SwitchNodeHandler.traceJson(evaluation), null)
                     currentId = target
                 }
                 is SleepNode -> {
@@ -206,13 +217,18 @@ class DryRunSimulator {
 
                 is SplitNode -> {
                     val branchTraces = linkedMapOf<String, List<TraceEntry>>()
+                    val branchSummaries = mutableListOf<JsonElement>()
+                    val branchPayload = BranchPayload.build(payload.mapValues { PayloadValue(it.value) }, stepResults, workflow, node)
+                        .mapValues { it.value.value }
                     var allSucceeded = true
                     var firstFailure: SimulationResult? = null
                     for (branchId in node.branches) {
                         // Each branch is an independent child execution: fresh visited set and
-                        // step-result history, seeded only by the parent's payload.
-                        val branchResult = walk(workflow, definition, payload, scenario, branchId, mutableSetOf(), mutableListOf())
+                        // step-result history, seeded only by the parent's payload plus `_nodes`.
+                        val branchSteps = mutableListOf<StepResult>()
+                        val branchResult = walk(workflow, definition, branchPayload, scenario, branchId, mutableSetOf(), branchSteps)
                         branchTraces[branchId] = branchResult.entries
+                        branchSummaries += joinBranchSummary(branchId, branchSteps)
                         if (branchResult.outcome != SimOutcome.SUCCEEDED) {
                             allSucceeded = false
                             if (firstFailure == null) firstFailure = branchResult
@@ -226,7 +242,13 @@ class DryRunSimulator {
                     val joinNode = workflow.nodes[node.join] as? JoinNode
                         ?: return SimulationResult(entries, SimOutcome.FAILED, node.join)
                     entries += TraceEntry.Join(joinNode.id, allSucceeded = true)
-                    stepResults += StepResult(stepIndex, joinNode.id, null, null)
+                    // The same branch summary the runtime records as the join's result.
+                    val joinBody = buildJsonObject {
+                        put("expected", node.branches.size)
+                        put("allSucceeded", true)
+                        put("branches", JsonArray(branchSummaries))
+                    }
+                    stepResults += StepResult(stepIndex, joinNode.id, joinBody, null)
                     stepIndex++
                     currentId = joinNode.next
                 }
@@ -243,6 +265,17 @@ class DryRunSimulator {
     }
 
     // ── Context builders ──────────────────────────────────────────────────────
+
+    /**
+     * One succeeded branch as the runtime's join reports it; `result` is the branch's last
+     * step result. Only reached when every branch succeeded (a failure ends the simulation).
+     */
+    private fun joinBranchSummary(branchId: String, branchSteps: List<StepResult>): JsonElement = buildJsonObject {
+        put("branchId", branchId)
+        put("executionId", "<dry-run>")
+        put("status", "SUCCEEDED")
+        branchSteps.lastOrNull()?.let { last -> (last.upBody ?: last.downBody)?.let { put("result", it) } }
+    }
 
     /**
      * Mirrors [run.trama.saga.TemplateContextBuilder] without requiring a [run.trama.saga.SagaExecution].

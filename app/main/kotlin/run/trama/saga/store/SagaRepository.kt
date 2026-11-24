@@ -38,6 +38,7 @@ import kotlinx.serialization.json.JsonNull
 import org.jooq.JSONB
 import org.jooq.impl.DSL
 import run.trama.saga.InstantAsStringSerializer
+import run.trama.saga.StepBody
 import run.trama.saga.StepResult
 import run.trama.saga.redis.RedisStepEntry
 
@@ -46,7 +47,6 @@ private fun OffsetDateTime?.toInstant(): Instant = this?.toInstant() ?: Instant.
 
 private val rowJson = Json { ignoreUnknownKeys = true }
 
-private val JSON_NUMBER = Regex("""-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?""")
 
 /**
  * The definition persisted in `saga_execution.definition`: the real v2 graph when the execution
@@ -230,7 +230,7 @@ class SagaRepository(
         responseBody: String?,
         stepStartedAt: Instant? = null,
     ) {
-        val bodyJson = responseBody?.let { toJsonb(it) }
+        val bodyJson = StepBody.storedJson(responseBody)?.let { JSONB.valueOf(it) }
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
             dsl.insertInto(SAGA_STEP_RESULT)
@@ -273,7 +273,9 @@ class SagaRepository(
             // Keyed by (index, name): a switch does not advance the step index, so the node
             // after it shares the switch's index. Keying by index alone merged the two and
             // dropped that node from {{nodes.X}} after a sleep/resume reload. In memory the
-            // switch trace is the up body (WorkflowExecutor); mirror that here.
+            // switch trace is the up body (WorkflowExecutor); mirror that here. A join's body (the
+            // branch summary) is the result of that node too, so it is the up body as well; it is
+            // only ever read back from here, since a join always resumes in a fresh slice.
             val latestByStep = linkedMapOf<Pair<Int, String>, StepResult>()
             connection.prepareStatement(sql).use { ps ->
                 ps.setObject(1, sagaId)
@@ -283,11 +285,11 @@ class SagaRepository(
                         val index = rs.getInt(1).takeUnless { rs.wasNull() } ?: continue
                         val name = rs.getString(2) ?: ""
                         val phase = rs.getString(3) ?: ExecutionPhase.UP.name
-                        val body = rs.getString(4)?.let { parseJson(it) }
+                        val body = StepBody.value(rs.getString(4))
                         val key = index to name
                         val current = latestByStep[key] ?: StepResult(index = index, name = name, upBody = null, downBody = null)
                         latestByStep[key] = when (phase) {
-                            ExecutionPhase.UP.name, ExecutionPhase.SWITCH.name -> current.copy(upBody = body)
+                            ExecutionPhase.UP.name, ExecutionPhase.SWITCH.name, ExecutionPhase.JOIN.name -> current.copy(upBody = body)
                             ExecutionPhase.DOWN.name -> current.copy(downBody = body)
                             else -> current
                         }
@@ -967,7 +969,7 @@ class SagaRepository(
         for (step in steps.sortedBy { it.createdAt }) {
             insert = insert.values(
                 sagaId, step.stepIndex, step.stepName, step.phase,
-                step.statusCode, step.success, step.responseBody?.let { toJsonb(it) },
+                step.statusCode, step.success, StepBody.storedJson(step.responseBody)?.let { JSONB.valueOf(it) },
                 step.stepStartedAt.takeIf { it != Instant.EPOCH }?.toOffset(),
                 step.startedAt.toOffset(), step.createdAt.toOffset(),
             )
@@ -1282,7 +1284,7 @@ class SagaRepository(
                 ps.setString(12, step?.phase?.name)
                 if (step?.statusCode != null) ps.setInt(13, step.statusCode) else ps.setNull(13, java.sql.Types.INTEGER)
                 ps.setBoolean(14, step?.success ?: false)
-                ps.setString(15, step?.responseBody?.let { toJsonb(it).data() })
+                ps.setString(15, StepBody.storedJson(step?.responseBody))
                 ps.setObject(16, step?.stepStartedAt?.toOffset())
                 ps.setBoolean(17, step != null)
                 ps.executeQuery().use { rs -> rs.next() && rs.getLong(1) == 1L }
@@ -1493,26 +1495,12 @@ class SagaRepository(
         val branchId: String? = null,
     )
 
-    private fun parseJson(raw: String): JsonElement? = runCatching { json.parseToJsonElement(raw) }.getOrNull()
-
     /**
-     * A body as `jsonb`: kept as is when it is valid JSON, otherwise stored as a JSON string.
-     * kotlinx's tree parser alone is not a validity check: it accepts bare words such as `ok`,
-     * which Postgres then rejects, failing the whole write.
+     * A request/response body of a step call as `jsonb`: kept as is when it is valid JSON,
+     * otherwise stored as a JSON string. Step results go through [StepBody.storedJson] instead.
      */
     private fun toJsonb(raw: String): JSONB =
-        if (isStrictJson(raw)) JSONB.valueOf(raw) else JSONB.valueOf(json.encodeToString(String.serializer(), raw))
-
-    private fun isStrictJson(raw: String): Boolean {
-        val element = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return false
-        fun valid(e: JsonElement): Boolean = when (e) {
-            is JsonNull -> true
-            is JsonPrimitive -> e.isString || e.content == "true" || e.content == "false" || JSON_NUMBER.matches(e.content)
-            is JsonObject -> e.values.all(::valid)
-            is kotlinx.serialization.json.JsonArray -> e.all(::valid)
-        }
-        return valid(element)
-    }
+        if (StepBody.isStrictJson(raw)) JSONB.valueOf(raw) else JSONB.valueOf(json.encodeToString(String.serializer(), raw))
 
     private fun cutoff(): OffsetDateTime = Instant.now().minus(15, ChronoUnit.DAYS).toOffset()
 

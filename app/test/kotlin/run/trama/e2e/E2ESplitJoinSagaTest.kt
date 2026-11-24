@@ -141,4 +141,56 @@ class E2ESplitJoinSagaTest {
             assertTrue(upRequests.any { it.contains("after-join") }, "expected after-join to run despite branch-b failing")
         }
     }
+
+    @Test
+    fun `branches read the parent's earlier node results through payload_nodes`() {
+        if (!DockerClientFactory.instance().isDockerAvailable) return
+        wm.stubPath("/step/load", 200, """{"customer":"c-42","secret":"s"}""")
+        val definition = v2DefinitionMap(
+            uniqueName("split-join-nodes"),
+            listOf(
+                taskNodeMap("load", svc("/step/load"), next = "nap"),
+                // Resuming after the sleep reloads the parent's results from Postgres before the split.
+                sleepNodeMap("nap", durationMillis = 10, next = "fan-out"),
+                mapOf("kind" to "split", "id" to "fan-out", "branches" to listOf("a", "b"), "join" to "fan-in"),
+                taskNodeMap("a", svc("/step/a/{{payload._nodes.load.customer}}"), body = mapOf("order" to "{{payload.orderId}}", "customer" to "{{payload._nodes.load.customer}}")),
+                taskNodeMap("b", svc("/step/b"), next = "inner"),
+                mapOf("kind" to "split", "id" to "inner", "branches" to listOf("leaf", "leaf2"), "join" to "inner-join"),
+                taskNodeMap("leaf", svc("/step/leaf"), body = mapOf("customer" to "{{payload._nodes.load.customer}}", "fromB" to "{{payload._nodes.b.status}}")),
+                taskNodeMap("leaf2", svc("/step/leaf2")),
+                mapOf("kind" to "join", "id" to "inner-join"),
+                mapOf("kind" to "join", "id" to "fan-in", "next" to "after"),
+                taskNodeMap("after", svc("/step/after")),
+            ),
+        )
+
+        e2eTest(wmPort = wm.port()) {
+            val sagaId = client.runInline(definition, mapOf("orderId" to "ord-7"))
+            val final = awaitSagaTerminal(client, sagaId)
+            assertEquals("SUCCEEDED", final["status"]?.jsonPrimitive?.content)
+
+            assertEquals(1, wm.requestsTo("/step/a/c-42").size, "branch a's URL must resolve payload._nodes.load.customer")
+            assertEquals("c-42", wm.extractBodyField("/step/a/c-42", "customer"))
+            assertEquals("ord-7", wm.extractBodyField("/step/a/c-42", "order"))
+            assertEquals("c-42", wm.extractBodyField("/step/leaf", "customer"), "a nested branch sees the grandparent's nodes")
+            assertEquals("ok", wm.extractBodyField("/step/leaf", "fromB"), "and its own parent's nodes")
+            assertEquals(1, wm.requestsTo("/step/after").size)
+        }
+    }
+
+    @Test
+    fun `starting a saga with the reserved _nodes key in its payload is rejected`() {
+        if (!DockerClientFactory.instance().isDockerAvailable) return
+        e2eTest(wmPort = wm.port()) {
+            val resp = client.postJson(
+                "/workflows/run",
+                mapOf(
+                    "definition" to v2DefinitionMap(uniqueName("reserved"), listOf(taskNodeMap("a", svc("/step/a")))),
+                    "payload" to mapOf("_nodes" to mapOf("x" to 1)),
+                ),
+            )
+            assertEquals(400, resp.status.value, resp.bodyAsText())
+            assertTrue(wm.requestsTo("/step/a").isEmpty())
+        }
+    }
 }

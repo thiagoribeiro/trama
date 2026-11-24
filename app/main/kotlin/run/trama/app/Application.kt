@@ -45,6 +45,7 @@ import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.SagaDefinitionValidator
 import run.trama.saga.SagaExecution
 import run.trama.saga.PayloadValue
+import run.trama.saga.RESERVED_NODES_KEY
 import run.trama.saga.SagaExecutionSummary
 import run.trama.saga.SagaRetryResponse
 import run.trama.saga.SagaStatusResponse
@@ -83,6 +84,19 @@ private fun normalizeDefinitionJson(json: Json, definitionJson: String): JsonEle
         val def = json.decodeFromJsonElement(SagaDefinition.serializer(), raw)
         json.parseToJsonElement(json.encodeToString(SagaDefinition.serializer(), def))
     }
+}
+
+/**
+ * Responds 400 and returns true when a saga's input payload carries a reserved key
+ * ([RESERVED_NODES_KEY]: the parent results a split hands its branches, never client input).
+ */
+private suspend fun io.ktor.server.application.ApplicationCall.rejectReservedPayloadKeys(payload: Map<String, JsonElement>): Boolean {
+    if (RESERVED_NODES_KEY !in payload) return false
+    respond(
+        HttpStatusCode.BadRequest,
+        ValidationErrorResponse(listOf("payload must not contain the reserved key '$RESERVED_NODES_KEY'")),
+    )
+    return true
 }
 
 private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject): ParsedDefinitionBody {
@@ -411,12 +425,13 @@ fun Application.module() {
                     call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                     return@post
                 }
+                val rawPayload = rawBody["payload"]
+                val payload: Map<String, JsonElement> = if (rawPayload is JsonObject) rawPayload else emptyMap()
+                if (call.rejectReservedPayloadKeys(payload)) return@post
                 if (bootstrap.repositoryOrNull() == null) {
                     call.respond(HttpStatusCode.ServiceUnavailable, ValidationErrorResponse(listOf("runtime disabled")))
                     return@post
                 }
-                val rawPayload = rawBody["payload"]
-                val payload: Map<String, JsonElement> = if (rawPayload is JsonObject) rawPayload else emptyMap()
                 // Stub v1 definition carries name/version for logging; executor uses definitionV2
                 val stub = SagaDefinition(
                     name = def.name,
@@ -448,6 +463,7 @@ fun Application.module() {
                     call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                     return@post
                 }
+                if (call.rejectReservedPayloadKeys(req.payload)) return@post
                 val execution = SagaExecution(
                     definition = req.definition,
                     id = UUID.randomUUID(),
@@ -639,6 +655,7 @@ fun Application.module() {
                 return@post
             }
             val req = call.receive<RunStoredSagaRequest>()
+            if (call.rejectReservedPayloadKeys(req.payload)) return@post
             val rec = repo.getDefinitionByNameVersion(name, version)
             if (rec == null) {
                 call.respond(HttpStatusCode.NoContent)

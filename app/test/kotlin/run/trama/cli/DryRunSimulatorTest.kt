@@ -208,4 +208,89 @@ class DryRunSimulatorTest {
             "expected the nested split to appear inside the outer branch's own trace",
         )
     }
+
+    @Test
+    fun `split branches resolve payload_nodes from the trunk's simulated results, as at runtime`() {
+        val def = SagaDefinitionV2(
+            name = "dry-nodes",
+            version = "1",
+            failureHandling = FailureHandling.Retry(0, 0),
+            entrypoint = "load",
+            nodes = listOf(
+                NodeDefinition.Task("load", NodeActionDef(TaskMode.SYNC, httpCall("http://load")), next = "fan-out"),
+                NodeDefinition.Split(id = "fan-out", branches = listOf("route"), join = "fan-in"),
+                NodeDefinition.Switch(
+                    id = "route",
+                    cases = listOf(
+                        run.trama.saga.SwitchCaseDef(
+                            name = "known",
+                            whenExpression = Json.parseToJsonElement("""{"==":[{"var":"payload._nodes.load.customer"},"c-9"]}"""),
+                            target = "charge",
+                        ),
+                    ),
+                    default = "reject",
+                ),
+                NodeDefinition.Task("charge", NodeActionDef(TaskMode.SYNC, httpCall("http://charge/{{payload._nodes.load.customer}}/{{payload.orderId}}"))),
+                NodeDefinition.Task("reject", NodeActionDef(TaskMode.SYNC, httpCall("http://reject"))),
+                NodeDefinition.Join(id = "fan-in"),
+            ),
+        )
+        val scenario = DryRunScenario(
+            payload = JsonObject(mapOf("orderId" to JsonPrimitive("o-1"))),
+            steps = mapOf("load" to StepMock(body = JsonObject(mapOf("customer" to JsonPrimitive("c-9"))))),
+        )
+
+        val result = DryRunSimulator().run(def, scenario)
+
+        assertEquals(SimOutcome.SUCCEEDED, result.outcome)
+        val branch = result.entries.filterIsInstance<TraceEntry.Split>().single().branches.getValue("route")
+        assertEquals("charge", branch.filterIsInstance<TraceEntry.Switch>().single().targetNodeId)
+        assertEquals("http://charge/c-9/o-1", branch.filterIsInstance<TraceEntry.Task>().single().renderedUrl)
+    }
+
+    @Test
+    fun `earlier joins and switches reach later branches through payload_nodes with their runtime bodies`() {
+        val json = mapOf("Content-Type" to TemplateString("application/json"))
+        val def = SagaDefinitionV2(
+            name = "dry-nodes-join",
+            version = "1",
+            failureHandling = FailureHandling.Retry(0, 0),
+            entrypoint = "route",
+            nodes = listOf(
+                NodeDefinition.Switch(
+                    id = "route",
+                    cases = listOf(run.trama.saga.SwitchCaseDef("always", Json.parseToJsonElement("""{"==":[1,1]}"""), "s1")),
+                    default = "s1",
+                ),
+                NodeDefinition.Split(id = "s1", branches = listOf("a", "a2"), join = "j1"),
+                NodeDefinition.Task("a", NodeActionDef(TaskMode.SYNC, httpCall("http://a"))),
+                NodeDefinition.Task("a2", NodeActionDef(TaskMode.SYNC, httpCall("http://a2"))),
+                NodeDefinition.Join(id = "j1", next = "s2"),
+                NodeDefinition.Split(id = "s2", branches = listOf("b", "b2"), join = "j2"),
+                NodeDefinition.Task(
+                    "b",
+                    NodeActionDef(
+                        TaskMode.SYNC,
+                        HttpCall(
+                            TemplateString("http://b"), HttpVerb.POST, headers = json,
+                            body = TemplateString("""{"ok":"{{payload._nodes.j1.allSucceeded}}","n":"{{payload._nodes.j1.expected}}","first":"{{payload._nodes.j1.branches.0.result.v}}","route":"{{payload._nodes.route.target}}"}"""),
+                        ),
+                    ),
+                ),
+                NodeDefinition.Task("b2", NodeActionDef(TaskMode.SYNC, httpCall("http://b2"))),
+                NodeDefinition.Join(id = "j2"),
+            ),
+        )
+        val scenario = DryRunScenario(steps = mapOf("a" to StepMock(body = JsonObject(mapOf("v" to JsonPrimitive("from-a"))))))
+
+        val result = DryRunSimulator().run(def, scenario)
+
+        assertEquals(SimOutcome.SUCCEEDED, result.outcome)
+        val b = result.entries.filterIsInstance<TraceEntry.Split>().single { it.nodeId == "s2" }
+            .branches.getValue("b").filterIsInstance<TraceEntry.Task>().single()
+        assertEquals(
+            Json.parseToJsonElement("""{"ok":true,"n":2,"first":"from-a","route":"s1"}"""),
+            Json.parseToJsonElement(requireNotNull(b.renderedBody)),
+        )
+    }
 }

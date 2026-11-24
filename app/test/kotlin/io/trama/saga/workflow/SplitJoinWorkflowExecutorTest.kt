@@ -16,6 +16,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -35,6 +36,7 @@ import run.trama.saga.MustacheTemplateRenderer
 import run.trama.saga.NodeActionDef
 import run.trama.saga.NodeDefinition
 import run.trama.saga.PayloadValue
+import run.trama.saga.RESERVED_NODES_KEY
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.SagaEnqueuer
@@ -409,6 +411,216 @@ class SplitJoinWorkflowExecutorTest {
         // resumeJoinIfSatisfied again finds nothing left to resume.
         assertTrue(!executor.resumeJoinIfSatisfied(parent.id))
     }
+
+    // ── payload._nodes: the parent's node results handed to the branches ──────────
+
+    private fun task(id: String, url: String, next: String? = null) =
+        NodeDefinition.Task(id, NodeActionDef(TaskMode.SYNC, httpCall(url)), next = next)
+
+    private fun v2(name: String, entrypoint: String, vararg nodes: NodeDefinition) = SagaDefinitionV2(
+        name = name,
+        version = "1",
+        failureHandling = FailureHandling.Retry(maxAttempts = 0, delayMillis = 0),
+        entrypoint = entrypoint,
+        nodes = nodes.toList(),
+    )
+
+    /** Answers each call with the body registered for its host (default `{}`) and records the URLs. */
+    private fun routingExecutor(
+        store: SagaExecutionStore,
+        enqueuer: FakeEnqueuer,
+        bodies: Map<String, String>,
+        requests: MutableList<String> = mutableListOf(),
+    ) = WorkflowExecutor(
+        store = store,
+        renderer = MustacheTemplateRenderer(),
+        retryPolicy = DefaultRetryPolicy(),
+        enqueuer = enqueuer,
+        httpClient = FakeHttpClientProvider(
+            HttpClient(
+                MockEngine { request ->
+                    requests += request.url.toString()
+                    respond(
+                        bodies[request.url.host] ?: "{}",
+                        HttpStatusCode.OK,
+                        headersOf("Content-Type" to listOf("application/json")),
+                    )
+                },
+            ),
+        ),
+        metrics = Metrics(SimpleMeterRegistry()),
+    )
+
+    private fun SagaExecution.nodesPayload(): JsonObject =
+        assertNotNull(payload[RESERVED_NODES_KEY], "branch payload must carry $RESERVED_NODES_KEY").value.jsonObject
+
+    private fun FakeEnqueuer.branch(branchId: String): SagaExecution = enqueued.single { it.branchId == branchId }
+
+    private val preBody = """{"x":"42","customer":{"id":7}}"""
+
+    @Test
+    fun `branches receive the parent payload plus the bodies of the nodes run before the split`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val requests = mutableListOf<String>()
+        val executor = routingExecutor(store, enqueuer, mapOf("pre" to preBody, "unused" to """{"secret":1}"""), requests)
+        val def = v2(
+            "nodes-basic", "pre",
+            task("pre", "http://pre", next = "unused"),
+            task("unused", "http://unused", next = "fan-out"),
+            NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a", "branch-b"), join = "fan-in"),
+            task("branch-a", "http://a/{{payload._nodes.pre.x}}/{{payload.orderId}}"),
+            task("branch-b", "http://b"),
+            NodeDefinition.Join(id = "fan-in"),
+        )
+        val parent = executionOf(def, "pre").copy(payload = mapOf("orderId" to PayloadValue(JsonPrimitive("o-1"))))
+
+        executor.execute(parent)
+
+        val child = enqueuer.branch("branch-a")
+        assertEquals(JsonPrimitive("o-1"), child.payload.getValue("orderId").value)
+        // "unused" is referenced by no branch, so it is pruned; "pre" carries its whole body.
+        assertEquals(
+            JsonObject(mapOf("pre" to Json.parseToJsonElement(preBody))),
+            child.nodesPayload(),
+        )
+        assertEquals(child.payload, enqueuer.branch("branch-b").payload, "every branch of a split gets the same payload")
+
+        requests.clear()
+        executor.execute(child)
+        assertEquals(listOf("http://a/42/o-1"), requests, "the branch template must resolve payload._nodes.pre.x")
+    }
+
+    @Test
+    fun `json-logic in a branch resolves payload_nodes paths`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val requests = mutableListOf<String>()
+        val executor = routingExecutor(store, enqueuer, mapOf("pre" to preBody), requests)
+        val def = v2(
+            "nodes-logic", "pre",
+            task("pre", "http://pre", next = "fan-out"),
+            NodeDefinition.Split(id = "fan-out", branches = listOf("route"), join = "fan-in"),
+            NodeDefinition.Switch(
+                id = "route",
+                cases = listOf(
+                    run.trama.saga.SwitchCaseDef(
+                        name = "vip",
+                        whenExpression = Json.parseToJsonElement("""{"==": [{"var": "payload._nodes.pre.customer.id"}, 7]}"""),
+                        target = "vip",
+                    ),
+                ),
+                default = "regular",
+            ),
+            task("vip", "http://vip"),
+            task("regular", "http://regular"),
+            NodeDefinition.Join(id = "fan-in"),
+        )
+
+        executor.execute(executionOf(def, "pre"))
+        requests.clear()
+        executor.execute(enqueuer.branch("route"))
+
+        assertEquals(listOf("vip"), requests.map { io.ktor.http.Url(it).host })
+    }
+
+    @Test
+    fun `nested split branches see the grandparent and parent nodes`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val requests = mutableListOf<String>()
+        val executor = routingExecutor(store, enqueuer, mapOf("pre" to preBody, "mid" to """{"y":"m"}"""), requests)
+        val def = v2(
+            "nodes-nested", "pre",
+            task("pre", "http://pre", next = "outer"),
+            NodeDefinition.Split(id = "outer", branches = listOf("mid", "plain"), join = "outer-join"),
+            task("mid", "http://mid", next = "inner"),
+            NodeDefinition.Split(id = "inner", branches = listOf("leaf"), join = "inner-join"),
+            // Only this nested branch references "pre": it must still reach the outer split's _nodes.
+            task("leaf", "http://leaf/{{payload._nodes.pre.x}}/{{payload._nodes.mid.y}}"),
+            NodeDefinition.Join(id = "inner-join"),
+            task("plain", "http://plain"),
+            NodeDefinition.Join(id = "outer-join"),
+        )
+
+        executor.execute(executionOf(def, "pre"))
+        val midBranch = enqueuer.branch("mid")
+        assertEquals(setOf("pre"), midBranch.nodesPayload().keys, "a reference only in a nested branch is carried by the outer split")
+
+        executor.execute(midBranch)
+        val leaf = enqueuer.branch("leaf")
+        assertEquals(
+            JsonObject(mapOf("pre" to Json.parseToJsonElement(preBody), "mid" to Json.parseToJsonElement("""{"y":"m"}"""))),
+            leaf.nodesPayload(),
+        )
+
+        requests.clear()
+        executor.execute(leaf)
+        assertEquals(listOf("http://leaf/42/m"), requests)
+    }
+
+    @Test
+    fun `split records stay out of _nodes while earlier joins stay in`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = routingExecutor(store, enqueuer, mapOf("pre" to preBody))
+        val def = v2(
+            "nodes-second-split", "pre",
+            task("pre", "http://pre", next = "s1"),
+            NodeDefinition.Split(id = "s1", branches = listOf("a"), join = "j1"),
+            task("a", "http://a"),
+            NodeDefinition.Join(id = "j1", next = "s2"),
+            NodeDefinition.Split(id = "s2", branches = listOf("b"), join = "j2"),
+            // A section over _nodes cannot be resolved statically: the split carries every node.
+            NodeDefinition.Task(
+                "b",
+                NodeActionDef(
+                    TaskMode.SYNC,
+                    HttpCall(TemplateString("http://b"), HttpVerb.POST, body = TemplateString("""{"n":"{{#payload._nodes}}x{{/payload._nodes}}"}""")),
+                ),
+            ),
+            NodeDefinition.Join(id = "j2"),
+        )
+        val parent = executionOf(def, "pre")
+
+        executor.execute(parent)
+        executor.execute(enqueuer.branch("a")) // last branch: resumes the parent past j1
+        val resumed = enqueuer.enqueued.last { it.id == parent.id }
+        executor.execute(resumed)
+
+        val nodes = enqueuer.branch("b").nodesPayload()
+        assertEquals(setOf("pre", "j1"), nodes.keys, "the s1 fan-out trace is not a node result")
+        assertEquals(true, nodes.getValue("j1").jsonObject.getValue("allSucceeded").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `a redelivered split rebuilds byte-identical branch payloads`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = routingExecutor(store, enqueuer, mapOf("pre" to preBody))
+        val def = v2(
+            "nodes-redelivery", "pre",
+            task("pre", "http://pre", next = "fan-out"),
+            NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a"), join = "fan-in"),
+            task("branch-a", "http://a/{{payload._nodes.pre.x}}"),
+            NodeDefinition.Join(id = "fan-in"),
+        )
+        val parent = executionOf(def, "pre")
+        executor.execute(parent)
+        val first = store.admittedChildren.toList()
+
+        // Redelivery of the split step as checkpointed after "pre": the results now come from
+        // the store rather than from memory, and must yield the same children.
+        executor.execute(parent.copy(state = ExecutionState.InProgress(activeNodeId = "fan-out", completedNodes = listOf("pre"))))
+        val second = store.admittedChildren.drop(first.size)
+
+        assertEquals(1, first.size)
+        assertEquals(first, second)
+        assertEquals(
+            Json.encodeToString(SagaExecution.serializer(), first.single()),
+            Json.encodeToString(SagaExecution.serializer(), second.single()),
+        )
+    }
 }
 
 private class FakeHttpClientProvider(override val client: HttpClient) : HttpClientProvider
@@ -434,7 +646,9 @@ private class FakeSplitJoinStore : SagaExecutionStore {
     private val arrivedChildIds = mutableMapOf<String, MutableSet<UUID>>()
     private val branchLinks = mutableMapOf<String, List<JoinBranchLink>>()
 
-    data class RecordedStep(val stepName: String, val phase: ExecutionPhase, val responseBody: String?)
+    data class RecordedStep(val stepName: String, val phase: ExecutionPhase, val responseBody: String?, val stepIdx: Int = 0)
+    /** Branch executions handed to [admit], in order (a redelivered split admits its batch again). */
+    val admittedChildren = mutableListOf<SagaExecution>()
 
     private fun barrierKey(parentId: UUID, splitNodeId: String) = "$parentId|$splitNodeId"
 
@@ -454,10 +668,27 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         responseBody: String?,
         stepStartedAt: Instant?,
     ) {
-        stepResults.getOrPut(sagaId) { mutableListOf() }.add(RecordedStep(stepName, phase, responseBody))
+        stepResults.getOrPut(sagaId) { mutableListOf() }.add(RecordedStep(stepName, phase, responseBody, stepIdx))
     }
     override suspend fun insertStepCalls(calls: List<StepCallEntry>) {}
-    override suspend fun loadStepResults(sagaId: UUID): List<StepResult> = emptyList()
+    /** Mirrors SagaRepository.loadStepResultsForTemplate: latest body per (index, name). */
+    override suspend fun loadStepResults(sagaId: UUID): List<StepResult> {
+        val latest = linkedMapOf<Pair<Int, String>, StepResult>()
+        stepResults[sagaId].orEmpty().forEach { step ->
+            val key = step.stepIdx to step.stepName
+            val current = latest[key] ?: StepResult(step.stepIdx, step.stepName, null, null)
+            val body = step.responseBody?.let { Json.parseToJsonElement(it) }
+            latest[key] = when (step.phase) {
+                ExecutionPhase.UP, ExecutionPhase.SWITCH, ExecutionPhase.JOIN -> current.copy(upBody = body)
+                ExecutionPhase.DOWN -> current.copy(downBody = body)
+                else -> current
+            }
+        }
+        return latest.values.toList()
+    }
+    override suspend fun admit(executions: List<SagaExecution>) {
+        admittedChildren += executions.filter { it.parentExecutionId != null }
+    }
     override suspend fun saveWaiting(execution: SagaExecution, signature: String) {}
     override suspend fun consumeWaiting(executionId: UUID): WaitingInfo? = null
     override suspend fun claimNonce(nonce: String, ttlSeconds: Long): Boolean = true

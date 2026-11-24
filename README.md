@@ -110,6 +110,7 @@ Available values:
 | Value | Meaning |
 |---|---|
 | `{{payload.x}}` (or `{{input.x}}`) | The run's payload |
+| `{{payload._nodes.<id>.x}}` | In a `split` branch: the response body of a node the parent ran before the split ([details](#parent-results-in-split-branches)) |
 | `{{nodes.<id>.response.body.x}}` | The response body of a completed node |
 | `{{prev.body.x}}` | The previous node's response body |
 | `{{sagaId}}`, `{{sagaName}}`, `{{sagaVersion}}` | The execution |
@@ -300,6 +301,29 @@ A list of `steps`, each with an `up` call and an optional `down` compensation, r
 | `sleep` | Pauses for `durationMillis` |
 | `split` | Runs `branches` in parallel, each as its own execution |
 | `join` | Continues once every branch of its `split` has finished |
+
+#### Parent results in split branches
+
+Each branch starts with a clean node history (`nodes.*` only holds the branch's own nodes),
+but its payload is the parent's payload plus a reserved `_nodes` object: for each node the
+parent ran before the split, its response body (what `nodes.<id>.response.body` is in the
+parent). A branch reads it like any other payload value:
+
+```text
+{{payload._nodes.load.customer}}              # templates
+{"var": "payload._nodes.load.customer"}       # JSON Logic (switch, callback conditions)
+```
+
+- A `join` that ran earlier is included (its body is the branch summary); the `split` itself is not.
+- In a nested split, `_nodes` holds the outer parent's nodes as well as the inner parent's.
+- Only the nodes the branches reference (`payload._nodes.<id>` or `input._nodes.<id>` in a
+  template or JSON Logic `var` anywhere between the split and its join, nested splits
+  included, plus the workflow callbacks) are carried. A reference Trama cannot resolve
+  statically, such as `{{#payload._nodes}}`, `{{payload}}` or a computed `var` path, carries
+  every node.
+- `_nodes` is reserved: starting a run whose payload already has a top-level `_nodes` key is
+  rejected with `400`.
+- The `trama-validate` simulation gives branches the same `_nodes`, built from the simulated trunk results.
 
 Both formats require `failureHandling`:
 - `{"type": "retry", "maxAttempts": 3, "delayMillis": 1000}`; or
