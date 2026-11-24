@@ -385,7 +385,9 @@ class WorkflowExecutor(
                         // a brand new batch. Combined with the ON CONFLICT on saga_join_branch and
                         // the idempotent markChildArrived, this means a retried split can never
                         // corrupt the barrier's bookkeeping or spawn extra untracked children.
-                        val childId = UUID.nameUUIDFromBytes("${execution.id}:${node.id}:$branchNodeId".toByteArray())
+                        // stepIdx tells the passes of a split inside a loop apart: it grows with
+                        // every node the parent runs, and a redelivery of this pass gets the same one.
+                        val childId = UUID.nameUUIDFromBytes("${execution.id}:${node.id}:$stepIdx:$branchNodeId".toByteArray())
                         SagaExecution(
                             definition = execution.definition,
                             definitionV2 = execution.definitionV2,
@@ -399,6 +401,7 @@ class WorkflowExecutor(
                             parentSplitNodeId = node.id,
                             parentJoinNodeId = node.join,
                             branchId = branchNodeId,
+                            parentSplitIteration = stepIdx,
                         )
                     }
 
@@ -414,6 +417,7 @@ class WorkflowExecutor(
                         parentId = execution.id,
                         parentStartedAt = execution.startedAt,
                         splitNodeId = node.id,
+                        splitIteration = stepIdx,
                         joinNodeId = node.join,
                         branches = children.map { child -> JoinBranchLink(child.branchId!!, child.id, child.startedAt) },
                     )
@@ -425,6 +429,7 @@ class WorkflowExecutor(
                             expectedBranches = children.size,
                             completedNodes = completedNodes.toList(),
                             compensationStack = compensationStack.toList(),
+                            splitIteration = stepIdx,
                         ),
                         step = StepRecord(
                             stepIdx = stepIdx,
@@ -920,7 +925,7 @@ class WorkflowExecutor(
         val parentStartedAt = execution.parentStartedAt ?: return
         val splitNodeId = execution.parentSplitNodeId ?: return
 
-        val arrival = store.markChildArrived(parentId, parentStartedAt, splitNodeId, execution.id) ?: return
+        val arrival = store.markChildArrived(parentId, parentStartedAt, splitNodeId, execution.parentSplitIteration, execution.id) ?: return
         if (!arrival.newlyMarked || arrival.arrived < arrival.expected) return
 
         val parent = store.consumeWaitingJoin(parentId) ?: return
@@ -973,7 +978,7 @@ class WorkflowExecutor(
         val joinNode = workflow.nodes[state.joinNodeId] as? JoinNode
             ?: throw JoinResumeBugException("join node '${state.joinNodeId}' not found in workflow")
 
-        val branches = store.getJoinBranches(execution.id, execution.startedAt, state.splitNodeId)
+        val branches = store.getJoinBranches(execution.id, execution.startedAt, state.splitNodeId, state.splitIteration)
         val statuses = store.getChildStatuses(branches.map { it.childId })
         var allSucceeded = branches.isNotEmpty()
         val branchSummaries = branches.map { link ->
@@ -1001,6 +1006,7 @@ class WorkflowExecutor(
             logger.info(
                 "join barrier satisfied",
                 kv("splitNodeId", state.splitNodeId),
+                kv("splitIteration", state.splitIteration),
                 kv("joinNodeId", state.joinNodeId),
                 kv("allSucceeded", allSucceeded),
             )
@@ -1049,7 +1055,7 @@ class WorkflowExecutor(
      * process resuming it died mid-resume, so the join is resumed here.
      */
     private suspend fun recoverWaitingJoin(execution: SagaExecution, state: ExecutionState.WaitingJoin): ExecutionOutcome {
-        val branches = store.getJoinBranches(execution.id, execution.startedAt, state.splitNodeId)
+        val branches = store.getJoinBranches(execution.id, execution.startedAt, state.splitNodeId, state.splitIteration)
         val statuses = store.getChildStatuses(branches.map { it.childId })
         val allFinished = branches.isNotEmpty() && branches.all { statuses[it.childId]?.status in PersistedCheckpoint.TERMINAL_STATUSES }
         if (!allFinished) {

@@ -168,11 +168,11 @@ class CheckpointRepositoryIntegrationTest {
     fun `a join whose branches all finished is found even if no arrival was recorded`() = runBlocking<Unit> {
         val parent = execution()
         val children = listOf("x", "y").map { b ->
-            parent.copy(id = UUID.randomUUID(), parentExecutionId = parent.id, parentStartedAt = parent.startedAt, parentSplitNodeId = "fan", branchId = b)
+            parent.copy(id = UUID.randomUUID(), parentExecutionId = parent.id, parentStartedAt = parent.startedAt, parentSplitNodeId = "fan", branchId = b, parentSplitIteration = 0)
         }
         repo.admitExecutions(listOf(parent) + children)
-        repo.registerJoinBarrier(parent.id, parent.startedAt, "fan", "fan-in", children.map { JoinBranchLink(it.branchId!!, it.id, it.startedAt) })
-        val waiting = parent.next(ExecutionState.WaitingJoin("fan", "fan-in", 2, emptyList(), emptyList()))
+        repo.registerJoinBarrier(parent.id, parent.startedAt, "fan", 0, "fan-in", children.map { JoinBranchLink(it.branchId!!, it.id, it.startedAt) })
+        val waiting = parent.next(ExecutionState.WaitingJoin("fan", "fan-in", 2, emptyList(), emptyList(), splitIteration = 0))
         repo.checkpoint(waiting, waiting.checkpointSeq, Instant.now(), null, Parking.Join)
 
         repo.finalizeCheckpointed(children[0].id, 0, "SUCCEEDED", null)

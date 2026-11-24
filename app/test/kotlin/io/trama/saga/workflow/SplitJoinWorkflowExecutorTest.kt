@@ -621,6 +621,148 @@ class SplitJoinWorkflowExecutorTest {
             Json.encodeToString(SagaExecution.serializer(), second.single()),
         )
     }
+
+    // ── A split inside a loop: one set of children and one barrier per pass ────────
+
+    /**
+     * pre → fan-out(branch-a, branch-b) → fan-in → again: back to pre while pre's `pass` < 2.
+     * "pre" answers `{"pass": n}` with n counting its calls, so each pass has its own result.
+     */
+    private fun loopDefinition() = v2(
+        "split-loop", "pre",
+        task("pre", "http://pre", next = "fan-out"),
+        NodeDefinition.Split(id = "fan-out", branches = listOf("branch-a", "branch-b"), join = "fan-in"),
+        task("branch-a", "http://a/{{payload._nodes.pre.pass}}"),
+        task("branch-b", "http://b/{{payload._nodes.pre.pass}}"),
+        NodeDefinition.Join(id = "fan-in", next = "again"),
+        NodeDefinition.Switch(
+            id = "again",
+            cases = listOf(
+                run.trama.saga.SwitchCaseDef(
+                    name = "loop",
+                    whenExpression = Json.parseToJsonElement("""{"<": [{"var": "nodes.pre.response.body.pass"}, 2]}"""),
+                    target = "pre",
+                ),
+            ),
+            default = "done",
+        ),
+        task("done", "http://done"),
+    )
+
+    private fun countingExecutor(store: SagaExecutionStore, enqueuer: FakeEnqueuer, requests: MutableList<String>): WorkflowExecutor {
+        var preCalls = 0
+        return WorkflowExecutor(
+            store = store,
+            renderer = MustacheTemplateRenderer(),
+            retryPolicy = DefaultRetryPolicy(),
+            enqueuer = enqueuer,
+            httpClient = FakeHttpClientProvider(
+                HttpClient(
+                    MockEngine { request ->
+                        requests += request.url.toString()
+                        val body = if (request.url.host == "pre") """{"pass":${++preCalls}}""" else "{}"
+                        respond(body, HttpStatusCode.OK, headersOf("Content-Type" to listOf("application/json")))
+                    },
+                ),
+            ),
+            metrics = Metrics(SimpleMeterRegistry()),
+        )
+    }
+
+    private fun SagaExecution.waitingJoin(): ExecutionState.WaitingJoin = assertIs(state)
+
+    @Test
+    fun `a split in a loop spawns new children per pass, each pass joining only its own branches`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val requests = mutableListOf<String>()
+        val executor = countingExecutor(store, enqueuer, requests)
+        val parent = executionOf(loopDefinition(), "pre")
+
+        // Pass 1: pre (pass 1) → split.
+        executor.execute(parent)
+        val pass1 = enqueuer.enqueued.filter { it.parentExecutionId == parent.id }
+        assertEquals(setOf("branch-a", "branch-b"), pass1.map { it.branchId }.toSet())
+        val parked1 = store.waitingJoins.getValue(parent.id)
+        pass1.forEach { assertEquals(JsonPrimitive(1), it.nodesPayload().getValue("pre").jsonObject.getValue("pass")) }
+        enqueuer.enqueued.clear()
+
+        pass1.forEach { executor.execute(it) }
+        val resumed1 = enqueuer.enqueued.single { it.id == parent.id }
+        assertEquals("again", (resumed1.state as ExecutionState.InProgress).activeNodeId)
+        enqueuer.enqueued.clear()
+
+        // Pass 2: again → pre (pass 2) → split again.
+        executor.execute(resumed1)
+        val pass2 = enqueuer.enqueued.filter { it.parentExecutionId == parent.id }
+        assertEquals(setOf("branch-a", "branch-b"), pass2.map { it.branchId }.toSet(), "the second pass must enqueue new children")
+        assertTrue((pass1.map { it.id }.toSet() intersect pass2.map { it.id }.toSet()).isEmpty(), "each pass has its own child ids")
+        pass2.forEach { assertEquals(JsonPrimitive(2), it.nodesPayload().getValue("pre").jsonObject.getValue("pass")) }
+        val parked2 = store.waitingJoins.getValue(parent.id)
+        assertTrue(parked2.waitingJoin().splitIteration > parked1.waitingJoin().splitIteration)
+        pass2.forEach { assertEquals(parked2.waitingJoin().splitIteration, it.parentSplitIteration) }
+        enqueuer.enqueued.clear()
+
+        // The second pass's barrier holds only its own branches, so one arrival does not resume.
+        val branchA2 = pass2.single { it.branchId == "branch-a" }
+        val branchB2 = pass2.single { it.branchId == "branch-b" }
+        executor.execute(branchA2)
+        assertTrue(enqueuer.enqueued.isEmpty(), "pass 2 must wait for its own branch-b, not count pass 1's")
+        assertNotNull(store.waitingJoins[parent.id])
+        requests.clear()
+        executor.execute(branchB2)
+        assertEquals(listOf("http://b/2"), requests, "the pass-2 branch renders the pass-2 _nodes")
+
+        val resumed2 = enqueuer.enqueued.single { it.id == parent.id }
+        val joins = store.stepResults.getValue(parent.id).filter { it.stepName == "fan-in" }
+        assertEquals(2, joins.size)
+        val joinedIds = joins.map { join ->
+            Json.parseToJsonElement(requireNotNull(join.responseBody)).jsonObject.getValue("branches").jsonArray
+                .map { it.jsonObject.getValue("executionId").jsonPrimitive.content }.toSet()
+        }
+        assertEquals(pass1.map { it.id.toString() }.toSet(), joinedIds[0])
+        assertEquals(pass2.map { it.id.toString() }.toSet(), joinedIds[1])
+
+        // Pass 2 has pre.pass == 2, so the loop ends.
+        enqueuer.enqueued.clear()
+        executor.execute(resumed2)
+        assertEquals("SUCCEEDED", store.finalStatuses.getValue(parent.id).first)
+    }
+
+    @Test
+    fun `redelivering the split of a later pass rebuilds the same children and enqueues none`() = runBlocking {
+        val store = FakeSplitJoinStore()
+        val enqueuer = FakeEnqueuer()
+        val executor = countingExecutor(store, enqueuer, mutableListOf())
+        val parent = executionOf(loopDefinition(), "pre")
+
+        executor.execute(parent)
+        enqueuer.enqueued.filter { it.parentExecutionId == parent.id }.forEach { executor.execute(it) }
+        val resumed1 = enqueuer.enqueued.single { it.id == parent.id }
+        enqueuer.enqueued.clear()
+        executor.execute(resumed1)
+        val pass2 = enqueuer.enqueued.toList()
+        assertEquals(2, pass2.size)
+        val parked2 = store.waitingJoins.getValue(parent.id).waitingJoin()
+        val admittedBefore = store.admittedChildren.size
+        enqueuer.enqueued.clear()
+
+        // Redelivery of the pass-2 split as checkpointed right before it.
+        executor.execute(
+            parent.copy(
+                state = ExecutionState.InProgress(
+                    activeNodeId = "fan-out",
+                    completedNodes = parked2.completedNodes.dropLast(1),
+                ),
+            ),
+        )
+
+        assertTrue(enqueuer.enqueued.isEmpty(), "a redelivered split must not enqueue its branches again")
+        val readmitted = store.admittedChildren.drop(admittedBefore)
+        assertEquals(pass2.map { it.id }.toSet(), readmitted.map { it.id }.toSet(), "same pass, same child ids")
+        assertEquals(pass2.toSet(), readmitted.toSet(), "byte-identical children, _nodes included")
+        assertEquals(parked2, store.waitingJoins.getValue(parent.id).waitingJoin())
+    }
 }
 
 private class FakeHttpClientProvider(override val client: HttpClient) : HttpClientProvider
@@ -650,7 +792,7 @@ private class FakeSplitJoinStore : SagaExecutionStore {
     /** Branch executions handed to [admit], in order (a redelivered split admits its batch again). */
     val admittedChildren = mutableListOf<SagaExecution>()
 
-    private fun barrierKey(parentId: UUID, splitNodeId: String) = "$parentId|$splitNodeId"
+    private fun barrierKey(parentId: UUID, splitNodeId: String, splitIteration: Int) = "$parentId|$splitNodeId|$splitIteration"
 
     override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
         finalStatuses[executionId] = status to failureDescription
@@ -700,6 +842,7 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         parentId: UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
+        splitIteration: Int,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
     ): Set<String> {
@@ -707,7 +850,7 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         // this again for the same (parentId, splitNodeId) must not reset already-registered
         // state (arrival progress included), and must report back only the branches that are
         // genuinely new so the caller knows which ones it still needs to enqueue.
-        val key = barrierKey(parentId, splitNodeId)
+        val key = barrierKey(parentId, splitNodeId, splitIteration)
         barriers.getOrPut(key) { BarrierState(expected = branches.size) }
         arrivedChildIds.getOrPut(key) { mutableSetOf() }
         val existingBranchIds = branchLinks[key]?.map { it.branchId }?.toSet() ?: emptySet()
@@ -716,8 +859,8 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         return newBranches.map { it.branchId }.toSet()
     }
 
-    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? {
-        val key = barrierKey(parentId, splitNodeId)
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, childId: UUID): JoinArrival? {
+        val key = barrierKey(parentId, splitNodeId, splitIteration)
         val barrier = barriers[key] ?: return null
         val arrivedSet = arrivedChildIds.getOrPut(key) { mutableSetOf() }
         val newlyMarked = arrivedSet.add(childId)
@@ -725,8 +868,8 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         return JoinArrival(arrived = barrier.arrived, expected = barrier.expected, newlyMarked = newlyMarked)
     }
 
-    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<JoinBranchLink> =
-        branchLinks[barrierKey(parentId, splitNodeId)] ?: emptyList()
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int): List<JoinBranchLink> =
+        branchLinks[barrierKey(parentId, splitNodeId, splitIteration)] ?: emptyList()
 
     override suspend fun saveWaitingJoin(execution: SagaExecution) {
         waitingJoins[execution.id] = execution

@@ -182,4 +182,30 @@
         </sql>
     </changeSet>
 
+    <!-- A split inside a loop runs once per pass, so its barrier is keyed by the pass too:
+         split_iteration is the parent's step index when it ran the split (see
+         ExecutionState.WaitingJoin.splitIteration). Rows written before this change get -1
+         (LEGACY_SPLIT_ITERATION), which is what parents parked on them and their branches decode
+         to, so joins already waiting keep resuming. -->
+    <changeSet id="010-join-split-iteration" author="trama">
+        <sql>
+            ALTER TABLE saga_join_barrier
+                ADD COLUMN IF NOT EXISTS split_iteration integer NOT NULL DEFAULT -1;
+            ALTER TABLE saga_join_barrier DROP CONSTRAINT IF EXISTS saga_join_barrier_pkey;
+            ALTER TABLE saga_join_barrier
+                ADD CONSTRAINT saga_join_barrier_pkey
+                PRIMARY KEY (parent_id, parent_started_at, split_node_id, split_iteration);
+
+            ALTER TABLE saga_join_branch
+                ADD COLUMN IF NOT EXISTS split_iteration integer NOT NULL DEFAULT -1;
+            ALTER TABLE saga_join_branch DROP CONSTRAINT IF EXISTS uq_saga_join_branch_identity;
+            ALTER TABLE saga_join_branch
+                ADD CONSTRAINT uq_saga_join_branch_identity
+                UNIQUE (parent_id, parent_started_at, split_node_id, split_iteration, branch_id);
+            DROP INDEX IF EXISTS idx_saga_join_branch_parent;
+            CREATE INDEX IF NOT EXISTS idx_saga_join_branch_parent
+                ON saga_join_branch (parent_id, parent_started_at, split_node_id, split_iteration);
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

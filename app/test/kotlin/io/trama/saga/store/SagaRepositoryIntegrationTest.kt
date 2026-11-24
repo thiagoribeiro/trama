@@ -175,20 +175,45 @@ class SagaRepositoryIntegrationTest {
         val parent = newExecution("join-${UUID.randomUUID()}", startedAt)
         val children = List(2) { UUID.randomUUID() }
         repo.registerJoinBarrier(
-            parent, startedAt, "split", "join",
+            parent, startedAt, "split", 3, "join",
             children.mapIndexed { i, c -> JoinBranchLink("b$i", c, startedAt) },
         )
-        repo.updateStatus(parent, "WAITING_JOIN")
+        repo.saveWaitingJoinState(parent, "split", 3, "join", "{}")
 
-        repo.markChildArrived(parent, startedAt, "split", children[0])
+        repo.markChildArrived(parent, startedAt, "split", 3, children[0])
         assertTrue(parent !in repo.findStalledJoinBarriers(1000), "barrier not yet satisfied")
 
-        val arrival = assertNotNull(repo.markChildArrived(parent, startedAt, "split", children[1]))
+        val arrival = assertNotNull(repo.markChildArrived(parent, startedAt, "split", 3, children[1]))
         assertEquals(2, arrival.arrived)
         assertTrue(parent in repo.findStalledJoinBarriers(1000))
 
         repo.updateStatus(parent, "IN_PROGRESS")
         assertTrue(parent !in repo.findStalledJoinBarriers(1000), "already resumed parents are not stalled")
+    }
+
+    @Test
+    fun `each pass of a split has its own barrier and only the parked one counts as stalled`() = runBlocking<Unit> {
+        val startedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        val parent = newExecution("join-loop-${UUID.randomUUID()}", startedAt)
+        val first = List(2) { UUID.randomUUID() }
+        val second = List(2) { UUID.randomUUID() }
+
+        // Pass 1 (step 1) ran to completion; pass 2 (step 5) registers the same branch ids again.
+        assertEquals(setOf("b0", "b1"), repo.registerJoinBarrier(parent, startedAt, "split", 1, "join", first.mapIndexed { i, c -> JoinBranchLink("b$i", c, startedAt) }))
+        first.forEach { repo.markChildArrived(parent, startedAt, "split", 1, it) }
+        assertEquals(setOf("b0", "b1"), repo.registerJoinBarrier(parent, startedAt, "split", 5, "join", second.mapIndexed { i, c -> JoinBranchLink("b$i", c, startedAt) }))
+        assertEquals(emptySet(), repo.registerJoinBarrier(parent, startedAt, "split", 5, "join", second.mapIndexed { i, c -> JoinBranchLink("b$i", c, startedAt) }), "a redelivered pass registers nothing new")
+        repo.saveWaitingJoinState(parent, "split", 5, "join", "{}")
+
+        assertEquals(second, repo.getJoinBranches(parent, startedAt, "split", 5).map { it.childId })
+        assertEquals(first, repo.getJoinBranches(parent, startedAt, "split", 1).map { it.childId })
+        assertTrue(parent !in repo.findStalledJoinBarriers(1000), "pass 1's full barrier must not resume a parent parked on pass 2")
+
+        assertEquals(1, repo.markChildArrived(parent, startedAt, "split", 5, second[0])?.arrived)
+        assertNull(repo.markChildArrived(parent, startedAt, "split", 3, second[1]), "no barrier for a pass that never ran")
+        val arrival = assertNotNull(repo.markChildArrived(parent, startedAt, "split", 5, second[1]))
+        assertEquals(2 to 2, arrival.arrived to arrival.expected)
+        assertTrue(parent in repo.findStalledJoinBarriers(1000))
     }
 
     @Test

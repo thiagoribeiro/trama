@@ -10,6 +10,7 @@ import run.trama.saga.UuidAsStringSerializer
 import run.trama.saga.ExecutionPhase
 import run.trama.saga.JoinArrival
 import run.trama.saga.JoinBranchLink
+import run.trama.saga.LEGACY_SPLIT_ITERATION
 import run.trama.saga.SagaDefinition
 import run.trama.saga.SagaDefinitionV2
 import run.trama.saga.SagaExecution
@@ -434,6 +435,7 @@ class SagaRepository(
         parentId: UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
+        splitIteration: Int,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
     ): Set<String> {
@@ -442,17 +444,18 @@ class SagaRepository(
             connection.prepareStatement(
                 """
                 INSERT INTO saga_join_barrier
-                    (parent_id, parent_started_at, split_node_id, join_node_id, expected_count, arrived_count, created_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?)
-                ON CONFLICT (parent_id, parent_started_at, split_node_id) DO NOTHING
+                    (parent_id, parent_started_at, split_node_id, split_iteration, join_node_id, expected_count, arrived_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                ON CONFLICT (parent_id, parent_started_at, split_node_id, split_iteration) DO NOTHING
                 """.trimIndent()
             ).use { ps ->
                 ps.setObject(1, parentId)
                 ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
                 ps.setString(3, splitNodeId)
-                ps.setString(4, joinNodeId)
-                ps.setInt(5, branches.size)
-                ps.setTimestamp(6, now)
+                ps.setInt(4, splitIteration)
+                ps.setString(5, joinNodeId)
+                ps.setInt(6, branches.size)
+                ps.setTimestamp(7, now)
                 ps.executeUpdate()
             }
             if (branches.isEmpty()) return@withConnection emptySet()
@@ -460,9 +463,9 @@ class SagaRepository(
             connection.prepareStatement(
                 """
                 INSERT INTO saga_join_branch
-                    (parent_id, parent_started_at, split_node_id, branch_id, child_id, child_started_at, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (parent_id, parent_started_at, split_node_id, branch_id) DO NOTHING
+                    (parent_id, parent_started_at, split_node_id, split_iteration, branch_id, child_id, child_started_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (parent_id, parent_started_at, split_node_id, split_iteration, branch_id) DO NOTHING
                 RETURNING branch_id
                 """.trimIndent()
             ).use { ps ->
@@ -470,10 +473,11 @@ class SagaRepository(
                     ps.setObject(1, parentId)
                     ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
                     ps.setString(3, splitNodeId)
-                    ps.setString(4, branch.branchId)
-                    ps.setObject(5, branch.childId)
-                    ps.setTimestamp(6, java.sql.Timestamp.from(branch.childStartedAt))
-                    ps.setTimestamp(7, now)
+                    ps.setInt(4, splitIteration)
+                    ps.setString(5, branch.branchId)
+                    ps.setObject(6, branch.childId)
+                    ps.setTimestamp(7, java.sql.Timestamp.from(branch.childStartedAt))
+                    ps.setTimestamp(8, now)
                     val rs = ps.executeQuery()
                     if (rs.next()) newlyRegistered += rs.getString("branch_id")
                 }
@@ -489,20 +493,20 @@ class SagaRepository(
      * the row, so only a genuine first-arrival can ever be treated as the barrier's winner.
      * Single round trip, no lock: the two UPDATEs are each atomic per-row, chained by one CTE.
      */
-    suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? {
+    suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, childId: UUID): JoinArrival? {
         return db.withConnection { connection ->
             val sql = """
                 WITH marked AS (
                     UPDATE saga_join_branch
                     SET arrived_at = now()
-                    WHERE parent_id = ? AND parent_started_at = ? AND split_node_id = ?
+                    WHERE parent_id = ? AND parent_started_at = ? AND split_node_id = ? AND split_iteration = ?
                       AND child_id = ? AND arrived_at IS NULL
                     RETURNING 1
                 ),
                 bumped AS (
                     UPDATE saga_join_barrier b
                     SET arrived_count = b.arrived_count + (SELECT count(*) FROM marked)
-                    WHERE b.parent_id = ? AND b.parent_started_at = ? AND b.split_node_id = ?
+                    WHERE b.parent_id = ? AND b.parent_started_at = ? AND b.split_node_id = ? AND b.split_iteration = ?
                     RETURNING b.arrived_count, b.expected_count
                 )
                 SELECT bumped.arrived_count, bumped.expected_count, (SELECT count(*) FROM marked) > 0 AS newly_marked
@@ -512,10 +516,12 @@ class SagaRepository(
                 ps.setObject(1, parentId)
                 ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
                 ps.setString(3, splitNodeId)
-                ps.setObject(4, childId)
-                ps.setObject(5, parentId)
-                ps.setTimestamp(6, java.sql.Timestamp.from(parentStartedAt))
-                ps.setString(7, splitNodeId)
+                ps.setInt(4, splitIteration)
+                ps.setObject(5, childId)
+                ps.setObject(6, parentId)
+                ps.setTimestamp(7, java.sql.Timestamp.from(parentStartedAt))
+                ps.setString(8, splitNodeId)
+                ps.setInt(9, splitIteration)
             }.executeQuery()
             if (!rs.next()) return@withConnection null
             JoinArrival(
@@ -526,17 +532,18 @@ class SagaRepository(
         }
     }
 
-    suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<JoinBranchLink> {
+    suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int): List<JoinBranchLink> {
         return db.withConnection { connection ->
             val sql = """
                 SELECT branch_id, child_id, child_started_at FROM saga_join_branch
-                WHERE parent_id = ? AND parent_started_at = ? AND split_node_id = ?
+                WHERE parent_id = ? AND parent_started_at = ? AND split_node_id = ? AND split_iteration = ?
                 ORDER BY id ASC
             """.trimIndent()
             val rs = connection.prepareStatement(sql).also { ps ->
                 ps.setObject(1, parentId)
                 ps.setTimestamp(2, java.sql.Timestamp.from(parentStartedAt))
                 ps.setString(3, splitNodeId)
+                ps.setInt(4, splitIteration)
             }.executeQuery()
             val links = mutableListOf<JoinBranchLink>()
             while (rs.next()) {
@@ -614,10 +621,11 @@ class SagaRepository(
     suspend fun saveWaitingJoinState(
         executionId: UUID,
         splitNodeId: String,
+        splitIteration: Int,
         joinNodeId: String,
         executionJson: String,
     ) {
-        val state = WaitingJoinStateJson(splitNodeId = splitNodeId, joinNodeId = joinNodeId, executionJson = executionJson)
+        val state = WaitingJoinStateJson(splitNodeId = splitNodeId, joinNodeId = joinNodeId, executionJson = executionJson, splitIteration = splitIteration)
         val waitingJson = JSONB.valueOf(json.encodeToString(WaitingJoinStateJson.serializer(), state))
         db.withConnection { connection ->
             val dsl = DSL.using(connection)
@@ -676,7 +684,13 @@ class SagaRepository(
             val sql = """
                 SELECT b.parent_id FROM saga_join_barrier b
                 JOIN saga_execution e ON e.id = b.parent_id AND e.started_at = b.parent_started_at
-                WHERE e.status = 'WAITING_JOIN' AND (
+                WHERE e.status = 'WAITING_JOIN'
+                  -- Only the barrier the parent is parked on: a parent that already passed other
+                  -- splits (or earlier passes of a split in a loop) has their full barriers too.
+                  -- Parents parked before the iteration was stored have none: LEGACY_SPLIT_ITERATION.
+                  AND b.split_node_id = e.waiting_state->>'splitNodeId'
+                  AND b.split_iteration = COALESCE((e.waiting_state->>'splitIteration')::integer, $LEGACY_SPLIT_ITERATION)
+                  AND (
                     b.arrived_count >= b.expected_count
                     -- Every branch finished, even if an arrival was never recorded (the branch's
                     -- process died, or its Postgres call failed, between finishing and arriving).
@@ -684,6 +698,7 @@ class SagaRepository(
                         JOIN saga_execution c ON c.id = jb.child_id AND c.started_at = jb.child_started_at
                         WHERE jb.parent_id = b.parent_id AND jb.parent_started_at = b.parent_started_at
                           AND jb.split_node_id = b.split_node_id
+                          AND jb.split_iteration = b.split_iteration
                           AND c.status IN ('SUCCEEDED', 'FAILED', 'CORRUPTED')) >= b.expected_count
                 )
                 LIMIT ?
@@ -1434,6 +1449,7 @@ class SagaRepository(
             parentSplitNodeId = state.parentSplitNodeId,
             parentJoinNodeId = state.parentJoinNodeId,
             branchId = state.branchId,
+            parentSplitIteration = state.parentSplitIteration,
             checkpointSeq = rs.getLong("checkpoint_seq"),
         )
     }.getOrNull()
@@ -1456,6 +1472,7 @@ class SagaRepository(
                 parentSplitNodeId = execution.parentSplitNodeId,
                 parentJoinNodeId = execution.parentJoinNodeId,
                 branchId = execution.branchId,
+                parentSplitIteration = execution.parentSplitIteration,
             ),
         )
 
@@ -1473,7 +1490,10 @@ class SagaRepository(
             is Parking.Sleep -> json.encodeToString(SleepStateJson.serializer(), SleepStateJson(parking.wakeAt, executionJson))
             Parking.Join -> {
                 val state = execution.state as ExecutionState.WaitingJoin
-                json.encodeToString(WaitingJoinStateJson.serializer(), WaitingJoinStateJson(state.splitNodeId, state.joinNodeId, executionJson))
+                json.encodeToString(
+                    WaitingJoinStateJson.serializer(),
+                    WaitingJoinStateJson(state.splitNodeId, state.joinNodeId, executionJson, state.splitIteration),
+                )
             }
         }
     }
@@ -1493,6 +1513,7 @@ class SagaRepository(
         val parentSplitNodeId: String? = null,
         val parentJoinNodeId: String? = null,
         val branchId: String? = null,
+        val parentSplitIteration: Int = LEGACY_SPLIT_ITERATION,
     )
 
     /**
@@ -1601,5 +1622,7 @@ class SagaRepository(
         val splitNodeId: String,
         val joinNodeId: String,
         val executionJson: String,
+        /** Read by [findStalledJoinBarriers]; absent in rows parked before it was stored (and when it is the default). */
+        val splitIteration: Int = LEGACY_SPLIT_ITERATION,
     )
 }

@@ -47,28 +47,56 @@ object IntegrationDb {
      * how Liquibase's SQL (e.g. `::timestamptz` casts) interprets local dates.
      */
     fun freshClient(timeZone: String): DatabaseClient {
+        val dbName = createDatabase()
+        val previous = java.util.TimeZone.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(timeZone))
+        try {
+            return clientFor(dbName)
+        } finally {
+            java.util.TimeZone.setDefault(previous)
+        }
+    }
+
+    /** Creates an empty database in the shared container and returns its name. */
+    fun createDatabase(): String {
         val pg = E2EContainers.postgres
         val dbName = "it_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
         java.sql.DriverManager.getConnection(pg.jdbcUrl, pg.username, pg.password).use { c ->
             c.createStatement().use { it.executeUpdate("create database $dbName") }
         }
-        val previous = java.util.TimeZone.getDefault()
-        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(timeZone))
-        try {
-            return DatabaseClient(
-                DatabaseConfig(
-                    host = pg.host,
-                    port = pg.firstMappedPort,
-                    database = dbName,
-                    user = pg.username,
-                    password = pg.password,
-                    pool = DatabasePoolConfig(maxPoolSize = 2, minIdle = 0),
-                ),
-                SimpleMeterRegistry(),
-            )
-        } finally {
-            java.util.TimeZone.setDefault(previous)
+        return dbName
+    }
+
+    /** A plain JDBC connection to [dbName] in the shared container. */
+    fun connect(dbName: String): java.sql.Connection {
+        val pg = E2EContainers.postgres
+        return java.sql.DriverManager.getConnection(pg.jdbcUrl.replace("/${pg.databaseName}", "/$dbName"), pg.username, pg.password)
+    }
+
+    /** Applies only the first [changesets] changesets of the changelog to [dbName], to stage data written by an older version. */
+    fun migratePartially(dbName: String, changesets: Int) {
+        connect(dbName).use { conn ->
+            val database = liquibase.database.DatabaseFactory.getInstance()
+                .findCorrectDatabaseImplementation(liquibase.database.jvm.JdbcConnection(conn))
+            liquibase.Liquibase("db/changelog/db.changelog-master.xml", liquibase.resource.ClassLoaderResourceAccessor(), database)
+                .update(changesets, "")
         }
+    }
+
+    /** A client on [dbName]; opening it applies every pending changeset. */
+    fun clientFor(dbName: String): DatabaseClient {
+        val pg = E2EContainers.postgres
+        return DatabaseClient(
+            DatabaseConfig(
+                host = pg.host,
+                port = pg.firstMappedPort,
+                database = dbName,
+                user = pg.username,
+                password = pg.password,
+                pool = DatabasePoolConfig(maxPoolSize = 2, minIdle = 0),
+            ),
+            SimpleMeterRegistry(),
+        )
     }
 
     /** Marks the test as skipped (not silently passed) when no container runtime is available. */

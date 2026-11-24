@@ -32,6 +32,22 @@ All notable changes to Trama are documented here. The format follows
   `null` in the slice that ran the step and as `""` after a reload. Plain text read as `null`,
   then as the text. A bare word such as `ok` could even fail to admit a split's branches.
   Empty bodies are now stored as SQL `NULL` in `saga_step_result.response_body`.
+- **A split inside a loop runs new branches on every pass.** Before, a branch's id came only
+  from the execution, the split and the branch, so the second pass rebuilt the first pass's ids.
+  It reused those finished branches (with the old `_nodes`), ran nothing new, and its join
+  reported the first pass's results. The id now also has the parent's step index at the split,
+  which grows on every pass and stays the same when the split is redelivered (a redelivery
+  still spawns no extra branch). The join barrier is keyed by the same pass, so each pass's join
+  waits only for its own branches. The stalled-join scanner now looks only at the barrier the
+  parent is parked on. Before, an earlier full barrier (an earlier pass, or an earlier split of
+  the same execution) could resume a parent that was still waiting for its branches.
+  - Schema: changeset `010-join-split-iteration` adds `split_iteration` to `saga_join_barrier`
+    and `saga_join_branch` and puts it into their keys. Existing rows get `-1`, which is what
+    joins already waiting decode to, so they still resume after the upgrade.
+  - Upgrade: stop the old version before the new one migrates. The old version's
+    `ON CONFLICT` on the join tables no longer matches a key, so its splits fail once the
+    migration ran. A split that was mid-spawn when the old version stopped spawns its branches
+    again under the new ids when it is redelivered.
 
 ## [3.1.0] - 2026-11-20
 
