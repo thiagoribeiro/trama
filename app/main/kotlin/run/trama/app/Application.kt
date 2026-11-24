@@ -114,13 +114,13 @@ private suspend fun io.ktor.server.application.ApplicationCall.startSplitDepthOr
     return null
 }
 
-private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject, maxSplitDepth: Int): ParsedDefinitionBody {
+private fun parseAndValidateDefinitionBody(json: Json, body: JsonObject): ParsedDefinitionBody {
     return if (body.containsKey("nodes")) {
         val def = json.decodeFromJsonElement(SagaDefinitionV2.serializer(), body)
         ParsedDefinitionBody(
             name = def.name,
             version = def.version,
-            errors = WorkflowDefinitionValidator.validate(def, maxSplitDepth),
+            errors = WorkflowDefinitionValidator.validate(def),
             definitionJson = json.encodeToString(SagaDefinitionV2.serializer(), def),
         )
     } else {
@@ -437,7 +437,7 @@ fun Application.module() {
                     call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(listOf("invalid v2 definition: ${it.message}")))
                     return@post
                 }
-                val errors = WorkflowDefinitionValidator.validate(def, appConfig.split.maxDepth)
+                val errors = WorkflowDefinitionValidator.validate(def)
                 if (errors.isNotEmpty()) {
                     call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                     return@post
@@ -503,7 +503,7 @@ fun Application.module() {
         }
         post("/workflows/definitions") {
             val body = call.receive<JsonObject>()
-            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body, appConfig.split.maxDepth)
+            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
             if (errors.isNotEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                 return@post
@@ -587,7 +587,7 @@ fun Application.module() {
                 return@put
             }
             val body = call.receive<JsonObject>()
-            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body, appConfig.split.maxDepth)
+            val (name, version, errors, definitionJson) = parseAndValidateDefinitionBody(json, body)
             if (errors.isNotEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, ValidationErrorResponse(errors))
                 return@put

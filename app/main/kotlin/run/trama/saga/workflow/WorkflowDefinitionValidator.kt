@@ -2,13 +2,11 @@ package run.trama.saga.workflow
 
 import run.trama.saga.NodeDefinition
 import run.trama.saga.SagaDefinitionV2
-import run.trama.saga.SplitDepth
 import run.trama.saga.TaskMode
 
 object WorkflowDefinitionValidator {
 
-    /** [maxSplitDepth]: `split.maxDepth`; a definition whose splits nest deeper is refused. */
-    fun validate(definition: SagaDefinitionV2, maxSplitDepth: Int = SplitDepth.DEFAULT_MAX): List<String> {
+    fun validate(definition: SagaDefinitionV2): List<String> {
         val errors = mutableListOf<String>()
 
         if (definition.name.isBlank()) errors.add("name must not be blank")
@@ -166,75 +164,7 @@ object WorkflowDefinitionValidator {
             errors.add("compensation is not allowed in cyclic workflows")
         }
 
-        when (val nesting = splitNesting(definition)) {
-            is SplitNesting.Bounded -> if (nesting.depth > maxSplitDepth) {
-                errors.add("split nesting depth ${nesting.depth} exceeds split.maxDepth $maxSplitDepth")
-            }
-            is SplitNesting.Unbounded -> errors.add(
-                "split '${nesting.splitId}' is reachable from its own branches, so its nesting depth " +
-                    "is unbounded (split.maxDepth $maxSplitDepth)",
-            )
-        }
-
         return errors
-    }
-
-    sealed class SplitNesting {
-        /** [depth]: how many splits deep the deepest branch reached from the entrypoint runs (0: no split). */
-        data class Bounded(val depth: Int) : SplitNesting()
-
-        /** A branch of [splitId] reaches [splitId] again, so every run of it would nest one level deeper. */
-        data class Unbounded(val splitId: String) : SplitNesting()
-    }
-
-    /**
-     * How deep the splits of [definition] nest, starting from its entrypoint at depth 0: a split
-     * walked by an execution at depth d spawns branches at d + 1, and a split inside a branch
-     * nests one further. Every path is counted (a switch may pick either case), so this is the
-     * deepest any run of the definition can go.
-     */
-    fun splitNesting(definition: SagaDefinitionV2): SplitNesting {
-        val nodeMap = definition.nodes.associateBy { it.id }
-        val regionDepths = mutableMapOf<String, Int>()
-        val splitsInProgress = mutableSetOf<String>()
-
-        class UnboundedNesting(val splitId: String) : RuntimeException(null, null, false, false)
-
-        // Deepest nesting below the nodes one execution walks from [start]: its own edges, a
-        // split continuing at its join (its branches are other executions, counted one deeper).
-        fun regionDepth(start: String): Int {
-            regionDepths[start]?.let { return it }
-            val visited = mutableSetOf<String>()
-            val pending = ArrayDeque(listOf(start))
-            var deepest = 0
-            while (pending.isNotEmpty()) {
-                val id = pending.removeLast()
-                if (!visited.add(id)) continue
-                val next: List<String> = when (val node = nodeMap[id]) {
-                    is NodeDefinition.Task -> listOfNotNull(node.next)
-                    is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
-                    is NodeDefinition.Sleep -> listOfNotNull(node.next)
-                    is NodeDefinition.Split -> {
-                        if (!splitsInProgress.add(node.id)) throw UnboundedNesting(node.id)
-                        val branchDepth = node.branches.maxOfOrNull { regionDepth(it) } ?: 0
-                        splitsInProgress.remove(node.id)
-                        deepest = maxOf(deepest, branchDepth + 1)
-                        listOf(node.join)
-                    }
-                    is NodeDefinition.Join -> listOfNotNull(node.next)
-                    null -> emptyList()
-                }
-                pending.addAll(next)
-            }
-            regionDepths[start] = deepest
-            return deepest
-        }
-
-        return try {
-            SplitNesting.Bounded(if (definition.entrypoint in nodeMap) regionDepth(definition.entrypoint) else 0)
-        } catch (ex: UnboundedNesting) {
-            SplitNesting.Unbounded(ex.splitId)
-        }
     }
 
     private fun hasCycle(definition: SagaDefinitionV2): Boolean {

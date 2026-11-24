@@ -137,17 +137,6 @@ class ApplicationTest {
          "entrypoint": "$entrypoint", "nodes": $nodes}
     """.trimIndent()
 
-    /** Splits nested [levels] deep: branch `deeper<k>` of split `s<k>` runs split `s<k+1>`. */
-    private fun nestedSplitNodes(levels: Int): String = (1..levels).joinToString(",", "[", "]") { k ->
-        val next = if (k < levels) ""","next": "s${k + 1}"""" else ""
-        """
-        {"kind": "split", "id": "s$k", "branches": ["deeper$k", "leaf$k"], "join": "j$k"},
-        {"kind": "task", "id": "deeper$k", "action": {"mode": "sync", "request": {"url": "http://localhost:1/d", "verb": "POST"}}$next},
-        {"kind": "task", "id": "leaf$k", "action": {"mode": "sync", "request": {"url": "http://localhost:1/l", "verb": "POST"}}},
-        {"kind": "join", "id": "j$k"}
-        """
-    }
-
     @Test
     fun `a saga start begins at the depth in X-Trama-Split-Depth, 0 without it`() {
         apiOnlyAgainstTestContainers()
@@ -191,49 +180,6 @@ class ApplicationTest {
                 }
                 assertEquals(400, stored.status.value, "'$value': ${stored.bodyAsText()}")
             }
-        }
-    }
-
-    @Test
-    fun `a definition nesting splits past split maxDepth is refused on register and on start`() {
-        apiOnlyAgainstTestContainers()
-        testApplication {
-            application { module() }
-            val tooDeep = v2Definition("too-deep-${UUID.randomUUID()}", nestedSplitNodes(4), "s1")
-            val registered = client.post("/workflows/definitions") {
-                contentType(ContentType.Application.Json)
-                setBody(tooDeep)
-            }
-            assertEquals(400, registered.status.value, registered.bodyAsText())
-            assertTrue("split nesting depth 4 exceeds split.maxDepth 3" in registered.bodyAsText(), registered.bodyAsText())
-
-            val started = client.post("/workflows/run") {
-                contentType(ContentType.Application.Json)
-                setBody("""{"definition": $tooDeep, "payload": {}}""")
-            }
-            assertEquals(400, started.status.value, started.bodyAsText())
-            assertTrue("split nesting depth 4 exceeds split.maxDepth 3" in started.bodyAsText(), started.bodyAsText())
-
-            val atTheLimit = client.post("/workflows/definitions") {
-                contentType(ContentType.Application.Json)
-                setBody(v2Definition("deep-enough-${UUID.randomUUID()}", nestedSplitNodes(3), "s1"))
-            }
-            assertEquals(200, atTheLimit.status.value, atTheLimit.bodyAsText())
-        }
-    }
-
-    @Test
-    fun `split maxDepth comes from the config`() {
-        apiOnlyAgainstTestContainers()
-        set("split.maxDepth", "1")
-        testApplication {
-            application { module() }
-            val started = client.post("/workflows/run") {
-                contentType(ContentType.Application.Json)
-                setBody(v2Run("max-depth-1-${UUID.randomUUID()}", nestedSplitNodes(2), "s1"))
-            }
-            assertEquals(400, started.status.value, started.bodyAsText())
-            assertTrue("split nesting depth 2 exceeds split.maxDepth 1" in started.bodyAsText(), started.bodyAsText())
         }
     }
 }

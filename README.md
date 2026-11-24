@@ -335,16 +335,12 @@ count also runs across Trama instances that start each other's sagas over HTTP:
   its parent.
 - Trama sends `X-Trama-Split-Depth` with the execution's depth on every call it makes (task
   nodes, compensations, `onSuccessCallback`/`onFailureCallback`). A header of that name in the
-  definition is replaced. So when a task starts a saga on another Trama, that saga starts at
+  definition is replaced. Trace headers go along on every call too. So when a task starts a saga on another Trama, that saga starts at
   the caller's depth.
 - A split whose branches would be deeper than `split.maxDepth` spawns nothing and fails its
   node with `split depth N exceeds split.maxDepth M`. The failure is not retried (the depth
   would be the same); the saga compensates and ends `FAILED`. Inside a branch, that fails the
   branch, which its `join` reports like any other branch failure.
-- A definition whose own splits nest deeper than `split.maxDepth`, counting every path, is
-  refused with `400` when it is registered or started (`split nesting depth N exceeds
-  split.maxDepth M`). So is a branch that leads back into its own split, which would nest
-  forever. `trama-validate` applies the same check (`SPLIT_MAXDEPTH`, default 3).
 - A start request whose `X-Trama-Split-Depth` is not a non-negative integer is rejected with
   `400`.
 
