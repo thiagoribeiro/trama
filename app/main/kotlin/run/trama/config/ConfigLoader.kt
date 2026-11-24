@@ -63,6 +63,8 @@ object ConfigLoader {
             ?: System.getenv("RECONCILER_INTERVALMILLIS")
         val rateLimitEnabled = System.getProperty("rateLimit.enabled")
             ?: System.getenv("RATELIMIT_ENABLED")
+        val splitMaxDepth = System.getProperty("split.maxDepth")
+            ?: System.getenv("SPLIT_MAXDEPTH")
 
         var config = base
         runtimeEnabled?.toBooleanStrictOrNull()?.let {
@@ -137,6 +139,9 @@ object ConfigLoader {
         }
         rateLimitEnabled?.toBooleanStrictOrNull()?.let {
             config = config.copy(rateLimit = config.rateLimit.copy(enabled = it))
+        }
+        splitMaxDepth?.toIntOrNull()?.let {
+            config = config.copy(split = SplitConfig(maxDepth = it))
         }
         return config
     }

@@ -537,6 +537,12 @@
       "post": {
         "summary": "Run an inline saga definition",
         "operationId": "runSagaInline",
+        "description": "Validates the definition first: a v2 definition whose splits nest deeper than `split.maxDepth` (default 3) is rejected with 400.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SplitDepthHeader"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -559,7 +565,7 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "Validation error (including split nesting past `split.maxDepth`) or invalid `X-Trama-Split-Depth`",
             "content": {
               "application/json": {
                 "schema": {
@@ -610,7 +616,7 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "Validation error, including a v2 definition whose splits nest deeper than `split.maxDepth` (default 3)",
             "content": {
               "application/json": {
                 "schema": {
@@ -768,7 +774,7 @@
             }
           },
           "400": {
-            "description": "Validation error or invalid id",
+            "description": "Validation error (including split nesting past `split.maxDepth`) or invalid id",
             "content": {
               "application/json": {
                 "schema": {
@@ -914,6 +920,9 @@
         "operationId": "runStoredSaga",
         "parameters": [
           {
+            "$ref": "#/components/parameters/SplitDepthHeader"
+          },
+          {
             "name": "name",
             "in": "path",
             "required": true,
@@ -955,7 +964,7 @@
             "description": "Definition not found"
           },
           "400": {
-            "description": "Invalid parameters or invalid stored definition",
+            "description": "Invalid parameters (including `X-Trama-Split-Depth`) or invalid stored definition",
             "content": {
               "application/json": {
                 "schema": {
@@ -1003,6 +1012,18 @@
     }
   },
   "components": {
+    "parameters": {
+      "SplitDepthHeader": {
+        "name": "X-Trama-Split-Depth",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "description": "Split nesting depth the new execution starts at; 0 when absent. Trama sends it on every outgoing call it makes (task nodes, compensations, workflow callbacks) with the calling execution's depth, so when one trama starts a saga on another the count carries on, and `split.maxDepth` bounds the whole chain. Each split branch is one deeper than its parent; a split whose branches would pass `split.maxDepth` fails its node (\"split depth N exceeds split.maxDepth M\"), without retries, and the saga compensates. A value that is not a non-negative integer is rejected with 400."
+      }
+    },
     "responses": {
       "InternalServerError": {
         "description": "Unhandled error",

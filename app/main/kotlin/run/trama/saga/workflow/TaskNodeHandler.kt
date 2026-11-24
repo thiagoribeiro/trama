@@ -3,6 +3,7 @@ package run.trama.saga.workflow
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import io.opentelemetry.api.trace.SpanKind
@@ -15,6 +16,7 @@ import run.trama.saga.HttpVerb
 import run.trama.saga.PayloadValue
 import run.trama.saga.RetryState
 import run.trama.saga.SagaExecution
+import run.trama.saga.SplitDepth
 import run.trama.saga.StepResult
 import run.trama.saga.TaskMode
 import run.trama.saga.TemplateContextBuilder
@@ -187,12 +189,9 @@ class TaskNodeHandler(
             }
             try {
                 val startNanos = System.nanoTime()
-                val response = httpClient.client.request(url) {
-                    method = call.verb.toKtorMethod()
-                    Tracing.injectHeaders { k, v -> header(k, v) }
-                    call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
-                    renderedBody?.let { setBody(it) }
-                }
+                val response = httpClient.send(
+                    url, call, renderer, context, renderedBody, execution.splitDepth,
+                )
                 val body = response.bodyAsText()
                 val success = response.status.value in call.successStatusCodes
                 if (success && phase == ExecutionPhase.UP) {
@@ -251,6 +250,26 @@ class TaskNodeHandler(
         }
     }
 
+}
+
+/**
+ * Every outgoing HTTP call of an execution (task nodes, compensations, workflow callbacks) goes
+ * through here: the definition's headers, the trace context, and the execution's split depth in
+ * [SplitDepth.HEADER], which replaces a header of that name from the definition.
+ */
+internal suspend fun HttpClientProvider.send(
+    url: String,
+    call: HttpCall,
+    renderer: TemplateRenderer,
+    context: Map<String, Any?>,
+    body: String?,
+    splitDepth: Int,
+): HttpResponse = client.request(url) {
+    method = call.verb.toKtorMethod()
+    Tracing.injectHeaders { k, v -> header(k, v) }
+    call.headers.forEach { (k, v) -> header(k, renderer.render(v, context, TemplateEscaping.HEADER_VALUE)) }
+    headers[SplitDepth.HEADER] = splitDepth.toString()
+    body?.let { setBody(it) }
 }
 
 /** Maps [HttpVerb] to the Ktor [HttpMethod] counterpart. Shared across all node handlers. */

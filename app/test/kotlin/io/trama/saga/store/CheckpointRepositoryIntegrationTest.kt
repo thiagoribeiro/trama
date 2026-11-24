@@ -87,6 +87,27 @@ class CheckpointRepositoryIntegrationTest {
     }
 
     @Test
+    fun `the split depth survives checkpoints and a failed run, for a retry`() = runBlocking<Unit> {
+        val exec = execution().copy(splitDepth = 2)
+        repo.admitExecutions(listOf(exec))
+        assertEquals(2, assertNotNull(repo.loadCheckpoint(exec.id)).splitDepth)
+
+        val next = exec.next(ExecutionState.InProgress(activeNodeId = "b", completedNodes = listOf("a")))
+        assertTrue(repo.checkpoint(next, next.checkpointSeq, Instant.now(), step("a"), null))
+        assertEquals(2, assertNotNull(repo.loadCheckpoint(exec.id)).splitDepth)
+
+        // /retry only takes FAILED rows, whose checkpoint is cleared: the depth must outlive it.
+        assertTrue(repo.finalizeCheckpointed(exec.id, next.checkpointSeq, "FAILED", "boom"))
+        assertNull(repo.loadCheckpoint(exec.id))
+        assertEquals(2, assertNotNull(repo.getExecutionForRetry(exec.id)).splitDepth)
+
+        val shallow = execution()
+        repo.admitExecutions(listOf(shallow))
+        assertEquals(0, assertNotNull(repo.loadCheckpoint(shallow.id)).splitDepth)
+        assertEquals(0, assertNotNull(repo.getExecutionForRetry(shallow.id)).splitDepth)
+    }
+
+    @Test
     fun `a stored checkpoint rebuilds the execution`() = runBlocking<Unit> {
         val exec = execution()
         repo.admitExecutions(listOf(exec))

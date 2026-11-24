@@ -72,3 +72,6 @@ reconciler:
   intervalMillis: 30000
   staleAfterMillis: 120000
   batchSize: 200
+
+split:
+  maxDepth: 3

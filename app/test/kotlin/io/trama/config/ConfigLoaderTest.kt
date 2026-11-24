@@ -15,6 +15,7 @@ class ConfigLoaderTest {
         "database.host", "database.port", "database.database", "database.user", "database.password",
         "runtime.callback.baseUrl", "runtime.callback.hmacSecret", "runtime.callback.hmacKid",
         "runtime.emptyPollDelayMillis", "redis.sharding.virtualShardCount", "database.pool.definitionCacheTtlMillis", "redis.topology", "redis.cluster.nodes",
+        "split.maxDepth",
     )
     private val saved = mutableMapOf<String, String?>()
 
@@ -36,6 +37,13 @@ class ConfigLoaderTest {
         assertEquals(25, config.runtime.maxStepsPerExecution)
         assertEquals("saga:executions", config.redis.queue.keyPrefix)
         assertEquals(30_000, config.http.requestTimeoutMillis)
+        if (System.getenv("SPLIT_MAXDEPTH") == null) assertEquals(3, config.split.maxDepth)
+    }
+
+    @Test
+    fun `split maxDepth can be overridden`() {
+        System.setProperty("split.maxDepth", "1")
+        assertEquals(1, ConfigLoader.load().split.maxDepth)
     }
 
     @Test

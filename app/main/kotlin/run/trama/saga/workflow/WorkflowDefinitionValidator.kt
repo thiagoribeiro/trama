@@ -2,11 +2,13 @@ package run.trama.saga.workflow
 
 import run.trama.saga.NodeDefinition
 import run.trama.saga.SagaDefinitionV2
+import run.trama.saga.SplitDepth
 import run.trama.saga.TaskMode
 
 object WorkflowDefinitionValidator {
 
-    fun validate(definition: SagaDefinitionV2): List<String> {
+    /** [maxSplitDepth]: `split.maxDepth`; a definition whose splits nest deeper is refused. */
+    fun validate(definition: SagaDefinitionV2, maxSplitDepth: Int = SplitDepth.DEFAULT_MAX): List<String> {
         val errors = mutableListOf<String>()
 
         if (definition.name.isBlank()) errors.add("name must not be blank")
@@ -137,14 +139,7 @@ object WorkflowDefinitionValidator {
         val joinIds = definition.nodes.filterIsInstance<NodeDefinition.Join>().map { it.id }.toSet()
         if (joinIds.isNotEmpty()) {
             definition.nodes.forEach { node ->
-                val outgoing: List<String> = when (node) {
-                    is NodeDefinition.Task -> listOfNotNull(node.next)
-                    is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
-                    is NodeDefinition.Sleep -> listOfNotNull(node.next)
-                    is NodeDefinition.Split -> node.branches
-                    is NodeDefinition.Join -> listOfNotNull(node.next)
-                }
-                for (target in outgoing) {
+                for (target in node.successors { it.branches }) {
                     val isOwnJoinEdge = node is NodeDefinition.Split && node.join == target
                     if (target in joinIds && !isOwnJoinEdge) {
                         errors.add("node '${node.id}' must not reference join '$target' directly; only its owning split may")
@@ -164,7 +159,37 @@ object WorkflowDefinitionValidator {
             errors.add("compensation is not allowed in cyclic workflows")
         }
 
+        if (definition.entrypoint in nodeMap) {
+            val depth = splitNesting(nodeMap, definition.entrypoint)
+            if (depth == null) errors.add("a split is reachable from its own branches, so its nesting is unbounded")
+            else if (depth > maxSplitDepth) errors.add("split nesting depth $depth exceeds split.maxDepth $maxSplitDepth")
+        }
+
         return errors
+    }
+
+    /**
+     * Deepest split nesting one execution walking from [start] reaches: a split's branches are one
+     * level deeper, and the walk goes on at its join. Null when a split is reachable from its own
+     * branches ([enclosing]), which nests without bound. Counts from 0: the depth a start request
+     * brings in `X-Trama-Split-Depth` is enforced at run time, by the split itself.
+     */
+    private fun splitNesting(nodes: Map<String, NodeDefinition>, start: String, enclosing: Set<String> = emptySet()): Int? {
+        var deepest = 0
+        val seen = mutableSetOf<String>()
+        val pending = ArrayDeque(listOf(start))
+        while (pending.isNotEmpty()) {
+            val node = nodes[pending.removeLast()] ?: continue
+            if (!seen.add(node.id)) continue
+            // One execution goes on at a split's join; its branches are other executions, one deeper.
+            pending += node.successors { split ->
+                if (split.id in enclosing) return null
+                val inner = split.branches.maxOfOrNull { splitNesting(nodes, it, enclosing + split.id) ?: return null } ?: 0
+                deepest = maxOf(deepest, inner + 1)
+                listOf(split.join)
+            }
+        }
+        return deepest
     }
 
     private fun hasCycle(definition: SagaDefinitionV2): Boolean {
@@ -177,19 +202,21 @@ object WorkflowDefinitionValidator {
             if (nodeId in visited) return false
             inStack += nodeId
             visited += nodeId
-            val neighbors = when (val node = nodeMap[nodeId]) {
-                is NodeDefinition.Task -> listOfNotNull(node.next)
-                is NodeDefinition.Switch -> node.cases.map { it.target } + node.default
-                is NodeDefinition.Sleep -> listOfNotNull(node.next)
-                is NodeDefinition.Split -> node.branches + node.join
-                is NodeDefinition.Join -> listOfNotNull(node.next)
-                null -> emptyList()
-            }
+            val neighbors = nodeMap[nodeId]?.successors { it.branches + it.join }.orEmpty()
             val cycle = neighbors.any { dfs(it) }
             inStack -= nodeId
             return cycle
         }
 
         return dfs(definition.entrypoint)
+    }
+
+    /** The nodes [this] leads to; a split's depend on the check, so [split] gives them. */
+    private inline fun NodeDefinition.successors(split: (NodeDefinition.Split) -> List<String>): List<String> = when (this) {
+        is NodeDefinition.Task -> listOfNotNull(next)
+        is NodeDefinition.Sleep -> listOfNotNull(next)
+        is NodeDefinition.Join -> listOfNotNull(next)
+        is NodeDefinition.Switch -> cases.map { it.target } + default
+        is NodeDefinition.Split -> split(this)
     }
 }

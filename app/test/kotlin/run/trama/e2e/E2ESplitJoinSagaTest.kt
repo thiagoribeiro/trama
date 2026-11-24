@@ -257,4 +257,68 @@ class E2ESplitJoinSagaTest {
             assertTrue(wm.requestsTo("/step/a").isEmpty())
         }
     }
+
+    // ── split.maxDepth across trama instances (this test plays the calling trama) ──
+
+    private fun depthHeaders(path: String) = wm.requestsTo(path).map { it.getHeader("X-Trama-Split-Depth") }
+
+    @Test
+    fun `a saga started with X-Trama-Split-Depth counts from it and sends the depth on its calls`() {
+        if (!DockerClientFactory.instance().isDockerAvailable) return
+        val definition = v2DefinitionMap(
+            uniqueName("split-depth-header"),
+            listOf(
+                taskNodeMap("pre", svc("/step/pre"), next = "fan-out"),
+                mapOf("kind" to "split", "id" to "fan-out", "branches" to listOf("a", "b"), "join" to "fan-in"),
+                taskNodeMap("a", svc("/step/a")),
+                taskNodeMap("b", svc("/step/b")),
+                mapOf("kind" to "join", "id" to "fan-in", "next" to "after"),
+                taskNodeMap("after", svc("/step/after")),
+            ),
+            onSuccess = httpCallMap(svc("/step/on-success")),
+        )
+
+        e2eTest(wmPort = wm.port()) {
+            val resp = client.postJson("/workflows/run", mapOf("definition" to definition, "payload" to emptyMap<String, Any>()), mapOf("X-Trama-Split-Depth" to "2"))
+            assertEquals(200, resp.status.value, resp.bodyAsText())
+            val sagaId = testJson.parseToJsonElement(resp.bodyAsText()).jsonObject["id"]!!.jsonPrimitive.content
+            assertEquals("SUCCEEDED", awaitSagaTerminal(client, sagaId)["status"]?.jsonPrimitive?.content)
+
+            assertEquals(listOf("2"), depthHeaders("/step/pre"))
+            assertEquals(listOf("3"), depthHeaders("/step/a"), "a branch is one deeper than its parent")
+            assertEquals(listOf("3"), depthHeaders("/step/b"))
+            assertEquals(listOf("2"), depthHeaders("/step/after"))
+            // Branches fire the workflow callbacks too (each at its own depth); the parent's comes last.
+            assertEquals("2", depthHeaders("/step/on-success").last())
+        }
+    }
+
+    @Test
+    fun `a split past split maxDepth fails the saga and compensates`() {
+        if (!DockerClientFactory.instance().isDockerAvailable) return
+        val definition = v2DefinitionMap(
+            uniqueName("split-depth-exceeded"),
+            listOf(
+                taskNodeMap("pre", svc("/step/pre"), next = "fan-out", compensationUrl = svc("/step/undo-pre")),
+                mapOf("kind" to "split", "id" to "fan-out", "branches" to listOf("a", "b"), "join" to "fan-in"),
+                taskNodeMap("a", svc("/step/a")),
+                taskNodeMap("b", svc("/step/b")),
+                mapOf("kind" to "join", "id" to "fan-in"),
+            ),
+            // Retries configured: the depth would not change, so they are skipped.
+            failureHandling = mapOf("type" to "retry", "maxAttempts" to 3, "delayMillis" to 5_000),
+        )
+
+        e2eTest(wmPort = wm.port()) {
+            val resp = client.postJson("/workflows/run", mapOf("definition" to definition, "payload" to emptyMap<String, Any>()), mapOf("X-Trama-Split-Depth" to "3"))
+            assertEquals(200, resp.status.value, resp.bodyAsText())
+            val sagaId = testJson.parseToJsonElement(resp.bodyAsText()).jsonObject["id"]!!.jsonPrimitive.content
+
+            val final = awaitSagaTerminal(client, sagaId, timeoutMs = 4_000)
+            assertEquals("FAILED", final["status"]?.jsonPrimitive?.content)
+            assertEquals("node=fan-out split depth 4 exceeds split.maxDepth 3", final["failureDescription"]?.jsonPrimitive?.content)
+            assertTrue(wm.requestsTo("/step/a").isEmpty() && wm.requestsTo("/step/b").isEmpty(), "no branch may run")
+            assertEquals(listOf("3"), depthHeaders("/step/undo-pre"), "the compensation ran, with the depth")
+        }
+    }
 }

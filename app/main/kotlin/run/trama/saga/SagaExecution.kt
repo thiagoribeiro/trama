@@ -48,6 +48,12 @@ data class SagaExecution(
      * written by older versions readable.
      */
     val checkpointSeq: Long = 0,
+    /**
+     * Split nesting depth (see [SplitDepth]): the start request's `X-Trama-Split-Depth` (0 without
+     * it) for a root execution, the parent's depth + 1 for a split branch. Sent on every outgoing
+     * call of this execution.
+     */
+    val splitDepth: Int = 0,
 )
 
 /**
