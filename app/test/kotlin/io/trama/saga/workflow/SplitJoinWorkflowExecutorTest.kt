@@ -123,14 +123,14 @@ class SplitJoinWorkflowExecutorTest {
         assertEquals(setOf("branch-a", "branch-b"), branchIds)
         enqueuer.enqueued.forEach { child ->
             assertEquals(parent.id, child.parentExecutionId)
-            assertEquals("fan-out", child.parentSplitNodeId)
+            assertEquals("fan-out@0", child.parentSplitNodeId)
             assertEquals("fan-in", child.parentJoinNodeId)
         }
 
         val waiting = store.waitingJoins[parent.id]
         assertNotNull(waiting, "parent must be parked as WaitingJoin")
         val waitingState = waiting.state as ExecutionState.WaitingJoin
-        assertEquals("fan-out", waitingState.splitNodeId)
+        assertEquals("fan-out@0", waitingState.splitNodeId, "the barrier key is the split id plus the parent's step index")
         assertEquals("fan-in", waitingState.joinNodeId)
         assertEquals(2, waitingState.expectedBranches)
 
@@ -699,8 +699,9 @@ class SplitJoinWorkflowExecutorTest {
         assertTrue((pass1.map { it.id }.toSet() intersect pass2.map { it.id }.toSet()).isEmpty(), "each pass has its own child ids")
         pass2.forEach { assertEquals(JsonPrimitive(2), it.nodesPayload().getValue("pre").jsonObject.getValue("pass")) }
         val parked2 = store.waitingJoins.getValue(parent.id)
-        assertTrue(parked2.waitingJoin().splitIteration > parked1.waitingJoin().splitIteration)
-        pass2.forEach { assertEquals(parked2.waitingJoin().splitIteration, it.parentSplitIteration) }
+        assertTrue(parked1.waitingJoin().splitNodeId != parked2.waitingJoin().splitNodeId, "each pass has its own barrier")
+        pass1.forEach { assertEquals(parked1.waitingJoin().splitNodeId, it.parentSplitNodeId) }
+        pass2.forEach { assertEquals(parked2.waitingJoin().splitNodeId, it.parentSplitNodeId) }
         enqueuer.enqueued.clear()
 
         // The second pass's barrier holds only its own branches, so one arrival does not resume.
@@ -792,7 +793,7 @@ private class FakeSplitJoinStore : SagaExecutionStore {
     /** Branch executions handed to [admit], in order (a redelivered split admits its batch again). */
     val admittedChildren = mutableListOf<SagaExecution>()
 
-    private fun barrierKey(parentId: UUID, splitNodeId: String, splitIteration: Int) = "$parentId|$splitNodeId|$splitIteration"
+    private fun barrierKey(parentId: UUID, splitNodeId: String) = "$parentId|$splitNodeId"
 
     override suspend fun updateFinal(executionId: UUID, status: String, failureDescription: String?) {
         finalStatuses[executionId] = status to failureDescription
@@ -842,7 +843,6 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         parentId: UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
     ): Set<String> {
@@ -850,7 +850,7 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         // this again for the same (parentId, splitNodeId) must not reset already-registered
         // state (arrival progress included), and must report back only the branches that are
         // genuinely new so the caller knows which ones it still needs to enqueue.
-        val key = barrierKey(parentId, splitNodeId, splitIteration)
+        val key = barrierKey(parentId, splitNodeId)
         barriers.getOrPut(key) { BarrierState(expected = branches.size) }
         arrivedChildIds.getOrPut(key) { mutableSetOf() }
         val existingBranchIds = branchLinks[key]?.map { it.branchId }?.toSet() ?: emptySet()
@@ -859,8 +859,8 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         return newBranches.map { it.branchId }.toSet()
     }
 
-    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, childId: UUID): JoinArrival? {
-        val key = barrierKey(parentId, splitNodeId, splitIteration)
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? {
+        val key = barrierKey(parentId, splitNodeId)
         val barrier = barriers[key] ?: return null
         val arrivedSet = arrivedChildIds.getOrPut(key) { mutableSetOf() }
         val newlyMarked = arrivedSet.add(childId)
@@ -868,8 +868,8 @@ private class FakeSplitJoinStore : SagaExecutionStore {
         return JoinArrival(arrived = barrier.arrived, expected = barrier.expected, newlyMarked = newlyMarked)
     }
 
-    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int): List<JoinBranchLink> =
-        branchLinks[barrierKey(parentId, splitNodeId, splitIteration)] ?: emptyList()
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<JoinBranchLink> =
+        branchLinks[barrierKey(parentId, splitNodeId)] ?: emptyList()
 
     override suspend fun saveWaitingJoin(execution: SagaExecution) {
         waitingJoins[execution.id] = execution

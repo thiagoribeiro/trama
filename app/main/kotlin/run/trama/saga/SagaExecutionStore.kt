@@ -242,11 +242,9 @@ interface SagaExecutionStore {
     // ── Split / join ───────────────────────────────────────────────────────────
 
     /**
-     * Registers the join barrier for one pass of a split: how many branches are expected and
-     * which child execution belongs to which branch. Must be called once, before any of the
-     * spawned children can possibly finish. A barrier is keyed by ([parentId], [splitNodeId],
-     * [splitIteration]), so each pass of a split inside a loop gets its own barrier
-     * (see [ExecutionState.WaitingJoin.splitIteration]).
+     * Registers the join barrier for a split: how many branches are expected and which
+     * child execution belongs to which branch. Must be called once, before any of the
+     * spawned children can possibly finish.
      *
      * Returns the [JoinBranchLink.branchId]s that were newly registered by *this* call, as
      * opposed to ones a prior (crashed/redelivered) attempt at the same split step already
@@ -260,13 +258,12 @@ interface SagaExecutionStore {
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
     ): Set<String>
 
     /**
-     * Idempotently marks [childId] as arrived on the ([parentId], [splitNodeId], [splitIteration]) barrier and
+     * Idempotently marks [childId] as arrived on the ([parentId], [splitNodeId]) barrier and
      * returns the counts *after* this call, or null if no barrier is registered (bug/race).
      * Calling this again with a [childId] that was already marked arrived (e.g. a redelivered
      * branch re-finalizing) is a safe no-op: the counter is not incremented twice, and
@@ -277,7 +274,6 @@ interface SagaExecutionStore {
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
         childId: java.util.UUID,
     ): JoinArrival?
 
@@ -286,7 +282,6 @@ interface SagaExecutionStore {
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
     ): List<JoinBranchLink>
 
     /**
@@ -415,32 +410,28 @@ open class SagaRepositoryStore(
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
         joinNodeId: String,
         branches: List<JoinBranchLink>,
-    ) = repository.registerJoinBarrier(parentId, parentStartedAt, splitNodeId, splitIteration, joinNodeId, branches)
+    ) = repository.registerJoinBarrier(parentId, parentStartedAt, splitNodeId, joinNodeId, branches)
 
     override suspend fun markChildArrived(
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
         childId: java.util.UUID,
-    ): JoinArrival? = repository.markChildArrived(parentId, parentStartedAt, splitNodeId, splitIteration, childId)
+    ): JoinArrival? = repository.markChildArrived(parentId, parentStartedAt, splitNodeId, childId)
 
     override suspend fun getJoinBranches(
         parentId: java.util.UUID,
         parentStartedAt: Instant,
         splitNodeId: String,
-        splitIteration: Int,
-    ): List<JoinBranchLink> = repository.getJoinBranches(parentId, parentStartedAt, splitNodeId, splitIteration)
+    ): List<JoinBranchLink> = repository.getJoinBranches(parentId, parentStartedAt, splitNodeId)
 
     override suspend fun saveWaitingJoin(execution: SagaExecution) {
         val state = execution.state as? ExecutionState.WaitingJoin ?: return
         repository.saveWaitingJoinState(
             executionId = execution.id,
             splitNodeId = state.splitNodeId,
-            splitIteration = state.splitIteration,
             joinNodeId = state.joinNodeId,
             executionJson = Json.encodeToString(SagaExecution.serializer(), execution),
         )

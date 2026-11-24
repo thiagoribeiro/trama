@@ -102,10 +102,10 @@ open class RecordingStore : SagaExecutionStore {
     }
     override suspend fun peekSleeping(executionId: UUID): SleepEntry? = sleeping[executionId]
     override suspend fun consumeSleeping(executionId: UUID): SleepEntry? = sleeping.remove(executionId)
-    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, joinNodeId: String, branches: List<JoinBranchLink>): Set<String> =
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<JoinBranchLink>): Set<String> =
         branches.map { it.branchId }.toSet()
-    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, childId: UUID): JoinArrival? = null
-    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int): List<JoinBranchLink> = emptyList()
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): JoinArrival? = null
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<JoinBranchLink> = emptyList()
     override suspend fun saveWaitingJoin(execution: SagaExecution) {}
     override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
     override suspend fun getChildStatus(executionId: UUID): ChildExecutionStatus? = null

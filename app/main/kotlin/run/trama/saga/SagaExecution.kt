@@ -36,16 +36,11 @@ data class SagaExecution(
      */
     val parentExecutionId: @Serializable(with = UuidAsStringSerializer::class) UUID? = null,
     val parentStartedAt: @Serializable(with = InstantAsStringSerializer::class) Instant? = null,
+    /** Key of the join barrier this branch arrives on: `<split node id>@<parent step index>` (see [ExecutionState.WaitingJoin.splitNodeId]). */
     val parentSplitNodeId: String? = null,
     val parentJoinNodeId: String? = null,
     /** This branch's stable identifier — equal to its entry node id in the split's `branches` list. */
     val branchId: String? = null,
-    /**
-     * Which pass of the parent over [parentSplitNodeId] spawned this branch (see
-     * [ExecutionState.WaitingJoin.splitIteration]); part of the key of the barrier it arrives on.
-     * Branches spawned before this field existed decode as [LEGACY_SPLIT_ITERATION].
-     */
-    val parentSplitIteration: Int = LEGACY_SPLIT_ITERATION,
     /**
      * The execution's checkpoint sequence in Postgres when this copy was produced. Every
      * checkpoint is a compare-and-set from this value, so a copy that fell behind (a redelivered
@@ -159,26 +154,18 @@ sealed class ExecutionState {
     @Serializable
     @SerialName("waiting_join")
     data class WaitingJoin(
+        /**
+         * Key of the join barrier this execution waits on: the split node id plus `@` and the
+         * step index at which the split ran, so each pass of a split inside a loop has its own
+         * barrier and branches. Barriers registered by older versions use the bare node id.
+         */
         val splitNodeId: String,
         val joinNodeId: String,
         val expectedBranches: Int,
         val completedNodes: List<String>,
         val compensationStack: List<String>,
-        /**
-         * The parent's step index when it ran the split. A split inside a loop runs once per
-         * pass, each pass with a higher index, so ([splitNodeId], [splitIteration]) names one
-         * barrier and one set of children; a redelivery of the same pass gets the same index.
-         * Executions parked before this field existed decode as [LEGACY_SPLIT_ITERATION].
-         */
-        val splitIteration: Int = LEGACY_SPLIT_ITERATION,
     ) : ExecutionState()
 }
-
-/**
- * Split iteration of join barriers, parked parents and branches written before the iteration was
- * part of the barrier key (changeset 010 gives the old barrier rows this value).
- */
-const val LEGACY_SPLIT_ITERATION = -1
 
 @Serializable
 enum class ExecutionPhase {

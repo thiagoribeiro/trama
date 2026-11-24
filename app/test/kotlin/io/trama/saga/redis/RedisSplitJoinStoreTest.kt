@@ -51,10 +51,10 @@ class RedisSplitJoinStoreTest {
         withStores { store ->
             val parent = testExecution()
             val branches = (1..5).map { i -> JoinBranchLink("branch-$i", UUID.randomUUID(), Instant.now()) }
-            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", 0, "fan-in", branches)
+            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", "fan-in", branches)
 
             val results = branches.map { branch ->
-                async { store.markChildArrived(parent.id, parent.startedAt, "fan-out", 0, branch.childId) }
+                async { store.markChildArrived(parent.id, parent.startedAt, "fan-out", branch.childId) }
             }.awaitAll()
 
             assertTrue(results.all { it != null }, "every arrival must see a registered barrier")
@@ -72,20 +72,20 @@ class RedisSplitJoinStoreTest {
         withStores { store ->
             val parent = testExecution()
             val branches = (1..2).map { i -> JoinBranchLink("branch-$i", UUID.randomUUID(), Instant.now()) }
-            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", 0, "fan-in", branches)
+            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", "fan-in", branches)
 
-            val first = store.markChildArrived(parent.id, parent.startedAt, "fan-out", 0, branches[0].childId)
+            val first = store.markChildArrived(parent.id, parent.startedAt, "fan-out", branches[0].childId)
             assertNotNull(first)
             assertTrue(first.newlyMarked)
             assertEquals(1, first.arrived)
 
             // Simulates a redelivered branch execute() re-finalizing the SAME child id.
-            val redelivered = store.markChildArrived(parent.id, parent.startedAt, "fan-out", 0, branches[0].childId)
+            val redelivered = store.markChildArrived(parent.id, parent.startedAt, "fan-out", branches[0].childId)
             assertNotNull(redelivered)
             assertTrue(!redelivered.newlyMarked, "a second arrival for the same child must not be newly marked")
             assertEquals(1, redelivered.arrived, "the counter must not have moved from the redelivered call")
 
-            val second = store.markChildArrived(parent.id, parent.startedAt, "fan-out", 0, branches[1].childId)
+            val second = store.markChildArrived(parent.id, parent.startedAt, "fan-out", branches[1].childId)
             assertNotNull(second)
             assertTrue(second.newlyMarked)
             assertEquals(2, second.arrived)
@@ -102,9 +102,9 @@ class RedisSplitJoinStoreTest {
                 JoinBranchLink("branch-a", UUID.randomUUID(), Instant.now()),
                 JoinBranchLink("branch-b", UUID.randomUUID(), Instant.now()),
             )
-            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", 0, "fan-in", branches)
+            store.registerJoinBarrier(parent.id, parent.startedAt, "fan-out", "fan-in", branches)
 
-            val fetched = store.getJoinBranches(parent.id, parent.startedAt, "fan-out", 0)
+            val fetched = store.getJoinBranches(parent.id, parent.startedAt, "fan-out")
             assertEquals(branches.map { it.branchId }.toSet(), fetched.map { it.branchId }.toSet())
             assertEquals(branches.map { it.childId }.toSet(), fetched.map { it.childId }.toSet())
         }

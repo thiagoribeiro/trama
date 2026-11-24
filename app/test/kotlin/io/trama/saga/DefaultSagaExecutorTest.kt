@@ -382,10 +382,10 @@ private class FakeStore : SagaExecutionStore {
     override suspend fun saveSleeping(execution: SagaExecution, wakeAt: java.time.Instant) {}
     override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
-    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
-    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, childId: UUID): run.trama.saga.JoinArrival? = null
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): run.trama.saga.JoinArrival? = null
     override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> = emptyMap()
-    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int): List<run.trama.saga.JoinBranchLink> = emptyList()
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
     override suspend fun saveWaitingJoin(execution: SagaExecution) {}
     override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
     override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
@@ -412,10 +412,10 @@ private class CapturingStore : SagaExecutionStore {
     override suspend fun saveSleeping(execution: SagaExecution, wakeAt: java.time.Instant) {}
     override suspend fun peekSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
     override suspend fun consumeSleeping(executionId: UUID): run.trama.saga.SleepEntry? = null
-    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
-    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int, childId: UUID): run.trama.saga.JoinArrival? = null
+    override suspend fun registerJoinBarrier(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, joinNodeId: String, branches: List<run.trama.saga.JoinBranchLink>): Set<String> = branches.map { it.branchId }.toSet()
+    override suspend fun markChildArrived(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, childId: UUID): run.trama.saga.JoinArrival? = null
     override suspend fun getChildStatuses(executionIds: List<UUID>): Map<UUID, run.trama.saga.ChildExecutionStatus> = emptyMap()
-    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String, splitIteration: Int): List<run.trama.saga.JoinBranchLink> = emptyList()
+    override suspend fun getJoinBranches(parentId: UUID, parentStartedAt: Instant, splitNodeId: String): List<run.trama.saga.JoinBranchLink> = emptyList()
     override suspend fun saveWaitingJoin(execution: SagaExecution) {}
     override suspend fun consumeWaitingJoin(executionId: UUID): SagaExecution? = null
     override suspend fun getChildStatus(executionId: UUID): run.trama.saga.ChildExecutionStatus? = null
