@@ -676,7 +676,11 @@ class SagaRepository(
             val sql = """
                 SELECT b.parent_id FROM saga_join_barrier b
                 JOIN saga_execution e ON e.id = b.parent_id AND e.started_at = b.parent_started_at
-                WHERE e.status = 'WAITING_JOIN' AND (
+                WHERE e.status = 'WAITING_JOIN'
+                  -- Only the barrier the parent is parked on: earlier splits, or earlier passes of
+                  -- a split in a loop, left full barriers of the same parent behind.
+                  AND b.split_node_id = e.waiting_state->>'splitNodeId'
+                  AND (
                     b.arrived_count >= b.expected_count
                     -- Every branch finished, even if an arrival was never recorded (the branch's
                     -- process died, or its Postgres call failed, between finishing and arriving).

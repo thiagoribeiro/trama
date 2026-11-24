@@ -179,6 +179,70 @@ class E2ESplitJoinSagaTest {
     }
 
     @Test
+    fun `a split inside a loop runs fresh branches on every pass`() {
+        if (!DockerClientFactory.instance().isDockerAvailable) return
+        // "pre" answers {"pass":1} the first time and {"pass":2} after that.
+        listOf("Started" to "second", "second" to "second").forEachIndexed { i, (state, nextState) ->
+            wm.stubFor(
+                com.github.tomakehurst.wiremock.client.WireMock.post(com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo("/step/pre"))
+                    .inScenario("loop-pass")
+                    .whenScenarioStateIs(state)
+                    .willReturn(
+                        com.github.tomakehurst.wiremock.client.WireMock.aResponse().withStatus(200)
+                            .withHeader("Content-Type", "application/json").withBody("""{"pass":${i + 1}}"""),
+                    )
+                    .willSetStateTo(nextState),
+            )
+        }
+        val definition = v2DefinitionMap(
+            uniqueName("split-join-loop"),
+            listOf(
+                taskNodeMap("pre", svc("/step/pre"), next = "fan-out"),
+                mapOf("kind" to "split", "id" to "fan-out", "branches" to listOf("a", "b"), "join" to "fan-in"),
+                taskNodeMap("a", svc("/step/a/{{payload._nodes.pre.pass}}")),
+                taskNodeMap("b", svc("/step/b/{{payload._nodes.pre.pass}}")),
+                mapOf("kind" to "join", "id" to "fan-in", "next" to "again"),
+                mapOf(
+                    "kind" to "switch",
+                    "id" to "again",
+                    "cases" to listOf(
+                        mapOf(
+                            "name" to "loop",
+                            "when" to mapOf("<" to listOf(mapOf("var" to "nodes.pre.response.body.pass"), 2)),
+                            "target" to "pre",
+                        ),
+                    ),
+                    "default" to "after",
+                ),
+                taskNodeMap("after", svc("/step/after")),
+            ),
+        )
+
+        e2eTest(wmPort = wm.port()) {
+            val sagaId = client.runInline(definition)
+            val final = awaitSagaTerminal(client, sagaId)
+            assertEquals("SUCCEEDED", final["status"]?.jsonPrimitive?.content)
+
+            for (path in listOf("/step/a/1", "/step/b/1", "/step/a/2", "/step/b/2", "/step/after")) {
+                assertEquals(1, wm.requestsTo(path).size, "expected exactly one call to $path")
+            }
+
+            // Each pass's join lists only the branches of that pass, and they are new executions.
+            val joins = client.getJson("/workflows/$sagaId/steps").second!!.jsonArray
+                .map { it.jsonObject }
+                .filter { it["stepName"]?.jsonPrimitive?.content == "fan-in" }
+            assertEquals(2, joins.size)
+            val idsPerPass = joins.map { join ->
+                val body = join["responseBody"]!!.jsonObject
+                assertEquals(true, body["allSucceeded"]?.jsonPrimitive?.content?.toBoolean())
+                body["branches"]!!.jsonArray.map { it.jsonObject["executionId"]!!.jsonPrimitive.content }.toSet()
+            }
+            assertEquals(listOf(2, 2), idsPerPass.map { it.size })
+            assertTrue((idsPerPass[0] intersect idsPerPass[1]).isEmpty(), "the second pass must not reuse the first pass's children")
+        }
+    }
+
+    @Test
     fun `starting a saga with the reserved _nodes key in its payload is rejected`() {
         if (!DockerClientFactory.instance().isDockerAvailable) return
         e2eTest(wmPort = wm.port()) {
