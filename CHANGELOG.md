@@ -26,6 +26,13 @@ All notable changes to Trama are documented here. The format follows
   trace) and joins (the branch summary), so templates and conditions that read them simulate as
   they run.
 
+### Fixed
+- An empty or non-JSON response body is now the same step result in memory and after a reload
+  from Postgres: empty is `null`, other text is a JSON string. Before, an empty body read as
+  `null` in the slice that ran the step and as `""` after a reload. Plain text read as `null`,
+  then as the text. A bare word such as `ok` could even fail to admit a split's branches.
+  Empty bodies are now stored as SQL `NULL` in `saga_step_result.response_body`.
+
 ## [3.1.0] - 2026-11-20
 
 Dependency release. No change to the API, definition format, template rendering or database
